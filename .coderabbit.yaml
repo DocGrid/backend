@@ -1,0 +1,50 @@
+language: "ko"
+early_access: false
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  sequence_diagrams: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_instructions:
+    - path: "src/main/java/**/*.java"
+      instructions: "SOLID 원칙, 스프링 어노테이션, 의존성 주입 패턴, 예외 처리에 중점을 둔다"
+    - path: "src/test/**/*.java"
+      instructions: "테스트 커버리지, 스프링 테스트 어노테이션, mock 사용법, 네이밍 규칙을 확인한다"
+    - path: "**/*.{yml,yaml,properties}"
+      instructions: "스프링 설정, 보안 설정, DB 연결, 환경 설정을 검증한다"
+    - path: "**/dto/**/*.java"
+      instructions: |
+        DTO 설계 검증:
+        1. validation - @Valid, @NotNull 등 적절한 유효성 검증 어노테이션이 누락되었는지 확인
+        2. 불변성 - Getter/Setter 남용을 지양하고 고정된 데이터 구조(Java Record 활용 등)로 설계되었는지 확인
+        3. 필드명 일관성 - camelCase 준수, 명확한 네이밍
+    - path: "**/{domain,entity,entities}/**/*.java"
+      instructions: |
+        JPA 엔티티 설계 검증:
+        1. 연관관계 매핑 시 지연 로딩(FetchType.LAZY) 설정 준수 여부 확인
+        2. 무분별한 롬복(@Data, @ToString 등) 사용으로 인한 순환 참조 위험 검증
+  path_filters:
+    - "!**/build/**"
+    - "!**/.gradle/**"
+    - "!**/gradle/wrapper/**"
+    - "!**/gradlew*"
+    - "!**/out/**"
+    - "!**/*.class"
+    - "!**/*.jar"
+    - "!**/*.war"
+    - "!**/node_modules/**"
+chat:
+  auto_reply: true
+tone_instructions: "버그·성능·SOLID·클린코드 관점에서 핵심 피드백과 변경 요약을 제공하며, 허구 정보 생성·추측을 금지합니다."
+knowledge_base:
+  opt_out: false
+  learnings:
+    scope: auto
+  issues:
+    scope: auto

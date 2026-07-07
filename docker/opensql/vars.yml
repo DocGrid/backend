@@ -1,0 +1,10 @@
+pg_owner: app
+pg_group: app
+pg_superuser: app
+pg_superuser_password: local_password
+pg_database: postgres
+pg_databases:
+  - name: app
+    owner: app
+    encoding: UTF-8
+use_system_user: false

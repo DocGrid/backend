@@ -4,10 +4,17 @@ spring:
       on-profile: local
 
   datasource:
-    url: ${LOCAL_DB_URL}
-    username: ${LOCAL_DB_USERNAME}
-    password: ${LOCAL_DB_PASSWORD}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:55432}/${DB_NAME:app}?currentSchema=${DB_SCHEMA:public}&sslmode=require
+    username: ${DB_USER:app}
+    password: ${DB_PASSWORD:local_password}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: docgrid-local-db-pool
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
 
   jpa:
     hibernate:

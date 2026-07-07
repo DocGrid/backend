@@ -2,10 +2,11 @@
 
 ## Local DB
 
-로컬 개발 DB는 Docker Compose로 실행합니다. 현재 OpenSQL 공식 Docker 이미지 또는 공식 docker-compose 예제를 확인하지 못해 **OpenSQL 대체 개발용 PostgreSQL fallback**을 사용합니다.
+로컬 개발 DB는 Docker Compose로 실행합니다. 기본 DB 이미지는 OpenSQL-PG 호환 이미지인 `tmaxopensql/postgres:14.6`입니다.
 
 ```bash
 cp .env.example .env
+docker pull tmaxopensql/postgres:14.6
 docker compose up -d
 docker compose ps
 ./gradlew bootRun --args='--spring.profiles.active=local'

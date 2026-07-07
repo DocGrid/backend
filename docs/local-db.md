@@ -1,8 +1,10 @@
 # Local DB
 
-이 문서는 로컬 개발 환경에서 DB 컨테이너를 띄우고 Spring Boot `local` profile로 Flyway migration 실행을 확인하는 최소 가이드입니다.
+이 문서는 로컬 개발 환경에서 OpenSQL-PG 기반 DB 컨테이너를 띄우고 Spring Boot `local` profile로 Flyway migration 실행을 확인하는 최소 가이드입니다.
 
-현재 OpenSQL 공식 Docker 이미지 또는 공식 docker-compose 예제를 확인하지 못해, 이 저장소는 **OpenSQL 대체 개발용 PostgreSQL fallback**을 사용합니다. 실제 OpenSQL 연결 정보는 추후 환경변수로 교체할 수 있도록 `DB_*` 값으로 분리되어 있습니다.
+로컬 DB 기본 이미지는 `tmaxopensql/postgres:14.6`입니다. Spring Boot datasource URL은 OpenSQL-PG의 PostgreSQL 호환 연결을 기준으로 `jdbc:postgresql://...` 형태를 유지합니다.
+
+OpenSQL-PG 컨테이너는 `docker/opensql/vars.yml`을 사용해 로컬 개발용 `app` DB, `app` user, `local_password` password를 초기화합니다.
 
 ## 필요 조건
 
@@ -30,6 +32,12 @@ SPRING_PROFILES_ACTIVE=local
 
 ## DB 컨테이너 실행
 
+이미지를 먼저 내려받습니다.
+
+```bash
+docker pull tmaxopensql/postgres:14.6
+```
+
 ```bash
 docker compose up -d
 ```
@@ -40,7 +48,7 @@ docker compose up -d
 docker compose ps
 ```
 
-`docgrid-postgres`가 `healthy` 상태면 정상입니다.
+`local-opensql`이 `healthy` 상태면 정상입니다.
 
 ## DB 접속 정보
 
@@ -50,7 +58,7 @@ docker compose ps
 - User: `app`
 - Password: `local_password`
 - Schema: `public`
-- JDBC URL: `jdbc:postgresql://localhost:55432/app?currentSchema=public`
+- JDBC URL: `jdbc:postgresql://localhost:55432/app?currentSchema=public&sslmode=require`
 
 ## Spring Boot local profile 실행
 
@@ -62,15 +70,25 @@ docker compose ps
 
 ## Flyway migration 확인
 
-애플리케이션을 `local` profile로 실행하면 Flyway가 `src/main/resources/db/migration` 아래 migration을 적용합니다.
+애플리케이션을 `local` profile로 실행하면 OpenSQL-PG 컨테이너에 연결한 뒤 Flyway가 `src/main/resources/db/migration` 아래 migration을 적용합니다.
 
 현재 로컬 DB 연결 확인용 migration은 `V1__init_schema.sql`이며, 도메인 테이블이 아닌 `app_health_checks` 테이블만 생성합니다.
 
 컨테이너에서 직접 확인하려면 다음 명령어를 사용할 수 있습니다.
 
 ```bash
-docker compose exec postgres psql -U app -d app -c "select * from app_health_checks;"
+docker compose exec postgres /usr/pgsql-14/bin/psql -U app -d app -c "select * from app_health_checks;"
 ```
+
+## PostgreSQL fallback
+
+OpenSQL-PG 이미지 `tmaxopensql/postgres:14.6`을 실행할 수 없는 환경에서만 예비 옵션으로 일반 PostgreSQL 이미지를 사용할 수 있습니다.
+
+```yaml
+image: postgres:16
+```
+
+fallback을 사용할 때도 Spring Boot datasource URL은 `jdbc:postgresql://...` 형태를 유지하고, `.env`의 `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SCHEMA` 값으로 연결 정보를 조정합니다.
 
 ## DB 컨테이너 중지
 

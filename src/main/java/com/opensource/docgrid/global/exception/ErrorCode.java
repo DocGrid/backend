@@ -20,7 +20,19 @@ public enum ErrorCode {
     DATA_CONFLICT(HttpStatus.CONFLICT, "COMMON-008", "데이터 충돌이 발생했습니다."),
 
     // USER
-    USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER-001", "사용자를 찾을 수 없습니다.");
+    USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER-001", "사용자를 찾을 수 없습니다."),
+
+    // EMBEDDING MODEL
+    EMBEDDING_MODEL_NOT_CONFIGURED(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "EMBEDDING-MODEL-001",
+        "사용 가능한 임베딩 모델이 설정되지 않았습니다."
+    ),
+    MULTIPLE_ACTIVE_EMBEDDING_MODELS(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "EMBEDDING-MODEL-002",
+        "사용 가능한 임베딩 모델이 여러 개 설정되어 있습니다."
+    );
 
     private final HttpStatus httpStatus;
     private final String code;

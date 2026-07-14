@@ -43,35 +43,17 @@ public class JwtProvider {
                 .compact();
     }
 
-    public boolean validateToken(String token) {
+    public Claims getClaimsIfValid(String token) {
         try {
-            Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token);
-            return true;
+            return Jwts.parser()
+                    .verifyWith(secretKey)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
         } catch (JwtException | IllegalArgumentException e) {
             log.error("JWT 검증 실패: {}", e.getMessage());
-            return false;
+            return null;
         }
-    }
-
-    public Claims getClaims(String token) {
-        return Jwts.parser()
-                .verifyWith(secretKey)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
-    }
-
-    public String getEmail(String token) {
-        return getClaims(token).getSubject();
-    }
-
-    public Long getUserId(String token) {
-        return getClaims(token).get("userId", Long.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    public List<String> getRoles(String token) {
-        return getClaims(token).get("roles", List.class);
     }
 
     public long getExpirationSeconds() {

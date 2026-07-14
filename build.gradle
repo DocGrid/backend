@@ -42,5 +42,18 @@ dependencies {
 }
 
 tasks.named('test') {
-	useJUnitPlatform()
+	useJUnitPlatform {
+		excludeTags 'benchmark'
+	}
+}
+
+tasks.register('benchmarkTest', Test) {
+	group = 'verification'
+	description = 'OpenSQL 기반 benchmark 태그 테스트를 실행합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'benchmark'
+	}
+	outputs.upToDateWhen { false }
 }

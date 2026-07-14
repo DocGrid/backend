@@ -1,0 +1,86 @@
+package com.opensource.docgrid.domain.embedding.repository;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.util.List;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.context.ActiveProfiles;
+
+import com.opensource.docgrid.domain.embedding.entity.EmbeddingModel;
+import com.opensource.docgrid.domain.embedding.enums.EmbeddingProvider;
+import com.opensource.docgrid.domain.embedding.fixture.EmbeddingModelFixture;
+
+@DataJpaTest
+@ActiveProfiles("test")
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@DisplayName("EmbeddingModelRepository 테스트")
+class EmbeddingModelRepositoryTest {
+
+    @Autowired
+    private EmbeddingModelRepository embeddingModelRepository;
+
+    @Test
+    @DisplayName("active이면서 searchable인 기본 Mock 모델을 조회한다")
+    void findAllByIsActiveTrueAndIsSearchableTrue_returnsSeedModel() {
+        List<EmbeddingModel> result = embeddingModelRepository.findAllByIsActiveTrueAndIsSearchableTrue();
+
+        assertThat(result)
+            .extracting(EmbeddingModel::getModelName)
+            .containsExactly(EmbeddingModelFixture.MODEL_NAME);
+    }
+
+    @Test
+    @DisplayName("active 또는 searchable이 false인 모델은 조회하지 않는다")
+    void findAllByIsActiveTrueAndIsSearchableTrue_excludesUnavailableModels() {
+        EmbeddingModel activeOnly = EmbeddingModelFixture.createModel("active-only", true, false);
+        EmbeddingModel searchableOnly = EmbeddingModelFixture.createModel("searchable-only", false, true);
+        EmbeddingModel unavailable = EmbeddingModelFixture.createModel("unavailable", false, false);
+        embeddingModelRepository.saveAllAndFlush(List.of(activeOnly, searchableOnly, unavailable));
+
+        List<EmbeddingModel> result = embeddingModelRepository.findAllByIsActiveTrueAndIsSearchableTrue();
+
+        assertThat(result)
+            .extracting(EmbeddingModel::getModelName)
+            .doesNotContain("active-only", "searchable-only", "unavailable");
+    }
+
+    @Test
+    @DisplayName("provider, 모델 이름, 버전 조합으로 존재 여부를 확인한다")
+    void existsByProviderAndModelNameAndModelVersion_returnsTrue() {
+        boolean exists = embeddingModelRepository.existsByProviderAndModelNameAndModelVersion(
+            EmbeddingProvider.MOCK,
+            EmbeddingModelFixture.MODEL_NAME,
+            EmbeddingModelFixture.MODEL_VERSION
+        );
+
+        assertThat(exists).isTrue();
+    }
+
+    @Test
+    @DisplayName("provider, 모델 이름, 버전이 중복되면 저장할 수 없다")
+    void saveAndFlush_throws_when_identityIsDuplicated() {
+        EmbeddingModel first = EmbeddingModelFixture.createModel("duplicate-model", false, false);
+        EmbeddingModel duplicate = EmbeddingModelFixture.createModel("duplicate-model", false, false);
+        embeddingModelRepository.saveAndFlush(first);
+
+        assertThatThrownBy(() -> embeddingModelRepository.saveAndFlush(duplicate))
+            .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("active이면서 searchable인 모델을 두 개 저장할 수 없다")
+    void saveAndFlush_throws_when_multipleModelsAreActiveAndSearchable() {
+        EmbeddingModel duplicateActiveModel =
+            EmbeddingModelFixture.createModel("second-active-searchable", true, true);
+
+        assertThatThrownBy(() -> embeddingModelRepository.saveAndFlush(duplicateActiveModel))
+            .isInstanceOf(DataIntegrityViolationException.class);
+    }
+}

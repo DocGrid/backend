@@ -1,5 +1,7 @@
 package com.opensource.docgrid.domain.embedding.entity;
 
+import java.util.Objects;
+
 import com.opensource.docgrid.domain.embedding.enums.DistanceMetric;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingProvider;
 import com.opensource.docgrid.domain.embedding.enums.VectorStorageStrategy;
@@ -31,8 +33,8 @@ import lombok.NoArgsConstructor;
  * index: is_active, is_searchable.
  *
  * <p>주의사항: 1단계 MVP는 active이면서 searchable인 모델을 단 1개만 사용하는 것을 전제로 한다.
- * TODO: 이를 애플리케이션 레벨 검증 또는 DB partial unique index로 보강해 "active+searchable 모델은 항상 1개"임을
- * 강제할 필요가 있다. dimension은 모델별로 고정된 값이며 embeddings.dimension과 반드시 일치해야 한다.
+ * active이면서 searchable인 모델은 DB partial unique index와 조회 서비스의 개수 검증으로 중복을 방지한다.
+ * dimension은 모델별로 고정된 값이며 embeddings.dimension과 반드시 일치해야 한다.
  * configJson은 Hibernate JSON 타입 매핑이 없어 TEXT로 임시 매핑했으며, 추후 OpenSQL JSON / Hibernate JSON
  * 매핑으로 교체가 필요하다.
  */
@@ -93,14 +95,28 @@ public class EmbeddingModel extends BaseEntity {
     public EmbeddingModel(EmbeddingProvider provider, String modelName, String modelVersion, int dimension,
                            DistanceMetric distanceMetric, boolean isActive, boolean isSearchable,
                            VectorStorageStrategy vectorStorageStrategy, String configJson) {
-        this.provider = provider;
-        this.modelName = modelName;
-        this.modelVersion = modelVersion;
+        if (dimension <= 0) {
+            throw new IllegalArgumentException("dimension은 0보다 커야 합니다.");
+        }
+
+        this.provider = Objects.requireNonNull(provider, "provider는 필수입니다.");
+        this.modelName = requireText(modelName, "modelName");
+        this.modelVersion = requireText(modelVersion, "modelVersion");
         this.dimension = dimension;
-        this.distanceMetric = distanceMetric;
+        this.distanceMetric = Objects.requireNonNull(distanceMetric, "distanceMetric은 필수입니다.");
         this.isActive = isActive;
         this.isSearchable = isSearchable;
-        this.vectorStorageStrategy = vectorStorageStrategy;
+        this.vectorStorageStrategy = Objects.requireNonNull(
+                vectorStorageStrategy,
+                "vectorStorageStrategy는 필수입니다."
+        );
         this.configJson = configJson;
+    }
+
+    private static String requireText(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(fieldName + "은(는) 공백일 수 없습니다.");
+        }
+        return value;
     }
 }

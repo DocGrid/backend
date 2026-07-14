@@ -21,6 +21,17 @@ public enum ErrorCode {
 
     // USER
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER-001", "사용자를 찾을 수 없습니다."),
+    EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "USER-002", "이미 사용 중인 이메일입니다."),
+    ACCOUNT_INACTIVE(HttpStatus.FORBIDDEN, "USER-003", "비활성화된 계정입니다."),
+    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "USER-004", "이메일 또는 비밀번호가 올바르지 않습니다."),
+
+    // DEPARTMENT
+    DEPARTMENT_NOT_FOUND(HttpStatus.BAD_REQUEST, "DEPT-001", "존재하지 않는 부서입니다."),
+
+    // ROLE
+    ROLE_NOT_FOUND(HttpStatus.BAD_REQUEST, "ROLE-001", "존재하지 않는 역할입니다."),
+    PERMISSION_DENIED(HttpStatus.FORBIDDEN, "ROLE-002", "관리자만 접근할 수 있습니다."),
+    ROLE_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "ROLE-003", "이미 부여된 역할입니다."),
 
     // EMBEDDING MODEL
     EMBEDDING_MODEL_NOT_CONFIGURED(

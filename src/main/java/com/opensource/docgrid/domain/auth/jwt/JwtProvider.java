@@ -1,0 +1,62 @@
+package com.opensource.docgrid.domain.auth.jwt;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Date;
+import java.util.List;
+
+import javax.crypto.SecretKey;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+@Component
+public class JwtProvider {
+
+    private final SecretKey secretKey;
+    private final long expirationSeconds;
+
+    public JwtProvider(
+            @Value("${jwt.secret}") String secret,
+            @Value("${jwt.expiration}") long expirationSeconds) {
+        this.secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        this.expirationSeconds = expirationSeconds;
+    }
+
+    public String generateToken(Long userId, String email, List<String> roles) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + expirationSeconds * 1000);
+
+        return Jwts.builder()
+                .subject(email)
+                .claim("userId", userId)
+                .claim("roles", roles)
+                .issuedAt(now)
+                .expiration(expiry)
+                .signWith(secretKey)
+                .compact();
+    }
+
+    public Claims getClaimsIfValid(String token) {
+        try {
+            return Jwts.parser()
+                    .verifyWith(secretKey)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+        } catch (JwtException | IllegalArgumentException e) {
+            log.error("JWT 검증 실패: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    public long getExpirationSeconds() {
+        return expirationSeconds;
+    }
+}

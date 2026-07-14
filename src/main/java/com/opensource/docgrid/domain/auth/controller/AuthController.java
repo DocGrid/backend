@@ -19,6 +19,7 @@ import com.opensource.docgrid.global.common.response.ApiResponse;
 import com.opensource.docgrid.global.common.response.ResponseUtils;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -46,7 +47,7 @@ public class AuthController {
 
     @Operation(summary = "내 정보 조회", description = "현재 로그인한 사용자의 정보를 반환합니다. Authorization: Bearer {token} 헤더가 필요합니다.")
     @GetMapping("/me")
-    public ResponseEntity<ApiResponse<MeResponse>> getMe(@CurrentUser Long userId) {
+    public ResponseEntity<ApiResponse<MeResponse>> getMe(@Parameter(hidden = true) @CurrentUser Long userId) {
         return ResponseUtils.ok(authQueryService.getMe(userId));
     }
 }

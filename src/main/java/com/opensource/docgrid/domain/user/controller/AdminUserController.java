@@ -15,6 +15,7 @@ import com.opensource.docgrid.global.common.response.ApiResponse;
 import com.opensource.docgrid.global.common.response.ResponseUtils;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +32,7 @@ public class AdminUserController {
     @PostMapping("/{userId}/roles")
     public ResponseEntity<ApiResponse<UserRoleResponse>> assignRole(
             @PathVariable Long userId,
-            @CurrentUser Long adminUserId,
+            @Parameter(hidden = true) @CurrentUser Long adminUserId,
             @RequestBody @Valid AssignRoleRequest request) {
         return ResponseUtils.ok(userRoleCommandService.assignRole(userId, adminUserId, request));
     }

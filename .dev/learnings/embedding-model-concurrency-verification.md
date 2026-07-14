@@ -28,7 +28,7 @@ Partial Index가 없는 테스트 전용 비교 테이블에서 두 독립 트�
 성공: 2
 실패: 0
 최종 true + true: 2
-전체 시도 처리시간 median: 1.540792 ms
+전체 시도 처리시간 median: 4.472063 ms
 ```
 
 따라서 조회 후 저장 사이의 경쟁 조건 때문에 애플리케이션 사전 조회만으로 단일성을
@@ -133,7 +133,7 @@ Index: uk_embedding_models_one_active_searchable
 | 불변식 위반 | 있음 | 0회 |
 | 실패 SQLSTATE | 해당 없음 | 23505 |
 | 실패 Index | 해당 없음 | uk_embedding_models_one_active_searchable |
-| 전체 시도 처리시간 median | 1.540792 ms | 1.265875 ms |
+| 전체 시도 처리시간 median | 4.472063 ms | 1.776959 ms |
 
 DB 제약 적용 후 한 요청이 실패하는 것은 시스템 장애가 아니라 잘못된 중복 상태를 차단한
 결과다. 처리시간은 서로 다른 반복 조건의 로컬 관찰값이므로 성능 우열 근거로 사용하지 않는다.
@@ -182,8 +182,8 @@ Index: idx_benchmark_is_searchable
 Filter: is_active
 Rows removed by filter: 13,334
 Actual rows: 1
-Planning time: 0.034 ms
-Execution time: 1.065 ms
+Planning time: 0.015 ms
+Execution time: 0.899 ms
 Shared hit blocks: 748
 Shared read blocks: 0
 ```
@@ -194,8 +194,8 @@ Shared read blocks: 0
 Nodes: Bitmap Heap Scan -> Bitmap Index Scan
 Index: uk_benchmark_one_active_searchable
 Actual rows: 1
-Planning time: 0.015 ms
-Execution time: 0.010 ms
+Planning time: 0.014 ms
+Execution time: 0.009 ms
 Shared hit blocks: 2
 Shared read blocks: 0
 ```
@@ -210,9 +210,9 @@ Synthetic rows: 100,000
 Warm-up: 5회
 Measured runs: 20회
 
-적용 전: median 1.211417 ms / min 1.052959 ms / max 1.927000 ms
-적용 후: median 0.243771 ms / min 0.200250 ms / max 0.325500 ms
-관찰된 median 변화율: 79.877% 감소
+적용 전: median 1.084917 ms / min 1.037958 ms / max 1.297708 ms
+적용 후: median 0.276500 ms / min 0.224708 ms / max 0.467959 ms
+관찰된 median 변화율: 74.514% 감소
 
 Table size: 6,029,312 bytes
 Indexes before: 3,596,288 bytes
@@ -236,8 +236,8 @@ Partial Index: 16,384 bytes
 | 실패 | 0 | 0 |
 | 오류 | 0 | 0 |
 | 스킵 | 0 | 0 |
-| XML 테스트 시간 합계 | 0.445 s | 0.547 s |
-| 별도 Benchmark | 없음 | 1개, 0.785 s |
+| XML 테스트 시간 합계 | 0.445 s | 0.700 s |
+| 별도 Benchmark | 없음 | 1개, 0.802 s |
 
 테스트 수 증가는 성능 개선이 아니라 검증 및 회귀 방지 범위가 넓어진 것이다.
 

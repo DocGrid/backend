@@ -26,6 +26,22 @@ Entity entity = repository.findById(id)
 - `ErrorCode`에 HTTP 상태코드와 메시지 함께 정의
 - `GlobalExceptionHandler`에서 일괄 처리
 
+## 로깅 규칙
+- 단순 Not Found는 로그 생략 (GlobalExceptionHandler에서 처리됨)
+- 중요한 비즈니스 로직 실패, 시스템 설정 오류, 외부 연동 실패는 예외 던지기 전에 `log.error()` 필수
+
+```java
+// 중요한 예외 — log.error 추가
+if (activeModels.isEmpty()) {
+    log.error("사용 가능한 임베딩 모델이 설정되지 않았습니다.");
+    throw new DocGridException(ErrorCode.EMBEDDING_MODEL_NOT_CONFIGURED);
+}
+
+// 단순 Not Found — log 생략
+User user = userRepository.findById(id)
+    .orElseThrow(() -> new DocGridException(ErrorCode.USER_NOT_FOUND));
+```
+
 ## Service 패턴
 ```java
 @Transactional(readOnly = true)
@@ -70,8 +86,17 @@ public class XxxController {
 
 ## Swagger 컨벤션
 - 클래스: `@Tag(name = "도메인명", description = "한 줄 설명")`
-- 메서드: `@Operation(summary = "짧은 요약")` — description이 summary와 같으면 생략
+- 메서드: `@Operation(summary = "짧은 요약", description = "상세 설명")` — description은 항상 작성
+  - summary: 한 줄 동사+목적어 (예: "부서 목록 조회")
+  - description: 호출 시점, 파라미터 조건, 특이사항, 주의사항 등 프론트가 알아야 할 내용 작성
 - Response DTO: `@Schema(description = "필드 설명")`
+
+```java
+@Operation(
+    summary = "약 등록",
+    description = "약을 1개 이상 등록합니다. 단건이면 리스트에 1개, 여러 개면 여러 개 담아서 보내세요. 하나라도 실패하면 전체 롤백됩니다."
+)
+```
 
 ## Converter 패턴
 - 위치: `domain/{도메인}/converter/XxxConverter.java`

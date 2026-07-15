@@ -17,7 +17,7 @@ public interface UserDocumentAccessCacheRepository extends JpaRepository<UserDoc
     Optional<UserDocumentAccessCache> findByUserIdAndDocumentIdAndSourceTypeAndSourceId(
             Long userId, Long documentId, AccessSourceType sourceType, Long sourceId);
 
-    @Modifying
+    @Modifying(clearAutomatically = true)
     @Query("""
             UPDATE UserDocumentAccessCache c
             SET c.invalidatedAt = CURRENT_TIMESTAMP
@@ -26,7 +26,7 @@ public interface UserDocumentAccessCacheRepository extends JpaRepository<UserDoc
     int bulkInvalidateBySource(@Param("sourceType") AccessSourceType sourceType,
                                @Param("sourceId") Long sourceId);
 
-    @Modifying
+    @Modifying(clearAutomatically = true)
     @Query("""
             UPDATE UserDocumentAccessCache c
             SET c.canRead = :canRead, c.canWrite = :canWrite, c.canAdmin = :canAdmin,

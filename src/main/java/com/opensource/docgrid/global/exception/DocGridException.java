@@ -16,4 +16,9 @@ public class DocGridException extends RuntimeException {
         super(customMessage != null ? customMessage : errorCode.getMessage());
         this.errorCode = errorCode;
     }
+
+    public DocGridException(ErrorCode errorCode, Throwable cause) {
+        super(errorCode.getMessage(), cause);
+        this.errorCode = errorCode;
+    }
 }

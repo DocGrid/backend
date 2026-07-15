@@ -39,6 +39,26 @@ public enum ErrorCode {
 
     // DOCUMENT
     DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "DOCUMENT-001", "문서를 찾을 수 없습니다."),
+    EMPTY_FILE(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-001", "빈 파일은 업로드할 수 없습니다."),
+    FILE_SIZE_EXCEEDED(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-002", "파일 크기 제한을 초과했습니다."),
+    UNSUPPORTED_FILE_EXTENSION(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-003", "지원하지 않는 파일 확장자입니다."),
+    UNSUPPORTED_FILE_CONTENT_TYPE(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-004", "지원하지 않는 파일 형식입니다."),
+    INVALID_FILE_NAME(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-005", "유효하지 않은 파일명입니다."),
+    FILE_HASH_CALCULATION_FAILED(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "DOCUMENT-FILE-006",
+        "파일 해시를 계산하지 못했습니다."
+    ),
+    FILE_STORAGE_FAILED(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        "DOCUMENT-STORAGE-001",
+        "파일 저장소를 사용할 수 없습니다."
+    ),
+    FILE_OBJECT_RESOLUTION_FAILED(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "DOCUMENT-UPLOAD-001",
+        "파일 정보를 저장하지 못했습니다."
+    ),
 
     // PERMISSION
     INVALID_TARGET_TYPE(HttpStatus.BAD_REQUEST, "PERMISSION-001", "target_type과 ID 필드 조합이 올바르지 않습니다."),

@@ -5,6 +5,14 @@ spring:
     name: docgrid
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
+
+document:
+  upload:
+    max-file-size: 10MB
 
 server:
   port: 8080

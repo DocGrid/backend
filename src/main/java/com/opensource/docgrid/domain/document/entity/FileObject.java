@@ -31,10 +31,10 @@ import lombok.NoArgsConstructor;
  * 이유: 실제 파일 바이너리는 DB에 저장하지 않고 MinIO/S3/local 등 오브젝트 스토리지에 저장하므로,
  * 그 위치(bucket/objectKey)와 무결성 검증용 해시만 이 테이블에 보관한다.
  * 관계: document_versions.file_object_id가 이 테이블을 참조한다(하나의 파일이 여러 버전에서 재사용될 수 있음).
- * unique 제약: 동일 storage_provider/bucket/objectKey 조합은 유일해야 한다.
- * index: file_hash+file_size 조합, uploaded_by에 대한 조회 인덱스를 둔다.
+ * unique 제약: 동일 storage_provider/bucket/objectKey 조합과 file_hash/file_size 조합은 각각 유일해야 한다.
+ * index: uploaded_by에 대한 조회 인덱스를 둔다.
  *
- * <p>주의사항: file_hash+file_size가 동일한 경우 동일 파일로 간주하여 재사용(중복 업로드 방지)하는 것을 고려할 수 있다.
+ * <p>주의사항: file_hash+file_size가 동일한 경우 동일 파일로 간주하여 기존 FileObject를 재사용한다.
  */
 @Getter
 @Entity
@@ -45,10 +45,13 @@ import lombok.NoArgsConstructor;
                 @UniqueConstraint(
                         name = "uk_file_objects_storage_provider_bucket_name_object_key",
                         columnNames = {"storage_provider", "bucket_name", "object_key"}
+                ),
+                @UniqueConstraint(
+                        name = "uk_file_objects_file_hash_file_size",
+                        columnNames = {"file_hash", "file_size"}
                 )
         },
         indexes = {
-                @Index(name = "idx_file_objects_file_hash_file_size", columnList = "file_hash, file_size"),
                 @Index(name = "idx_file_objects_uploaded_by", columnList = "uploaded_by")
         }
 )

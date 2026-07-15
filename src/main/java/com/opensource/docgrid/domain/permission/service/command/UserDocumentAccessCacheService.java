@@ -23,7 +23,7 @@ public class UserDocumentAccessCacheService {
 
     private final UserDocumentAccessCacheRepository cacheRepository;
 
-    // USER 권한 캐시 저장 (이미 있으면 갱신, 없으면 신규 insert)
+    // USER 권한 캐시 저장 (이미 있으면 갱신, 없으면 신규 insert), 문서 단건 권한 부여 시 호출
     public void grantUserPermission(User user, Document document,
                                     boolean canRead, boolean canWrite, boolean canAdmin,
                                     AccessSourceType sourceType, Long sourceId,
@@ -51,7 +51,7 @@ public class UserDocumentAccessCacheService {
                 );
     }
 
-    // USER 권한 캐시 무효화 (invalidated_at 설정)
+    // USER 권한 캐시 무효화 (invalidated_at 설정), 문서 단건 권한 회수 시 호출
     public void revokeUserPermission(Long userId, Long documentId,
                                      AccessSourceType sourceType, Long sourceId) {
         cacheRepository.findByUserIdAndDocumentIdAndSourceTypeAndSourceId(
@@ -59,7 +59,7 @@ public class UserDocumentAccessCacheService {
                 .ifPresent(UserDocumentAccessCache::invalidate);
     }
 
-    // 컬렉션 권한 부여 시 해당 권한에서 파생된 캐시 전체 일괄 갱신 (N+1 방지)
+    // 컬렉션 권한 부여 시 해당 권한에서 파생된 캐시 전체 일괄 갱신 (N+1 방지), 컬렉션에 속한 문서가 많을 경우 캐시를 한 번에 갱신
     public void bulkGrantUserPermission(User user, List<Document> documents,
                                         boolean canRead, boolean canWrite, boolean canAdmin,
                                         AccessSourceType sourceType, Long sourceId,
@@ -93,7 +93,7 @@ public class UserDocumentAccessCacheService {
         }
     }
 
-    // 컬렉션 권한 회수 시 해당 권한에서 파생된 캐시 전체 일괄 무효화 (N+1 방지)
+    // 컬렉션 권한 회수 시 해당 권한에서 파생된 캐시 전체 일괄 무효화 (N+1 방지), 컬렉션에 속한 문서가 많을 경우 캐시를 한 번에 무효화
     public void bulkRevokeBySource(AccessSourceType sourceType, Long sourceId) {
         cacheRepository.bulkInvalidateBySource(sourceType, sourceId);
     }

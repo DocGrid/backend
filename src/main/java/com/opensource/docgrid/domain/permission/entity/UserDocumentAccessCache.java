@@ -119,4 +119,17 @@ public class UserDocumentAccessCache extends BaseEntity {
         this.invalidatedAt = invalidatedAt;
         this.expiresAt = expiresAt;
     }
+
+    public void grant(boolean canRead, boolean canWrite, boolean canAdmin, LocalDateTime expiresAt) {
+        this.canRead = canRead;
+        this.canWrite = canWrite;
+        this.canAdmin = canAdmin;
+        this.invalidatedAt = null;
+        this.computedAt = LocalDateTime.now();
+        this.expiresAt = expiresAt;
+    }
+
+    public void invalidate() {
+        this.invalidatedAt = LocalDateTime.now();
+    }
 }

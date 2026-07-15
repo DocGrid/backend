@@ -5,6 +5,7 @@ import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 
+@Schema(description = "컬렉션 생성 요청")
 public record CreateCollectionRequest(
         @Schema(description = "컬렉션 이름") @NotBlank String name,
         @Schema(description = "컬렉션 설명") String description,

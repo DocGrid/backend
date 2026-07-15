@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+@Schema(description = "컬렉션 문서 추가 결과")
 public record CollectionDocumentResponse(
         @Schema(description = "컬렉션 ID") Long collectionId,
         @Schema(description = "문서 ID") Long documentId,

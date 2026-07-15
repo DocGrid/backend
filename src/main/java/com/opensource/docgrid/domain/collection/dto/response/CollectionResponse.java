@@ -7,6 +7,7 @@ import com.opensource.docgrid.domain.document.enums.VisibilityType;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+@Schema(description = "컬렉션 정보")
 public record CollectionResponse(
         @Schema(description = "컬렉션 ID") Long collectionId,
         @Schema(description = "컬렉션 이름") String name,

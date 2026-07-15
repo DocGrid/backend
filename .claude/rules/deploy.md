@@ -12,6 +12,12 @@ globs: "docker-compose*.yml, deploy.sh, .github/workflows/**, Dockerfile"
 - `develop` 직접 push 금지 — PR + 리뷰 후 merge
 - 커밋 메시지: `feat:`, `fix:`, `chore:`, `refactor:`, `docs:` 접두사
 
+## 커밋 단위 규칙
+- 프로덕션 코드와 테스트 코드는 반드시 **별도 커밋**으로 분리
+- 이슈 하나도 논리적 단위별로 나눠서 커밋 (뭉쳐서 1~2개로 끝내지 않는다)
+- 권장 분리 기준: `Repository 쿼리 추가` → `Service 구현` → `TODO 교체` → `테스트`
+- 작업 시작 전 커밋 계획을 먼저 제시하고 단계마다 커밋
+
 ## 환경 설정
 - `application.yml` — 공통 설정
 - `application-local.yml` — 로컬 전용 (DB 접속정보 환경변수로 주입)

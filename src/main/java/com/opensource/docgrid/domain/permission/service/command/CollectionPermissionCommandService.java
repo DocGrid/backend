@@ -10,6 +10,7 @@ import com.opensource.docgrid.domain.collection.entity.CollectionDocument;
 import com.opensource.docgrid.domain.collection.entity.DocumentCollection;
 import com.opensource.docgrid.domain.collection.repository.CollectionDocumentRepository;
 import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
+import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.permission.converter.PermissionConverter;
 import com.opensource.docgrid.domain.permission.dto.request.GrantPermissionRequest;
 import com.opensource.docgrid.domain.permission.dto.response.CollectionPermissionResponse;
@@ -114,12 +115,7 @@ public class CollectionPermissionCommandService {
         }
 
         if (permission.getTargetType() == PermissionTargetType.USER) {
-            Long targetUserId = permission.getUser().getId();
-            List<CollectionDocument> docs = collectionDocumentRepository.findAllByCollectionId(collectionId);
-            for (CollectionDocument cd : docs) {
-                cacheService.revokeUserPermission(targetUserId, cd.getDocument().getId(),
-                        AccessSourceType.DIRECT_COLLECTION_PERMISSION, permissionId);
-            }
+            cacheService.bulkRevokeBySource(AccessSourceType.DIRECT_COLLECTION_PERMISSION, permissionId);
         }
 
         collectionPermissionRepository.delete(permission);
@@ -146,14 +142,13 @@ public class CollectionPermissionCommandService {
         };
     }
 
-    // USER 권한 부여 시 컬렉션 내 모든 문서에 캐시 갱신
+    // USER 권한 부여 시 컬렉션 내 모든 문서에 캐시 일괄 갱신 (N+1 방지)
     private void updateCacheForCollection(Long collectionId, User targetUser, boolean[] permissions,
                                           Long sourceId, LocalDateTime expiresAt) {
-        List<CollectionDocument> docs = collectionDocumentRepository.findAllByCollectionId(collectionId);
-        for (CollectionDocument cd : docs) {
-            cacheService.grantUserPermission(targetUser, cd.getDocument(),
-                    permissions[0], permissions[1], permissions[2],
-                    AccessSourceType.DIRECT_COLLECTION_PERMISSION, sourceId, expiresAt);
-        }
+        List<Document> documents = collectionDocumentRepository.findAllByCollectionId(collectionId)
+                .stream().map(CollectionDocument::getDocument).toList();
+        cacheService.bulkGrantUserPermission(targetUser, documents,
+                permissions[0], permissions[1], permissions[2],
+                AccessSourceType.DIRECT_COLLECTION_PERMISSION, sourceId, expiresAt);
     }
 }

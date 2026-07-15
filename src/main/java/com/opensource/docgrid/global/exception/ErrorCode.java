@@ -33,6 +33,13 @@ public enum ErrorCode {
     PERMISSION_DENIED(HttpStatus.FORBIDDEN, "ROLE-002", "관리자만 접근할 수 있습니다."),
     ROLE_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "ROLE-003", "이미 부여된 역할입니다."),
 
+    // COLLECTION
+    COLLECTION_NOT_FOUND(HttpStatus.NOT_FOUND, "COLLECTION-001", "컬렉션을 찾을 수 없습니다."),
+    COLLECTION_DOCUMENT_ALREADY_EXISTS(HttpStatus.CONFLICT, "COLLECTION-002", "이미 컬렉션에 추가된 문서입니다."),
+
+    // DOCUMENT
+    DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "DOCUMENT-001", "문서를 찾을 수 없습니다."),
+
     // EMBEDDING MODEL
     EMBEDDING_MODEL_NOT_CONFIGURED(
         HttpStatus.INTERNAL_SERVER_ERROR,

@@ -8,6 +8,8 @@ import static org.mockito.BDDMockito.then;
 
 import java.util.Optional;
 
+import org.mockito.ArgumentCaptor;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -70,7 +72,12 @@ class CollectionCommandServiceTest {
         CollectionResponse result = collectionCommandService.createCollection(CollectionFixture.USER_ID, request);
 
         assertThat(result).isEqualTo(expected);
-        then(collectionRepository).should().save(any(DocumentCollection.class));
+        ArgumentCaptor<DocumentCollection> captor = ArgumentCaptor.forClass(DocumentCollection.class);
+        then(collectionRepository).should().save(captor.capture());
+        DocumentCollection saved = captor.getValue();
+        assertThat(saved.getName()).isEqualTo(CollectionFixture.COLLECTION_NAME);
+        assertThat(saved.getDescription()).isEqualTo(CollectionFixture.COLLECTION_DESCRIPTION);
+        assertThat(saved.getOwner()).isEqualTo(owner);
     }
 
     @Test

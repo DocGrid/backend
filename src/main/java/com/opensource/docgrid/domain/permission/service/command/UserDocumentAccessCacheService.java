@@ -1,6 +1,9 @@
 package com.opensource.docgrid.domain.permission.service.command;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,5 +57,44 @@ public class UserDocumentAccessCacheService {
         cacheRepository.findByUserIdAndDocumentIdAndSourceTypeAndSourceId(
                 userId, documentId, sourceType, sourceId)
                 .ifPresent(UserDocumentAccessCache::invalidate);
+    }
+
+    // 컬렉션 권한 부여 시 해당 권한에서 파생된 캐시 전체 일괄 갱신 (N+1 방지)
+    public void bulkGrantUserPermission(User user, List<Document> documents,
+                                        boolean canRead, boolean canWrite, boolean canAdmin,
+                                        AccessSourceType sourceType, Long sourceId,
+                                        LocalDateTime expiresAt) {
+        // 기존 캐시 한 번에 갱신
+        cacheRepository.bulkUpdateBySource(user.getId(), sourceType, sourceId,
+                canRead, canWrite, canAdmin, expiresAt);
+
+        // 새로 추가된 문서(캐시 없는 것)만 배치 INSERT
+        Set<Long> cachedDocIds = Set.copyOf(
+                cacheRepository.findDocumentIdsByUserIdAndSourceTypeAndSourceId(
+                        user.getId(), sourceType, sourceId));
+
+        List<UserDocumentAccessCache> newCaches = documents.stream()
+                .filter(d -> !cachedDocIds.contains(d.getId()))
+                .map(d -> UserDocumentAccessCache.builder()
+                        .user(user)
+                        .document(d)
+                        .canRead(canRead)
+                        .canWrite(canWrite)
+                        .canAdmin(canAdmin)
+                        .sourceType(sourceType)
+                        .sourceId(sourceId)
+                        .computedAt(LocalDateTime.now())
+                        .expiresAt(expiresAt)
+                        .build())
+                .collect(Collectors.toList());
+
+        if (!newCaches.isEmpty()) {
+            cacheRepository.saveAll(newCaches);
+        }
+    }
+
+    // 컬렉션 권한 회수 시 해당 권한에서 파생된 캐시 전체 일괄 무효화 (N+1 방지)
+    public void bulkRevokeBySource(AccessSourceType sourceType, Long sourceId) {
+        cacheRepository.bulkInvalidateBySource(sourceType, sourceId);
     }
 }

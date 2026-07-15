@@ -30,7 +30,7 @@ public enum ErrorCode {
 
     // ROLE
     ROLE_NOT_FOUND(HttpStatus.BAD_REQUEST, "ROLE-001", "존재하지 않는 역할입니다."),
-    PERMISSION_DENIED(HttpStatus.FORBIDDEN, "ROLE-002", "관리자만 접근할 수 있습니다."),
+    PERMISSION_DENIED(HttpStatus.FORBIDDEN, "ROLE-002", "접근 권한이 없습니다."),
     ROLE_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "ROLE-003", "이미 부여된 역할입니다."),
 
     // COLLECTION
@@ -39,6 +39,11 @@ public enum ErrorCode {
 
     // DOCUMENT
     DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "DOCUMENT-001", "문서를 찾을 수 없습니다."),
+
+    // PERMISSION
+    INVALID_TARGET_TYPE(HttpStatus.BAD_REQUEST, "PERMISSION-001", "target_type과 ID 필드 조합이 올바르지 않습니다."),
+    COLLECTION_PERMISSION_NOT_FOUND(HttpStatus.NOT_FOUND, "PERMISSION-002", "컬렉션 권한을 찾을 수 없습니다."),
+    DOCUMENT_PERMISSION_NOT_FOUND(HttpStatus.NOT_FOUND, "PERMISSION-003", "문서 권한을 찾을 수 없습니다."),
 
     // EMBEDDING MODEL
     EMBEDDING_MODEL_NOT_CONFIGURED(

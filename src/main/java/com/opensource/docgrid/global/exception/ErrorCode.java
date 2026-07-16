@@ -39,6 +39,18 @@ public enum ErrorCode {
 
     // DOCUMENT
     DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "DOCUMENT-001", "문서를 찾을 수 없습니다."),
+    DOCUMENT_VERSION_SAME_CONTENT(
+        HttpStatus.CONFLICT, "DOCUMENT-VERSION-001", "현재 버전과 동일한 파일입니다."
+    ),
+    DOCUMENT_VERSION_IN_PROGRESS(
+        HttpStatus.CONFLICT, "DOCUMENT-VERSION-002", "처리 중인 문서 버전이 있습니다."
+    ),
+    DOCUMENT_VERSION_NOT_ALLOWED(
+        HttpStatus.CONFLICT, "DOCUMENT-VERSION-003", "현재 문서 상태에서는 새 버전을 추가할 수 없습니다."
+    ),
+    DOCUMENT_VERSION_TYPE_MISMATCH(
+        HttpStatus.BAD_REQUEST, "DOCUMENT-VERSION-004", "기존 문서와 다른 파일 형식은 업로드할 수 없습니다."
+    ),
     EMPTY_FILE(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-001", "빈 파일은 업로드할 수 없습니다."),
     FILE_SIZE_EXCEEDED(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-002", "파일 크기 제한을 초과했습니다."),
     UNSUPPORTED_FILE_EXTENSION(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-003", "지원하지 않는 파일 확장자입니다."),

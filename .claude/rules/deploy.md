@@ -29,6 +29,20 @@ globs: "docker-compose*.yml, deploy.sh, .github/workflows/**, Dockerfile"
 - 마이그레이션 파일은 한 번 적용 후 수정 금지 — 새 파일 추가
 - `spring.jpa.hibernate.ddl-auto=validate` 유지 (Flyway가 스키마 관리)
 
+## 문서 관리
+
+### PR 설계 문서
+- 위치: `docs/`
+- 파일명: `{github아이디}-#{이슈번호}-{설명}.md` (예: `chelung-#29-collection-management.md`)
+- 기능 구현 PR과 함께 작성 — 설계 배경, API 명세, 구현 구조, 주요 설계 결정 포함
+
+### 테스트 결과 문서
+- 위치: `docs/test-results/`
+- 파일명: 설계 문서와 동일한 이름 사용
+- 기능 머지 후 **별도 테스트 이슈**로 분리해서 작성
+- Swagger 수동 테스트(시나리오별 결과, DB 검증)와 `./gradlew test` 자동 테스트 결과를 **하나의 문서**에 통합 작성
+- 섹션 구성 참고: 테스트 목적 → 환경/제약 → 테스트 데이터 → 시나리오별 결과 → 자동 테스트 결과 → 최종 결론
+
 ## 빌드
 ```bash
 ./gradlew build -x test   # CI용 (테스트 제외)

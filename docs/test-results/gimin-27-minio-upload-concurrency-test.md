@@ -1,8 +1,8 @@
-# PR 2.2 실제 MinIO 업로드 동시성 테스트 결과
+# 이슈 #27 실제 MinIO 업로드 동시성 테스트 결과
 
 ## 1. 검증 목적
 
-PR 2와 PR 2.1에서 구현한 파일 중복 제거 및 후보 Object 보상 삭제가 실제 MinIO에서도 동작하는지 검증했다.
+문서 업로드와 새 버전 업로드에 구현된 파일 중복 제거 및 후보 Object 보상 삭제가 실제 MinIO에서도 동작하는지 검증했다.
 
 기존 통합 테스트는 실제 OpenSQL/PostgreSQL을 사용했지만 `FileStorageService`는 Mock이었다. 따라서 삭제 메서드가 호출됐다는 사실만 확인할 수 있었고, 경합 패자의 Object가 실제 MinIO에서 사라졌는지는 보장하지 못했다.
 
@@ -216,7 +216,7 @@ POST /api/documents
 Content-Type: multipart/form-data
 ```
 
-PR 2.2 시점에는 Worker와 인덱싱 완료 API가 없으므로 테스트에서 다음 쿼리로 초기 Version의 완료 상태를 모의했다.
+현재 Worker와 인덱싱 완료 API가 없으므로 테스트에서 다음 쿼리로 초기 Version의 완료 상태를 모의했다.
 
 ```sql
 UPDATE document_versions
@@ -373,7 +373,7 @@ current_version_id는 Version 1 유지
 
 ## 7. Version Facade 보상 분기 단위 테스트
 
-PR 2.1에서 추가된 Version Facade의 보상 경계도 6개 단위 테스트로 고정했다.
+새 버전 업로드 Facade의 보상 경계도 6개 단위 테스트로 고정했다.
 
 | 상황 | 검증 결과 |
 |---|---|
@@ -496,7 +496,7 @@ MinIO bucket 목록에서도 `docgrid-pr22-*` bucket이 남아 있지 않았다.
 - 남은 Object의 크기, Content-Type, SHA-256도 DB 값과 일치한다.
 - 기본 테스트는 MinIO 의존 없이 실행되고 실제 MinIO 검증은 전용 task로 분리된다.
 
-Mock에서 `delete()` 호출을 검증한 것과 실제 Object가 존재하지 않는 것을 검증한 것은 서로 다른 보장이다. PR 2.2에서는 후자의 보장까지 자동화했다.
+Mock에서 `delete()` 호출을 검증한 것과 실제 Object가 존재하지 않는 것을 검증한 것은 서로 다른 보장이다. 이번 작업에서는 후자의 보장까지 자동화했다.
 
 ## 11. 남아 있는 한계
 

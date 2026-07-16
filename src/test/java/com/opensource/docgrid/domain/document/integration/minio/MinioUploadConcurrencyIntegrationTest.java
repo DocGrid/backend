@@ -158,7 +158,7 @@ class MinioUploadConcurrencyIntegrationTest {
         assertThat(deletedCandidates.get(0).objectKey()).isNotEqualTo(databaseObjectKey);
         assertObjectMatches(databaseObjectKey, fileHash, fileSize, "text/plain");
 
-        log.info("PR 2.2 신규 문서 경합 결과: documents=[{}, {}], versions=[{}, {}], fileObject={}, "
+        log.info("이슈 #27 신규 문서 경합 결과: documents=[{}, {}], versions=[{}, {}], fileObject={}, "
                 + "storedCandidates={}, deletedCandidate={}, remainingObject={}",
             firstResponse.documentId(), secondResponse.documentId(),
             firstResponse.documentVersionId(), secondResponse.documentVersionId(),
@@ -227,7 +227,7 @@ class MinioUploadConcurrencyIntegrationTest {
         )).isEqualTo(initial.documentVersionId());
         assertObjectMatches(changedObjectKey, fileHash, fileSize, "text/plain");
 
-        log.info("PR 2.2 버전 경합 결과: document={}, successVersion={}, failedCode={}, currentVersion={}, "
+        log.info("이슈 #27 버전 경합 결과: document={}, successVersion={}, failedCode={}, currentVersion={}, "
                 + "storedCandidates={}, deletedCandidate={}, remainingObjects={}",
             initial.documentId(), success.documentVersionId(), ErrorCode.DOCUMENT_VERSION_IN_PROGRESS,
             success.currentVersionId(), objectKeys(storedCandidates),

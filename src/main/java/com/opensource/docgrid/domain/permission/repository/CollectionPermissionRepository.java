@@ -1,5 +1,7 @@
 package com.opensource.docgrid.domain.permission.repository;
 
+import java.util.List;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -7,6 +9,9 @@ import org.springframework.data.repository.query.Param;
 import com.opensource.docgrid.domain.permission.entity.CollectionPermission;
 
 public interface CollectionPermissionRepository extends JpaRepository<CollectionPermission, Long> {
+
+    // 컬렉션에 속한 권한 전체 조회 (soft delete 시 캐시 무효화 + 권한 삭제용)
+    List<CollectionPermission> findAllByCollectionId(Long collectionId);
 
     // ROLE live — 사용자 역할 기반 컬렉션→문서 읽기 권한 존재 여부
     @Query("""

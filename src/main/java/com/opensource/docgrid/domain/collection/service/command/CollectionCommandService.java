@@ -1,6 +1,7 @@
 package com.opensource.docgrid.domain.collection.service.command;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +20,11 @@ import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
+import com.opensource.docgrid.domain.permission.entity.CollectionPermission;
+import com.opensource.docgrid.domain.permission.enums.AccessSourceType;
+import com.opensource.docgrid.domain.permission.enums.PermissionTargetType;
+import com.opensource.docgrid.domain.permission.repository.CollectionPermissionRepository;
+import com.opensource.docgrid.domain.permission.service.command.UserDocumentAccessCacheService;
 import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.domain.user.repository.UserRepository;
 import com.opensource.docgrid.global.exception.DocGridException;
@@ -33,10 +39,12 @@ public class CollectionCommandService {
 
     private final CollectionRepository collectionRepository;
     private final CollectionDocumentRepository collectionDocumentRepository;
+    private final CollectionPermissionRepository collectionPermissionRepository;
     private final DocumentRepository documentRepository;
     private final UserRepository userRepository;
     private final CollectionConverter collectionConverter;
     private final PermissionQueryService permissionQueryService;
+    private final UserDocumentAccessCacheService cacheService;
 
     // 폴더 생성
     public CollectionResponse createCollection(Long userId, CreateCollectionRequest request) {
@@ -91,5 +99,48 @@ public class CollectionCommandService {
 
         collectionDocumentRepository.save(collectionDocument);
         return collectionConverter.toDocumentResponse(collectionDocument);
+    }
+
+    // 컬렉션 soft delete — 소유자만 가능
+    public void deleteCollection(Long collectionId, Long userId) {
+        DocumentCollection collection = collectionRepository.findById(collectionId)
+                .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
+
+        if (!collection.getOwner().getId().equals(userId)) {
+            throw new DocGridException(ErrorCode.PERMISSION_DENIED);
+        }
+
+        List<CollectionPermission> permissions = collectionPermissionRepository.findAllByCollectionId(collectionId);
+        permissions.stream()
+                .filter(p -> p.getTargetType() == PermissionTargetType.USER)
+                .forEach(p -> cacheService.bulkRevokeBySource(AccessSourceType.DIRECT_COLLECTION_PERMISSION, p.getId()));
+        collectionPermissionRepository.deleteAll(permissions);
+
+        collection.markDeleted(LocalDateTime.now());
+    }
+
+    // 컬렉션에서 문서 제거 — 소유자만 가능
+    public void removeDocument(Long collectionId, Long documentId, Long userId) {
+        DocumentCollection collection = collectionRepository.findById(collectionId)
+                .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
+
+        if (!collection.getOwner().getId().equals(userId)) {
+            throw new DocGridException(ErrorCode.PERMISSION_DENIED);
+        }
+
+        CollectionDocument collectionDocument = collectionDocumentRepository
+                .findByCollectionIdAndDocumentId(collectionId, documentId)
+                .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_DOCUMENT_NOT_FOUND));
+
+        List<Long> userPermissionIds = collectionPermissionRepository.findAllByCollectionId(collectionId)
+                .stream()
+                .filter(p -> p.getTargetType() == PermissionTargetType.USER)
+                .map(CollectionPermission::getId)
+                .toList();
+
+        cacheService.bulkRevokeBySourcesForDocument(
+                AccessSourceType.DIRECT_COLLECTION_PERMISSION, userPermissionIds, documentId);
+
+        collectionDocumentRepository.delete(collectionDocument);
     }
 }

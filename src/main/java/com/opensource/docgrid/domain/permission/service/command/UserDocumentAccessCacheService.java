@@ -97,4 +97,11 @@ public class UserDocumentAccessCacheService {
     public void bulkRevokeBySource(AccessSourceType sourceType, Long sourceId) {
         cacheRepository.bulkInvalidateBySource(sourceType, sourceId);
     }
+
+    // 컬렉션에서 문서 제거 시 해당 문서에 대한 복수 출처 캐시 일괄 무효화 (단일 쿼리)
+    public void bulkRevokeBySourcesForDocument(AccessSourceType sourceType, List<Long> sourceIds, Long documentId) {
+        if (!sourceIds.isEmpty()) {
+            cacheRepository.bulkInvalidateBySourceIdsAndDocument(sourceType, sourceIds, documentId);
+        }
+    }
 }

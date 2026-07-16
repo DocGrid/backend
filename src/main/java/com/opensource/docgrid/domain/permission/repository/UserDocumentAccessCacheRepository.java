@@ -28,6 +28,18 @@ public interface UserDocumentAccessCacheRepository extends JpaRepository<UserDoc
     int bulkInvalidateBySource(@Param("sourceType") AccessSourceType sourceType,
                                @Param("sourceId") Long sourceId);
 
+    // 복수 출처에서 파생된 특정 문서 캐시 일괄 무효화 (컬렉션에서 문서 제거 시)
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            UPDATE UserDocumentAccessCache c
+            SET c.invalidatedAt = CURRENT_TIMESTAMP
+            WHERE c.sourceType = :sourceType AND c.sourceId IN :sourceIds
+              AND c.document.id = :documentId AND c.invalidatedAt IS NULL
+            """)
+    int bulkInvalidateBySourceIdsAndDocument(@Param("sourceType") AccessSourceType sourceType,
+                                             @Param("sourceIds") List<Long> sourceIds,
+                                             @Param("documentId") Long documentId);
+
     // 특정 권한 출처에서 파생된 캐시 전체 권한 갱신
     @Modifying(clearAutomatically = true)
     @Query("""

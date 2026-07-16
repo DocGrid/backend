@@ -73,9 +73,9 @@ src/main/java/com/opensource/docgrid/
         └── enums/
 
 docs/
-├── pr-{번호}-{설명}.md        # PR 상세 설계 문서
+├── {github아이디}-#{이슈번호}-{설명}.md        # PR 상세 설계 문서
 └── test-results/
-    └── pr-{번호}-{설명}.md    # 테스트 결과 문서 (Swagger 수동 + 자동 테스트 통합)
+    └── {github아이디}-#{이슈번호}-{설명}.md    # 테스트 결과 문서 (Swagger 수동 + 자동 테스트 통합)
 ```
 
 ## 주요 명령어

@@ -204,7 +204,7 @@ DocumentPermissionSummaryResponse 반환
 ## 9. 완료 기준
 
 - 소유자는 `sources: ["OWNER"]`, 모두 true를 반환한다.
-- PUBLIC 문서는 READ만 sources에 PUBLILC이 포함된다.
+- PUBLIC 문서는 READ만 sources에 PUBLIC이 포함된다.
 - USER 캐시로 부여된 권한은 `sources: ["USER_CACHE"]`가 포함된다.
 - ROLE/DEPT 권한은 sources에 각각 ROLE / DEPARTMENT가 포함된다.
 - 여러 경로에서 권한을 받은 경우 sources에 모두 포함된다.

@@ -1,5 +1,8 @@
 package com.opensource.docgrid.domain.permission.service.query;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 
@@ -8,6 +11,8 @@ import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
+import com.opensource.docgrid.domain.permission.dto.response.DocumentPermissionSummaryResponse;
+import com.opensource.docgrid.domain.permission.enums.PermissionSourceType;
 import com.opensource.docgrid.domain.permission.repository.CollectionPermissionRepository;
 import com.opensource.docgrid.domain.permission.repository.DocumentPermissionRepository;
 import com.opensource.docgrid.domain.permission.repository.UserDocumentAccessCacheRepository;
@@ -172,6 +177,72 @@ public class PermissionQueryService {
         log.info("[PERM] canAdmin denied doc={} user={} step4={}ms elapsed={}ms",
                 documentId, userId, step4Ms, ms(start));
         return false;
+    }
+
+    // 문서 권한 확인 API용 — read/write/admin 동시 판단 + 접근 경로(sources) 수집
+    public DocumentPermissionSummaryResponse checkDocumentPermission(Long userId, Long documentId) {
+        long start = System.nanoTime();
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
+
+        List<PermissionSourceType> sources = new ArrayList<>();
+        boolean canRead = false, canWrite = false, canAdmin = false;
+
+        // 1단계: 소유자 — 전체 권한 즉시 반환
+        if (document.getOwner().getId().equals(userId)) {
+            sources.add(PermissionSourceType.OWNER);
+            log.info("[PERM] checkDoc owner doc={} user={} elapsed={}ms", documentId, userId, ms(start));
+            return new DocumentPermissionSummaryResponse(documentId, true, true, true, sources);
+        }
+
+        // 2단계: PUBLIC — 읽기만 허용
+        if (document.getVisibility() == VisibilityType.PUBLIC) {
+            canRead = true;
+            sources.add(PermissionSourceType.PUBLIC);
+        }
+
+        // 3단계: USER 캐시
+        boolean cacheRead  = cacheRepository.existsValidReadCache(userId, documentId);
+        boolean cacheWrite = cacheRepository.existsValidWriteCache(userId, documentId);
+        boolean cacheAdmin = cacheRepository.existsValidAdminCache(userId, documentId);
+        if (cacheRead || cacheWrite || cacheAdmin) {
+            sources.add(PermissionSourceType.USER_CACHE);
+            if (cacheRead)  canRead  = true;
+            if (cacheWrite) canWrite = true;
+            if (cacheAdmin) canAdmin = true;
+        }
+
+        // 4단계: ROLE live
+        boolean roleRead  = documentPermissionRepository.existsRoleReadPermission(userId, documentId)
+                || collectionPermissionRepository.existsRoleReadPermissionForDocument(userId, documentId);
+        boolean roleWrite = documentPermissionRepository.existsRoleWritePermission(userId, documentId)
+                || collectionPermissionRepository.existsRoleWritePermissionForDocument(userId, documentId);
+        boolean roleAdmin = documentPermissionRepository.existsRoleAdminPermission(userId, documentId)
+                || collectionPermissionRepository.existsRoleAdminPermissionForDocument(userId, documentId);
+        if (roleRead || roleWrite || roleAdmin) {
+            sources.add(PermissionSourceType.ROLE);
+            if (roleRead)  canRead  = true;
+            if (roleWrite) canWrite = true;
+            if (roleAdmin) canAdmin = true;
+        }
+
+        // 5단계: DEPARTMENT live
+        boolean deptRead  = documentPermissionRepository.existsDeptReadPermission(userId, documentId)
+                || collectionPermissionRepository.existsDeptReadPermissionForDocument(userId, documentId);
+        boolean deptWrite = documentPermissionRepository.existsDeptWritePermission(userId, documentId)
+                || collectionPermissionRepository.existsDeptWritePermissionForDocument(userId, documentId);
+        boolean deptAdmin = documentPermissionRepository.existsDeptAdminPermission(userId, documentId)
+                || collectionPermissionRepository.existsDeptAdminPermissionForDocument(userId, documentId);
+        if (deptRead || deptWrite || deptAdmin) {
+            sources.add(PermissionSourceType.DEPARTMENT);
+            if (deptRead)  canRead  = true;
+            if (deptWrite) canWrite = true;
+            if (deptAdmin) canAdmin = true;
+        }
+
+        log.info("[PERM] checkDoc doc={} user={} canRead={} canWrite={} canAdmin={} sources={} elapsed={}ms",
+                documentId, userId, canRead, canWrite, canAdmin, sources, ms(start));
+        return new DocumentPermissionSummaryResponse(documentId, canRead, canWrite, canAdmin, sources);
     }
 
     // 컬렉션 쓰기 권한 판단 (소유자, USER/ROLE/DEPT 직접 권한)

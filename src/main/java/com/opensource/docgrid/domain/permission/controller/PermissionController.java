@@ -2,19 +2,21 @@ package com.opensource.docgrid.domain.permission.controller;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-
 import com.opensource.docgrid.domain.auth.annotation.CurrentUser;
 import com.opensource.docgrid.domain.permission.dto.request.GrantPermissionRequest;
 import com.opensource.docgrid.domain.permission.dto.response.CollectionPermissionResponse;
 import com.opensource.docgrid.domain.permission.dto.response.DocumentPermissionResponse;
+import com.opensource.docgrid.domain.permission.dto.response.DocumentPermissionSummaryResponse;
 import com.opensource.docgrid.domain.permission.service.command.CollectionPermissionCommandService;
 import com.opensource.docgrid.domain.permission.service.command.DocumentPermissionCommandService;
+import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.global.common.response.ApiResponse;
 import com.opensource.docgrid.global.common.response.ResponseUtils;
 
@@ -32,6 +34,20 @@ public class PermissionController {
 
     private final CollectionPermissionCommandService collectionPermissionCommandService;
     private final DocumentPermissionCommandService documentPermissionCommandService;
+    private final PermissionQueryService permissionQueryService;
+
+    @Operation(
+            summary = "내 문서 권한 확인",
+            description = "현재 로그인한 사용자가 특정 문서에 대해 읽기·쓰기·관리 권한을 가지고 있는지, " +
+                    "그리고 그 권한이 어떤 경로(OWNER/PUBLIC/USER_CACHE/ROLE/DEPARTMENT)로 부여됐는지 반환합니다. " +
+                    "sources는 실제 권한이 부여된 경로만 포함됩니다. 권한이 전혀 없으면 sources는 빈 배열입니다."
+    )
+    @GetMapping("/documents/{documentId}/me")
+    public ResponseEntity<ApiResponse<DocumentPermissionSummaryResponse>> getMyDocumentPermission(
+            @PathVariable Long documentId,
+            @Parameter(hidden = true) @CurrentUser Long userId) {
+        return ResponseUtils.ok(permissionQueryService.checkDocumentPermission(userId, documentId));
+    }
 
     @Operation(
             summary = "컬렉션 권한 부여",

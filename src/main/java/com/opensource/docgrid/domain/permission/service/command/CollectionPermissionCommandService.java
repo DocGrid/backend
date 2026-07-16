@@ -12,6 +12,7 @@ import com.opensource.docgrid.domain.collection.repository.CollectionDocumentRep
 import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.permission.converter.PermissionConverter;
+import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.permission.dto.request.GrantPermissionRequest;
 import com.opensource.docgrid.domain.permission.dto.response.CollectionPermissionResponse;
 import com.opensource.docgrid.domain.permission.entity.CollectionPermission;
@@ -43,6 +44,7 @@ public class CollectionPermissionCommandService {
     private final RoleRepository roleRepository;
     private final DepartmentRepository departmentRepository;
     private final PermissionConverter permissionConverter;
+    private final PermissionQueryService permissionQueryService;
 
     // 컬렉션 권한 부여
     public CollectionPermissionResponse grantPermission(Long collectionId, Long grantorId,
@@ -50,8 +52,7 @@ public class CollectionPermissionCommandService {
         DocumentCollection collection = collectionRepository.findById(collectionId)
                 .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
 
-        // TODO: Issue 3 PermissionService 완성 후 canAdminDocument() 로 대체
-        if (!collection.getOwner().getId().equals(grantorId)) {
+        if (!permissionQueryService.canAdminCollection(grantorId, collectionId)) {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 
@@ -109,8 +110,7 @@ public class CollectionPermissionCommandService {
             throw new DocGridException(ErrorCode.COLLECTION_PERMISSION_NOT_FOUND);
         }
 
-        // TODO: Issue 3 PermissionService 완성 후 canAdminDocument() 로 대체
-        if (!collection.getOwner().getId().equals(revokerId)) {
+        if (!permissionQueryService.canAdminCollection(revokerId, collectionId)) {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 

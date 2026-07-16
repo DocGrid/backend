@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
 import com.opensource.docgrid.domain.permission.converter.PermissionConverter;
+import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.permission.dto.request.GrantPermissionRequest;
 import com.opensource.docgrid.domain.permission.dto.response.DocumentPermissionResponse;
 import com.opensource.docgrid.domain.permission.entity.DocumentPermission;
@@ -38,6 +39,7 @@ public class DocumentPermissionCommandService {
     private final RoleRepository roleRepository;
     private final DepartmentRepository departmentRepository;
     private final PermissionConverter permissionConverter;
+    private final PermissionQueryService permissionQueryService;
 
     // 문서 단건 예외 권한 부여
     public DocumentPermissionResponse grantPermission(Long documentId, Long grantorId,
@@ -45,8 +47,7 @@ public class DocumentPermissionCommandService {
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
 
-        // TODO: Issue 3 PermissionService 완성 후 canAdminDocument() 로 대체
-        if (!document.getOwner().getId().equals(grantorId)) {
+        if (!permissionQueryService.canAdminDocument(grantorId, documentId)) {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 
@@ -105,8 +106,7 @@ public class DocumentPermissionCommandService {
             throw new DocGridException(ErrorCode.DOCUMENT_PERMISSION_NOT_FOUND);
         }
 
-        // TODO: Issue 3 PermissionService 완성 후 canAdminDocument() 로 대체
-        if (!permission.getDocument().getOwner().getId().equals(revokerId)) {
+        if (!permissionQueryService.canAdminDocument(revokerId, documentId)) {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 

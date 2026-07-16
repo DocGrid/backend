@@ -36,6 +36,7 @@ public enum ErrorCode {
     // COLLECTION
     COLLECTION_NOT_FOUND(HttpStatus.NOT_FOUND, "COLLECTION-001", "컬렉션을 찾을 수 없습니다."),
     COLLECTION_DOCUMENT_ALREADY_EXISTS(HttpStatus.CONFLICT, "COLLECTION-002", "이미 컬렉션에 추가된 문서입니다."),
+    COLLECTION_DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "COLLECTION-003", "컬렉션에서 해당 문서를 찾을 수 없습니다."),
 
     // DOCUMENT
     DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "DOCUMENT-001", "문서를 찾을 수 없습니다."),

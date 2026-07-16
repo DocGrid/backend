@@ -1,6 +1,9 @@
 package com.opensource.docgrid.domain.collection.controller;
 
+import java.util.List;
+
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,6 +35,43 @@ public class CollectionController {
 
     private final CollectionCommandService collectionCommandService;
     private final CollectionQueryService collectionQueryService;
+
+    @Operation(
+            summary = "내 컬렉션 목록 조회",
+            description = "현재 로그인한 사용자가 소유한 ACTIVE 상태의 컬렉션 목록을 반환합니다."
+    )
+    @GetMapping
+    public ResponseEntity<ApiResponse<List<CollectionResponse>>> getMyCollections(
+            @Parameter(hidden = true) @CurrentUser Long userId) {
+        return ResponseUtils.ok(collectionQueryService.getMyCollections(userId));
+    }
+
+    @Operation(
+            summary = "컬렉션 삭제",
+            description = "컬렉션을 soft delete합니다. 소유자(owner)만 가능합니다. " +
+                    "소속 권한(collection_permissions)이 모두 삭제되고, USER 대상 권한이 있었다면 캐시도 무효화됩니다."
+    )
+    @DeleteMapping("/{collectionId}")
+    public ResponseEntity<ApiResponse<Void>> deleteCollection(
+            @PathVariable Long collectionId,
+            @Parameter(hidden = true) @CurrentUser Long userId) {
+        collectionCommandService.deleteCollection(collectionId, userId);
+        return ResponseUtils.noContent();
+    }
+
+    @Operation(
+            summary = "컬렉션에서 문서 제거",
+            description = "컬렉션에서 특정 문서를 제거합니다. 소유자(owner)만 가능합니다. " +
+                    "해당 문서에 대해 이 컬렉션 권한으로 캐시된 USER 접근 권한이 무효화됩니다."
+    )
+    @DeleteMapping("/{collectionId}/documents/{documentId}")
+    public ResponseEntity<ApiResponse<Void>> removeDocument(
+            @PathVariable Long collectionId,
+            @PathVariable Long documentId,
+            @Parameter(hidden = true) @CurrentUser Long userId) {
+        collectionCommandService.removeDocument(collectionId, documentId, userId);
+        return ResponseUtils.noContent();
+    }
 
     @Operation(
             summary = "컬렉션 생성",

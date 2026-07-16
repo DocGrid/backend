@@ -146,6 +146,253 @@ class PermissionQueryServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DOCUMENT_NOT_FOUND);
     }
 
+    // ==================== canWriteDocument ====================
+
+    @Test
+    @DisplayName("소유자는 canWriteDocument가 true다")
+    void canWriteDocument_owner_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+
+        boolean result = service.canWriteDocument(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result).isTrue();
+        then(cacheRepository).should(never()).existsValidWriteCache(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID);
+    }
+
+    @Test
+    @DisplayName("유효한 USER 캐시가 있으면 canWriteDocument가 true다")
+    void canWriteDocument_validCache_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(cacheRepository.existsValidWriteCache(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+
+        boolean result = service.canWriteDocument(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result).isTrue();
+        then(documentPermissionRepository).should(never()).existsRoleWritePermission(otherUserId, CollectionFixture.DOCUMENT_ID);
+    }
+
+    @Test
+    @DisplayName("ROLE live 권한이 있으면 canWriteDocument가 true다")
+    void canWriteDocument_roleLive_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(cacheRepository.existsValidWriteCache(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsRoleWritePermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+
+        boolean result = service.canWriteDocument(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result).isTrue();
+        then(documentPermissionRepository).should(never()).existsDeptWritePermission(otherUserId, CollectionFixture.DOCUMENT_ID);
+    }
+
+    @Test
+    @DisplayName("DEPARTMENT live 권한이 있으면 canWriteDocument가 true다")
+    void canWriteDocument_deptLive_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(cacheRepository.existsValidWriteCache(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsRoleWritePermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(collectionPermissionRepository.existsRoleWritePermissionForDocument(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsDeptWritePermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+
+        boolean result = service.canWriteDocument(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    @DisplayName("모든 단계를 통과하지 못하면 canWriteDocument가 false다")
+    void canWriteDocument_noPermission_returnsFalse() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(cacheRepository.existsValidWriteCache(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsRoleWritePermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(collectionPermissionRepository.existsRoleWritePermissionForDocument(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsDeptWritePermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(collectionPermissionRepository.existsDeptWritePermissionForDocument(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+
+        boolean result = service.canWriteDocument(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result).isFalse();
+    }
+
+    // ==================== canAdminDocument ====================
+
+    @Test
+    @DisplayName("소유자는 canAdminDocument가 true다")
+    void canAdminDocument_owner_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+
+        boolean result = service.canAdminDocument(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result).isTrue();
+        then(cacheRepository).should(never()).existsValidAdminCache(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID);
+    }
+
+    @Test
+    @DisplayName("유효한 USER 캐시가 있으면 canAdminDocument가 true다")
+    void canAdminDocument_validCache_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(cacheRepository.existsValidAdminCache(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+
+        boolean result = service.canAdminDocument(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result).isTrue();
+        then(documentPermissionRepository).should(never()).existsRoleAdminPermission(otherUserId, CollectionFixture.DOCUMENT_ID);
+    }
+
+    @Test
+    @DisplayName("ROLE live 권한이 있으면 canAdminDocument가 true다")
+    void canAdminDocument_roleLive_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(cacheRepository.existsValidAdminCache(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsRoleAdminPermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+
+        boolean result = service.canAdminDocument(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result).isTrue();
+        then(documentPermissionRepository).should(never()).existsDeptAdminPermission(otherUserId, CollectionFixture.DOCUMENT_ID);
+    }
+
+    @Test
+    @DisplayName("DEPARTMENT live 권한이 있으면 canAdminDocument가 true다")
+    void canAdminDocument_deptLive_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(cacheRepository.existsValidAdminCache(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsRoleAdminPermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(collectionPermissionRepository.existsRoleAdminPermissionForDocument(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsDeptAdminPermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+
+        boolean result = service.canAdminDocument(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    @DisplayName("모든 단계를 통과하지 못하면 canAdminDocument가 false다")
+    void canAdminDocument_noPermission_returnsFalse() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(cacheRepository.existsValidAdminCache(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsRoleAdminPermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(collectionPermissionRepository.existsRoleAdminPermissionForDocument(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsDeptAdminPermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(collectionPermissionRepository.existsDeptAdminPermissionForDocument(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+
+        boolean result = service.canAdminDocument(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result).isFalse();
+    }
+
+    // ==================== canWriteCollection ====================
+
+    @Test
+    @DisplayName("컬렉션 소유자는 canWriteCollection이 true다")
+    void canWriteCollection_owner_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
+                .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
+
+        boolean result = service.canWriteCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isTrue();
+        then(collectionPermissionRepository).should(never()).existsUserWritePermission(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID);
+    }
+
+    @Test
+    @DisplayName("USER 권한으로 write가 부여된 경우 canWriteCollection이 true다")
+    void canWriteCollection_userPermission_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Long otherUserId = 99L;
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
+                .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
+        given(collectionPermissionRepository.existsUserWritePermission(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(true);
+
+        boolean result = service.canWriteCollection(otherUserId, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    @DisplayName("ROLE live 권한이 있으면 canWriteCollection이 true다")
+    void canWriteCollection_roleLive_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Long otherUserId = 99L;
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
+                .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
+        given(collectionPermissionRepository.existsUserWritePermission(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsRoleWritePermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(true);
+
+        boolean result = service.canWriteCollection(otherUserId, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    @DisplayName("DEPARTMENT live 권한이 있으면 canWriteCollection이 true다")
+    void canWriteCollection_deptLive_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Long otherUserId = 99L;
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
+                .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
+        given(collectionPermissionRepository.existsUserWritePermission(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsRoleWritePermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsDeptWritePermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(true);
+
+        boolean result = service.canWriteCollection(otherUserId, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    @DisplayName("권한이 없으면 canWriteCollection이 false다")
+    void canWriteCollection_noPermission_returnsFalse() {
+        User owner = CollectionFixture.createOwner();
+        Long otherUserId = 99L;
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
+                .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
+        given(collectionPermissionRepository.existsUserWritePermission(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsRoleWritePermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsDeptWritePermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+
+        boolean result = service.canWriteCollection(otherUserId, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isFalse();
+    }
+
     // ==================== canAdminCollection ====================
 
     @Test
@@ -177,6 +424,42 @@ class PermissionQueryServiceTest {
     }
 
     @Test
+    @DisplayName("ROLE live 권한이 있으면 canAdminCollection이 true다")
+    void canAdminCollection_roleLive_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Long otherUserId = 99L;
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
+                .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
+        given(collectionPermissionRepository.existsUserAdminPermission(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsRoleAdminPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(true);
+
+        boolean result = service.canAdminCollection(otherUserId, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    @DisplayName("DEPARTMENT live 권한이 있으면 canAdminCollection이 true다")
+    void canAdminCollection_deptLive_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Long otherUserId = 99L;
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
+                .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
+        given(collectionPermissionRepository.existsUserAdminPermission(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsRoleAdminPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsDeptAdminPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(true);
+
+        boolean result = service.canAdminCollection(otherUserId, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
     @DisplayName("권한이 없으면 canAdminCollection이 false다")
     void canAdminCollection_noPermission_returnsFalse() {
         User owner = CollectionFixture.createOwner();
@@ -184,6 +467,10 @@ class PermissionQueryServiceTest {
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
                 .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
         given(collectionPermissionRepository.existsUserAdminPermission(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsRoleAdminPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsDeptAdminPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
                 .willReturn(false);
 
         boolean result = service.canAdminCollection(otherUserId, CollectionFixture.COLLECTION_ID);

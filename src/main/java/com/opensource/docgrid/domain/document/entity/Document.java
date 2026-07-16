@@ -39,8 +39,8 @@ import lombok.NoArgsConstructor;
  * document_versions.document_id는 documents.id를 참조한다.
  * 따라서 문서 생성 시 current_version_id는 반드시 nullable이어야 하며, 아래 순서로 생성된다:
  * <pre>
- * 1. documents insert (current_version_id = null)
- * 2. file_objects insert 또는 기존 file_objects 재사용
+ * 1. file_objects insert 또는 기존 file_objects 재사용
+ * 2. documents insert (current_version_id = null)
  * 3. document_versions insert (document_id = documents.id)
  * 4. documents.current_version_id update
  * 5. embedding_jobs insert
@@ -76,7 +76,7 @@ public class Document extends BaseEntity {
     private User owner;
 
     // 현재 활성 버전. documents <-> document_versions 순환 FK이므로 반드시 nullable.
-    // 문서 생성 직후에는 null이며, 버전 색인 완료 후 updateCurrentVersion()으로 갱신된다.
+    // 최초 버전은 업로드 접수 시 설정하며, 후속 버전은 색인 완료 후 갱신한다.
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "current_version_id")
     private DocumentVersion currentVersion;

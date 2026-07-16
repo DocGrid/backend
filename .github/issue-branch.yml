@@ -12,5 +12,7 @@ branches:
     prefix: 'docs/'
   - label: '🔧 Chore'
     prefix: 'chore/'
+  - label: '🧪 Test'
+    prefix: 'test/'
 commentMessage: 'Branch ${branchName} created!'
 autoCloseIssue: true

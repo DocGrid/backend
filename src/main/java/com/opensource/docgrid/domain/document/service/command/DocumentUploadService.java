@@ -8,14 +8,11 @@ import org.springframework.transaction.annotation.Transactional;
 import com.opensource.docgrid.domain.document.dto.response.DocumentUploadResponse;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.entity.DocumentVersion;
-import com.opensource.docgrid.domain.document.entity.FileObject;
 import com.opensource.docgrid.domain.document.enums.DocumentSourceType;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
 import com.opensource.docgrid.domain.document.repository.DocumentVersionRepository;
-import com.opensource.docgrid.domain.document.repository.FileObjectRepository;
-import com.opensource.docgrid.domain.document.storage.StoredFile;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingModel;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
@@ -38,7 +35,7 @@ public class DocumentUploadService {
     private static final int MAX_RETRY_COUNT = 3;
 
     private final UserRepository userRepository;
-    private final FileObjectRepository fileObjectRepository;
+    private final FileObjectResolutionService fileObjectResolutionService;
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
     private final EmbeddingJobRepository embeddingJobRepository;
@@ -46,15 +43,17 @@ public class DocumentUploadService {
 
     @Transactional(readOnly = true)
     public Optional<Long> findReusableFileObjectId(String fileHash, long fileSize) {
-        return fileObjectRepository.findByFileHashAndFileSize(fileHash, fileSize)
-            .map(FileObject::getId);
+        return fileObjectResolutionService.findReusableFileObjectId(fileHash, fileSize);
     }
 
     public DocumentUploadTransactionResult upload(DocumentUploadCommand command) {
         userRepository.findById(command.userId())
             .orElseThrow(() -> new DocGridException(ErrorCode.USER_NOT_FOUND));
 
-        FileObjectResolution resolution = resolveFileObject(command);
+        FileObjectResolutionService.Resolution resolution = fileObjectResolutionService.resolve(
+            command.userId(), command.validatedFile(), command.fileHash(),
+            command.existingFileObjectId(), command.storedFile()
+        );
         User user = userRepository.getReferenceById(command.userId());
 
         Document document = documentRepository.save(
@@ -76,6 +75,8 @@ public class DocumentUploadService {
                 .versionNo(INITIAL_VERSION)
                 .titleSnapshot(command.title())
                 .fileHash(command.fileHash())
+                .originalFilename(command.validatedFile().originalFilename())
+                .contentType(command.validatedFile().contentType())
                 .status(DocumentVersionStatus.UPLOADED)
                 .createdBy(user)
                 .build()
@@ -104,34 +105,4 @@ public class DocumentUploadService {
         return new DocumentUploadTransactionResult(response, resolution.candidateClaimed());
     }
 
-    private FileObjectResolution resolveFileObject(DocumentUploadCommand command) {
-        if (command.existingFileObjectId() != null) {
-            FileObject existing = fileObjectRepository.findById(command.existingFileObjectId())
-                .orElseThrow(() -> new DocGridException(ErrorCode.FILE_OBJECT_RESOLUTION_FAILED));
-            return new FileObjectResolution(existing, false);
-        }
-
-        StoredFile storedFile = command.storedFile();
-        if (storedFile == null) {
-            throw new DocGridException(ErrorCode.FILE_OBJECT_RESOLUTION_FAILED);
-        }
-
-        int inserted = fileObjectRepository.insertIfAbsent(
-            storedFile.bucketName(),
-            storedFile.objectKey(),
-            command.validatedFile().originalFilename(),
-            command.validatedFile().contentType(),
-            command.validatedFile().fileSize(),
-            command.fileHash(),
-            command.userId()
-        );
-
-        FileObject fileObject = fileObjectRepository
-            .findByFileHashAndFileSize(command.fileHash(), command.validatedFile().fileSize())
-            .orElseThrow(() -> new DocGridException(ErrorCode.FILE_OBJECT_RESOLUTION_FAILED));
-        return new FileObjectResolution(fileObject, inserted == 1);
-    }
-
-    private record FileObjectResolution(FileObject fileObject, boolean candidateClaimed) {
-    }
 }

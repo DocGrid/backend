@@ -64,7 +64,7 @@ class DocumentUploadServiceTest {
     void setUp() {
         documentUploadService = new DocumentUploadService(
             userRepository,
-            fileObjectRepository,
+            new FileObjectResolutionService(fileObjectRepository),
             documentRepository,
             documentVersionRepository,
             embeddingJobRepository,

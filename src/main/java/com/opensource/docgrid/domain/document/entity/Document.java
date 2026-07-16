@@ -129,6 +129,10 @@ public class Document extends BaseEntity {
         this.status = DocumentStatus.INDEXING;
     }
 
+    public void markUploaded() {
+        this.status = DocumentStatus.UPLOADED;
+    }
+
     public void markIndexed() {
         this.status = DocumentStatus.INDEXED;
     }

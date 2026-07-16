@@ -84,6 +84,12 @@ public class DocumentVersion extends BaseEntity {
     @Column(name = "file_hash", length = 128)
     private String fileHash;
 
+    @Column(name = "original_filename", length = 500)
+    private String originalFilename;
+
+    @Column(name = "content_type", length = 200)
+    private String contentType;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private DocumentVersionStatus status;
@@ -98,13 +104,16 @@ public class DocumentVersion extends BaseEntity {
 
     @Builder
     public DocumentVersion(Document document, FileObject fileObject, int versionNo, String titleSnapshot,
-                            String contentHash, String fileHash, DocumentVersionStatus status, User createdBy) {
+                            String contentHash, String fileHash, String originalFilename, String contentType,
+                            DocumentVersionStatus status, User createdBy) {
         this.document = document;
         this.fileObject = fileObject;
         this.versionNo = versionNo;
         this.titleSnapshot = titleSnapshot;
         this.contentHash = contentHash;
         this.fileHash = fileHash;
+        this.originalFilename = originalFilename;
+        this.contentType = contentType;
         this.status = status != null ? status : DocumentVersionStatus.UPLOADED;
         this.createdBy = createdBy;
     }

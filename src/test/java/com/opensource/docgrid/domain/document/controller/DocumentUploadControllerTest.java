@@ -20,9 +20,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.opensource.docgrid.domain.document.dto.request.DocumentUploadRequest;
+import com.opensource.docgrid.domain.document.dto.request.DocumentVersionUploadRequest;
 import com.opensource.docgrid.domain.document.dto.response.DocumentUploadResponse;
+import com.opensource.docgrid.domain.document.dto.response.DocumentVersionUploadResponse;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
+import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 import com.opensource.docgrid.domain.document.service.DocumentUploadFacade;
+import com.opensource.docgrid.domain.document.service.DocumentVersionUploadFacade;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 
 @WebMvcTest(DocumentUploadController.class)
@@ -34,6 +38,9 @@ class DocumentUploadControllerTest {
 
     @MockitoBean
     private DocumentUploadFacade documentUploadFacade;
+
+    @MockitoBean
+    private DocumentVersionUploadFacade documentVersionUploadFacade;
 
     @MockitoBean
     private JpaMetamodelMappingContext jpaMetamodelMappingContext;
@@ -81,6 +88,37 @@ class DocumentUploadControllerTest {
                 .param("visibility", "PRIVATE")
                 .with(csrf()))
             .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("인증된 사용자가 새 문서 버전을 업로드하면 201 응답을 반환한다")
+    void uploadVersion_returnsCreated_when_requestIsValid() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+            "file", "sample.txt", "text/plain", "changed".getBytes()
+        );
+        DocumentVersionUploadResponse response = new DocumentVersionUploadResponse(
+            1L, 5L, 2, 6L, 2L, DocumentStatus.INDEXED,
+            DocumentVersionStatus.UPLOADED, EmbeddingJobStatus.PENDING
+        );
+        given(documentVersionUploadFacade.upload(
+            org.mockito.ArgumentMatchers.eq(10L),
+            org.mockito.ArgumentMatchers.eq(1L),
+            org.mockito.ArgumentMatchers.any(DocumentVersionUploadRequest.class)
+        )).willReturn(response);
+
+        mockMvc.perform(multipart("/api/documents/{documentId}/versions", 1L)
+                .file(file)
+                .with(csrf())
+                .with(authentication(authenticationWithUserId(10L))))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.data.documentId").value(1))
+            .andExpect(jsonPath("$.data.documentVersionId").value(5))
+            .andExpect(jsonPath("$.data.versionNo").value(2))
+            .andExpect(jsonPath("$.data.embeddingJobId").value(6))
+            .andExpect(jsonPath("$.data.currentVersionId").value(2))
+            .andExpect(jsonPath("$.data.documentStatus").value("INDEXED"))
+            .andExpect(jsonPath("$.data.versionStatus").value("UPLOADED"))
+            .andExpect(jsonPath("$.data.jobStatus").value("PENDING"));
     }
 
     private UsernamePasswordAuthenticationToken authenticationWithUserId(Long userId) {

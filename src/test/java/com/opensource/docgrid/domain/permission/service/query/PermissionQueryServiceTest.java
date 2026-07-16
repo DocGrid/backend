@@ -20,6 +20,8 @@ import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
+import com.opensource.docgrid.domain.permission.dto.response.DocumentPermissionSummaryResponse;
+import com.opensource.docgrid.domain.permission.enums.PermissionSourceType;
 import com.opensource.docgrid.domain.permission.repository.CollectionPermissionRepository;
 import com.opensource.docgrid.domain.permission.repository.DocumentPermissionRepository;
 import com.opensource.docgrid.domain.permission.repository.UserDocumentAccessCacheRepository;
@@ -391,6 +393,142 @@ class PermissionQueryServiceTest {
         boolean result = service.canWriteCollection(otherUserId, CollectionFixture.COLLECTION_ID);
 
         assertThat(result).isFalse();
+    }
+
+    // ==================== checkDocumentPermission ====================
+
+    @Test
+    @DisplayName("소유자는 canRead/canWrite/canAdmin 모두 true이고 sources에 OWNER만 포함된다")
+    void checkDocumentPermission_owner_returnsAllTrueWithOwnerSource() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+
+        DocumentPermissionSummaryResponse result =
+                service.checkDocumentPermission(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result.canRead()).isTrue();
+        assertThat(result.canWrite()).isTrue();
+        assertThat(result.canAdmin()).isTrue();
+        assertThat(result.sources()).containsExactly(PermissionSourceType.OWNER);
+        then(cacheRepository).should(never()).existsValidReadCache(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID);
+    }
+
+    @Test
+    @DisplayName("PUBLIC 문서는 canRead가 true이고 sources에 PUBLIC이 포함된다")
+    void checkDocumentPermission_public_returnsReadTrueWithPublicSource() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        org.springframework.test.util.ReflectionTestUtils.setField(document, "visibility", VisibilityType.PUBLIC);
+        Long otherUserId = 99L;
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+
+        DocumentPermissionSummaryResponse result =
+                service.checkDocumentPermission(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result.canRead()).isTrue();
+        assertThat(result.canWrite()).isFalse();
+        assertThat(result.canAdmin()).isFalse();
+        assertThat(result.sources()).containsExactly(PermissionSourceType.PUBLIC);
+    }
+
+    @Test
+    @DisplayName("USER_CACHE로 쓰기 권한이 있으면 canWrite가 true이고 sources에 USER_CACHE가 포함된다")
+    void checkDocumentPermission_userCache_returnsWriteTrueWithCacheSource() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(cacheRepository.existsValidReadCache(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+        given(cacheRepository.existsValidWriteCache(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+
+        DocumentPermissionSummaryResponse result =
+                service.checkDocumentPermission(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result.canRead()).isTrue();
+        assertThat(result.canWrite()).isTrue();
+        assertThat(result.canAdmin()).isFalse();
+        assertThat(result.sources()).containsExactly(PermissionSourceType.USER_CACHE);
+    }
+
+    @Test
+    @DisplayName("ROLE 권한이 있으면 해당 권한이 true이고 sources에 ROLE이 포함된다")
+    void checkDocumentPermission_role_returnsPermissionWithRoleSource() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(documentPermissionRepository.existsRoleReadPermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+
+        DocumentPermissionSummaryResponse result =
+                service.checkDocumentPermission(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result.canRead()).isTrue();
+        assertThat(result.sources()).contains(PermissionSourceType.ROLE);
+        assertThat(result.sources()).doesNotContain(PermissionSourceType.DEPARTMENT);
+    }
+
+    @Test
+    @DisplayName("DEPARTMENT 권한이 있으면 해당 권한이 true이고 sources에 DEPARTMENT가 포함된다")
+    void checkDocumentPermission_dept_returnsPermissionWithDeptSource() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(documentPermissionRepository.existsDeptWritePermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+
+        DocumentPermissionSummaryResponse result =
+                service.checkDocumentPermission(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result.canWrite()).isTrue();
+        assertThat(result.sources()).containsExactly(PermissionSourceType.DEPARTMENT);
+    }
+
+    @Test
+    @DisplayName("ROLE과 USER_CACHE가 동시에 충족되면 sources에 둘 다 포함된다")
+    void checkDocumentPermission_multipleSource_returnsBothSources() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(cacheRepository.existsValidWriteCache(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+        given(documentPermissionRepository.existsRoleReadPermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+
+        DocumentPermissionSummaryResponse result =
+                service.checkDocumentPermission(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result.canRead()).isTrue();
+        assertThat(result.canWrite()).isTrue();
+        assertThat(result.sources()).containsExactlyInAnyOrder(
+                PermissionSourceType.USER_CACHE, PermissionSourceType.ROLE);
+    }
+
+    @Test
+    @DisplayName("권한이 전혀 없으면 모두 false이고 sources가 비어있다")
+    void checkDocumentPermission_noPermission_returnsAllFalseEmptySources() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+
+        DocumentPermissionSummaryResponse result =
+                service.checkDocumentPermission(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result.canRead()).isFalse();
+        assertThat(result.canWrite()).isFalse();
+        assertThat(result.canAdmin()).isFalse();
+        assertThat(result.sources()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("문서가 없으면 DOCUMENT_NOT_FOUND 예외가 발생한다")
+    void checkDocumentPermission_documentNotFound_throwsException() {
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() ->
+                service.checkDocumentPermission(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DOCUMENT_NOT_FOUND);
     }
 
     // ==================== canAdminCollection ====================

@@ -43,8 +43,19 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform {
-		excludeTags 'benchmark'
+		excludeTags 'benchmark', 'minio-integration'
 	}
+}
+
+tasks.register('minioIntegrationTest', Test) {
+	group = 'verification'
+	description = '실제 MinIO 업로드 동시성 테스트를 실행합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'minio-integration'
+	}
+	outputs.upToDateWhen { false }
 }
 
 tasks.register('benchmarkTest', Test) {

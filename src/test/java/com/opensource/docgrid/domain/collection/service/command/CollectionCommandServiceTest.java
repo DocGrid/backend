@@ -17,11 +17,14 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
+
 import com.opensource.docgrid.domain.collection.converter.CollectionConverter;
 import com.opensource.docgrid.domain.collection.dto.request.AddDocumentRequest;
 import com.opensource.docgrid.domain.collection.dto.request.CreateCollectionRequest;
 import com.opensource.docgrid.domain.collection.dto.response.CollectionDocumentResponse;
 import com.opensource.docgrid.domain.collection.dto.response.CollectionResponse;
+import com.opensource.docgrid.domain.collection.entity.CollectionDocument;
 import com.opensource.docgrid.domain.collection.entity.DocumentCollection;
 import com.opensource.docgrid.domain.collection.fixture.CollectionFixture;
 import com.opensource.docgrid.domain.collection.repository.CollectionDocumentRepository;
@@ -29,6 +32,10 @@ import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
+import com.opensource.docgrid.domain.permission.entity.CollectionPermission;
+import com.opensource.docgrid.domain.permission.fixture.PermissionFixture;
+import com.opensource.docgrid.domain.permission.repository.CollectionPermissionRepository;
+import com.opensource.docgrid.domain.permission.service.command.UserDocumentAccessCacheService;
 import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.domain.user.repository.UserRepository;
@@ -56,6 +63,12 @@ class CollectionCommandServiceTest {
 
     @Mock
     private CollectionConverter collectionConverter;
+
+    @Mock
+    private CollectionPermissionRepository collectionPermissionRepository;
+
+    @Mock
+    private UserDocumentAccessCacheService cacheService;
 
     @Mock
     private PermissionQueryService permissionQueryService;
@@ -216,5 +229,109 @@ class CollectionCommandServiceTest {
                 CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID, new AddDocumentRequest(CollectionFixture.DOCUMENT_ID)))
                 .isInstanceOf(DocGridException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.COLLECTION_DOCUMENT_ALREADY_EXISTS);
+    }
+
+    // ==================== deleteCollection ====================
+
+    @Test
+    @DisplayName("소유자가 컬렉션을 삭제하면 soft delete 처리되고 권한 및 캐시가 무효화된다")
+    void deleteCollection_succeeds_when_owner() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection collection = CollectionFixture.createCollection(owner);
+        CollectionPermission userPermission = PermissionFixture.createCollectionPermission(collection, owner);
+
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+        given(collectionPermissionRepository.findAllByCollectionId(CollectionFixture.COLLECTION_ID))
+                .willReturn(List.of(userPermission));
+
+        collectionCommandService.deleteCollection(CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID);
+
+        then(cacheService).should().bulkRevokeBySource(any(), any());
+        then(collectionPermissionRepository).should().deleteAll(any());
+    }
+
+    @Test
+    @DisplayName("컬렉션이 없으면 deleteCollection 시 COLLECTION_NOT_FOUND 예외가 발생한다")
+    void deleteCollection_throws_when_collectionNotFound() {
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() ->
+                collectionCommandService.deleteCollection(CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.COLLECTION_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("소유자가 아닌 사용자가 삭제하면 PERMISSION_DENIED 예외가 발생한다")
+    void deleteCollection_throws_when_notOwner() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection collection = CollectionFixture.createCollection(owner);
+        Long otherUserId = 99L;
+
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+
+        assertThatThrownBy(() ->
+                collectionCommandService.deleteCollection(CollectionFixture.COLLECTION_ID, otherUserId))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PERMISSION_DENIED);
+    }
+
+    // ==================== removeDocument ====================
+
+    @Test
+    @DisplayName("소유자가 문서를 제거하면 collection_documents 삭제 및 캐시 무효화된다")
+    void removeDocument_succeeds_when_owner() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection collection = CollectionFixture.createCollection(owner);
+        Document document = CollectionFixture.createDocument(owner);
+        CollectionPermission userPermission = PermissionFixture.createCollectionPermission(collection, owner);
+        CollectionDocument cd = CollectionDocument.builder()
+                .collection(collection).document(document).addedBy(owner)
+                .addedAt(java.time.LocalDateTime.now()).build();
+
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+        given(collectionDocumentRepository.findByCollectionIdAndDocumentId(
+                CollectionFixture.COLLECTION_ID, CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(cd));
+        given(collectionPermissionRepository.findAllByCollectionId(CollectionFixture.COLLECTION_ID))
+                .willReturn(List.of(userPermission));
+
+        collectionCommandService.removeDocument(
+                CollectionFixture.COLLECTION_ID, CollectionFixture.DOCUMENT_ID, CollectionFixture.USER_ID);
+
+        then(cacheService).should().bulkRevokeBySourcesForDocument(any(), any(), any());
+        then(collectionDocumentRepository).should().delete(cd);
+    }
+
+    @Test
+    @DisplayName("컬렉션에 해당 문서가 없으면 COLLECTION_DOCUMENT_NOT_FOUND 예외가 발생한다")
+    void removeDocument_throws_when_documentNotInCollection() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection collection = CollectionFixture.createCollection(owner);
+
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+        given(collectionDocumentRepository.findByCollectionIdAndDocumentId(
+                CollectionFixture.COLLECTION_ID, CollectionFixture.DOCUMENT_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() ->
+                collectionCommandService.removeDocument(
+                        CollectionFixture.COLLECTION_ID, CollectionFixture.DOCUMENT_ID, CollectionFixture.USER_ID))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.COLLECTION_DOCUMENT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("소유자가 아닌 사용자가 문서를 제거하면 PERMISSION_DENIED 예외가 발생한다")
+    void removeDocument_throws_when_notOwner() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection collection = CollectionFixture.createCollection(owner);
+        Long otherUserId = 99L;
+
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+
+        assertThatThrownBy(() ->
+                collectionCommandService.removeDocument(
+                        CollectionFixture.COLLECTION_ID, CollectionFixture.DOCUMENT_ID, otherUserId))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PERMISSION_DENIED);
     }
 }

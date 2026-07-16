@@ -2,7 +2,7 @@
 
 ## 1. 검증 목적
 
-PR 2와 PR 2.1에서 구현한 파일 중복 제거 및 후보 Object 보상 삭제가 실제 MinIO에서도 동작하는지 검증했다.
+파일 중복 제거 및 후보 Object 보상 삭제가 실제 MinIO에서도 동작하는지 검증했다.
 
 기존 통합 테스트는 실제 OpenSQL/PostgreSQL을 사용했지만 `FileStorageService`는 Mock이었다. 따라서 삭제 메서드가 호출됐다는 사실만 확인할 수 있었고, 경합 패자의 Object가 실제 MinIO에서 사라졌는지는 보장하지 못했다.
 

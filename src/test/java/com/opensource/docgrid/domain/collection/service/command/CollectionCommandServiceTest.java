@@ -29,6 +29,7 @@ import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
+import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.domain.user.repository.UserRepository;
 import com.opensource.docgrid.global.exception.DocGridException;
@@ -55,6 +56,9 @@ class CollectionCommandServiceTest {
 
     @Mock
     private CollectionConverter collectionConverter;
+
+    @Mock
+    private PermissionQueryService permissionQueryService;
 
     // ==================== createCollection ====================
 
@@ -142,6 +146,7 @@ class CollectionCommandServiceTest {
         AddDocumentRequest request = new AddDocumentRequest(CollectionFixture.DOCUMENT_ID);
 
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+        given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID)).willReturn(true);
         given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
         given(collectionDocumentRepository.existsByCollectionIdAndDocumentId(
                 CollectionFixture.COLLECTION_ID, CollectionFixture.DOCUMENT_ID)).willReturn(false);
@@ -186,6 +191,7 @@ class CollectionCommandServiceTest {
         User owner = CollectionFixture.createOwner();
         DocumentCollection collection = CollectionFixture.createCollection(owner);
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+        given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID)).willReturn(true);
         given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> collectionCommandService.addDocument(
@@ -201,6 +207,7 @@ class CollectionCommandServiceTest {
         DocumentCollection collection = CollectionFixture.createCollection(owner);
         Document document = CollectionFixture.createDocument(owner);
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+        given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID)).willReturn(true);
         given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
         given(collectionDocumentRepository.existsByCollectionIdAndDocumentId(
                 CollectionFixture.COLLECTION_ID, CollectionFixture.DOCUMENT_ID)).willReturn(true);

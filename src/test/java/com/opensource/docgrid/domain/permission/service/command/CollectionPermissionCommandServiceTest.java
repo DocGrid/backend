@@ -31,6 +31,7 @@ import com.opensource.docgrid.domain.permission.enums.PermissionTargetType;
 import com.opensource.docgrid.domain.permission.enums.PermissionType;
 import com.opensource.docgrid.domain.permission.fixture.PermissionFixture;
 import com.opensource.docgrid.domain.permission.repository.CollectionPermissionRepository;
+import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.user.entity.Role;
 import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.domain.user.repository.DepartmentRepository;
@@ -54,6 +55,7 @@ class CollectionPermissionCommandServiceTest {
     @Mock private RoleRepository roleRepository;
     @Mock private DepartmentRepository departmentRepository;
     @Mock private PermissionConverter permissionConverter;
+    @Mock private PermissionQueryService permissionQueryService;
 
     // ==================== grantPermission ====================
 
@@ -68,6 +70,7 @@ class CollectionPermissionCommandServiceTest {
                 PermissionTargetType.USER, CollectionFixture.USER_ID, null, null, PermissionType.READ, null);
 
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+        given(permissionQueryService.canAdminCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID)).willReturn(true);
         given(userRepository.findById(CollectionFixture.USER_ID)).willReturn(Optional.of(owner));
         given(userRepository.getReferenceById(CollectionFixture.USER_ID)).willReturn(owner);
         given(collectionDocumentRepository.findAllByCollectionId(CollectionFixture.COLLECTION_ID))
@@ -77,7 +80,7 @@ class CollectionPermissionCommandServiceTest {
         service.grantPermission(CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID, request);
 
         then(collectionPermissionRepository).should().save(any(CollectionPermission.class));
-        then(cacheService).should().grantUserPermission(any(), any(), any(boolean.class),
+        then(cacheService).should().bulkGrantUserPermission(any(), any(), any(boolean.class),
                 any(boolean.class), any(boolean.class), any(), any(), any());
     }
 
@@ -91,6 +94,7 @@ class CollectionPermissionCommandServiceTest {
                 PermissionTargetType.ROLE, null, PermissionFixture.ROLE_ID, null, PermissionType.READ, null);
 
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+        given(permissionQueryService.canAdminCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID)).willReturn(true);
         given(roleRepository.findById(PermissionFixture.ROLE_ID)).willReturn(Optional.of(role));
         given(userRepository.getReferenceById(CollectionFixture.USER_ID)).willReturn(owner);
         given(permissionConverter.toCollectionPermissionResponse(any())).willReturn(null);
@@ -98,7 +102,7 @@ class CollectionPermissionCommandServiceTest {
         service.grantPermission(CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID, request);
 
         then(collectionPermissionRepository).should().save(any(CollectionPermission.class));
-        then(cacheService).should(never()).grantUserPermission(any(), any(), any(boolean.class),
+        then(cacheService).should(never()).bulkGrantUserPermission(any(), any(), any(boolean.class),
                 any(boolean.class), any(boolean.class), any(), any(), any());
     }
 
@@ -141,6 +145,7 @@ class CollectionPermissionCommandServiceTest {
                 PermissionTargetType.USER, null, null, null, PermissionType.READ, null);
 
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+        given(permissionQueryService.canAdminCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID)).willReturn(true);
 
         assertThatThrownBy(() -> service.grantPermission(
                 CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID, request))
@@ -151,23 +156,20 @@ class CollectionPermissionCommandServiceTest {
     // ==================== revokePermission ====================
 
     @Test
-    @DisplayName("USER 권한을 회수하면 캐시도 무효화된다")
+    @DisplayName("USER 권한을 회수하면 캐시도 일괄 무효화된다")
     void revokePermission_user_invalidatesCache() {
         User owner = CollectionFixture.createOwner();
         DocumentCollection collection = CollectionFixture.createCollection(owner);
-        Document document = CollectionFixture.createDocument(owner);
-        CollectionDocument cd = buildCollectionDocument(collection, document);
         CollectionPermission permission = PermissionFixture.createCollectionPermission(collection, owner);
 
         given(collectionPermissionRepository.findById(PermissionFixture.PERMISSION_ID))
                 .willReturn(Optional.of(permission));
-        given(collectionDocumentRepository.findAllByCollectionId(CollectionFixture.COLLECTION_ID))
-                .willReturn(List.of(cd));
+        given(permissionQueryService.canAdminCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID)).willReturn(true);
 
         service.revokePermission(CollectionFixture.COLLECTION_ID, PermissionFixture.PERMISSION_ID,
                 CollectionFixture.USER_ID);
 
-        then(cacheService).should().revokeUserPermission(any(), any(), any(), any());
+        then(cacheService).should().bulkRevokeBySource(any(), any());
         then(collectionPermissionRepository).should().delete(permission);
     }
 

@@ -25,6 +25,7 @@ import com.opensource.docgrid.domain.permission.enums.PermissionTargetType;
 import com.opensource.docgrid.domain.permission.enums.PermissionType;
 import com.opensource.docgrid.domain.permission.fixture.PermissionFixture;
 import com.opensource.docgrid.domain.permission.repository.DocumentPermissionRepository;
+import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.domain.user.repository.DepartmentRepository;
 import com.opensource.docgrid.domain.user.repository.RoleRepository;
@@ -46,6 +47,7 @@ class DocumentPermissionCommandServiceTest {
     @Mock private RoleRepository roleRepository;
     @Mock private DepartmentRepository departmentRepository;
     @Mock private PermissionConverter permissionConverter;
+    @Mock private PermissionQueryService permissionQueryService;
 
     @Test
     @DisplayName("USER 대상 문서 권한을 부여하면 캐시도 함께 갱신된다")
@@ -56,6 +58,7 @@ class DocumentPermissionCommandServiceTest {
                 PermissionTargetType.USER, CollectionFixture.USER_ID, null, null, PermissionType.READ, null);
 
         given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(permissionQueryService.canAdminDocument(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID)).willReturn(true);
         given(userRepository.findById(CollectionFixture.USER_ID)).willReturn(Optional.of(owner));
         given(userRepository.getReferenceById(CollectionFixture.USER_ID)).willReturn(owner);
         given(permissionConverter.toDocumentPermissionResponse(any())).willReturn(null);
@@ -76,6 +79,7 @@ class DocumentPermissionCommandServiceTest {
                 PermissionTargetType.ROLE, null, PermissionFixture.ROLE_ID, null, PermissionType.READ, null);
 
         given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(permissionQueryService.canAdminDocument(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID)).willReturn(true);
         given(roleRepository.findById(PermissionFixture.ROLE_ID)).willReturn(Optional.of(PermissionFixture.createRole()));
         given(userRepository.getReferenceById(CollectionFixture.USER_ID)).willReturn(owner);
         given(permissionConverter.toDocumentPermissionResponse(any())).willReturn(null);
@@ -128,6 +132,7 @@ class DocumentPermissionCommandServiceTest {
 
         given(documentPermissionRepository.findById(PermissionFixture.PERMISSION_ID))
                 .willReturn(Optional.of(permission));
+        given(permissionQueryService.canAdminDocument(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID)).willReturn(true);
 
         service.revokePermission(CollectionFixture.DOCUMENT_ID, PermissionFixture.PERMISSION_ID,
                 CollectionFixture.USER_ID);
@@ -174,6 +179,7 @@ class DocumentPermissionCommandServiceTest {
                 PermissionTargetType.ROLE, null, null, null, PermissionType.READ, null);
 
         given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(permissionQueryService.canAdminDocument(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID)).willReturn(true);
 
         assertThatThrownBy(() -> service.grantPermission(
                 CollectionFixture.DOCUMENT_ID, CollectionFixture.USER_ID, request))

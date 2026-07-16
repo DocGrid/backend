@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.opensource.docgrid.domain.collection.converter.CollectionConverter;
+import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.collection.dto.request.AddDocumentRequest;
 import com.opensource.docgrid.domain.collection.dto.request.CreateCollectionRequest;
 import com.opensource.docgrid.domain.collection.dto.response.CollectionDocumentResponse;
@@ -35,6 +36,7 @@ public class CollectionCommandService {
     private final DocumentRepository documentRepository;
     private final UserRepository userRepository;
     private final CollectionConverter collectionConverter;
+    private final PermissionQueryService permissionQueryService;
 
     // 폴더 생성
     public CollectionResponse createCollection(Long userId, CreateCollectionRequest request) {
@@ -66,8 +68,7 @@ public class CollectionCommandService {
         DocumentCollection collection = collectionRepository.findById(collectionId)
                 .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
 
-        // TODO: Issue 3 PermissionService 완성 후 canWriteDocument() 로 대체
-        if (!collection.getOwner().getId().equals(userId)) {
+        if (!permissionQueryService.canWriteCollection(userId, collectionId)) {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 

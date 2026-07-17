@@ -1,4 +1,4 @@
-# Local DB
+# Issue #3 로컬 DB 개발 환경 구성
 
 이 문서는 로컬 개발 환경에서 OpenSQL-PG 기반 DB 컨테이너를 띄우고 Spring Boot `local` profile로 Flyway migration 실행을 확인하는 최소 가이드입니다.
 

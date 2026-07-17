@@ -1,10 +1,10 @@
-# PR 2.2 실제 MinIO 업로드 동시성 테스트 결과
+# Issue #27 실제 MinIO 업로드 동시성 테스트 결과
 
 ## 1. 검증 목적
 
 파일 중복 제거 및 후보 Object 보상 삭제가 실제 MinIO에서도 동작하는지 검증했다.
 
-기존 통합 테스트는 실제 OpenSQL/PostgreSQL을 사용했지만 `FileStorageService`는 Mock이었다. 따라서 삭제 메서드가 호출됐다는 사실만 확인할 수 있었고, 경합 패자의 Object가 실제 MinIO에서 사라졌는지는 보장하지 못했다.
+기존 통합 테스트는 실제 Tmax OpenSQL 14.6(PostgreSQL 호환)을 사용했지만 `FileStorageService`는 Mock이었다. 따라서 삭제 메서드가 호출됐다는 사실만 확인할 수 있었고, 경합 패자의 Object가 실제 MinIO에서 사라졌는지는 보장하지 못했다.
 
 이번 테스트는 다음 조건을 실제 저장소에서 확인했다.
 
@@ -19,11 +19,11 @@
 | 구성요소 | 사용 환경 |
 |---|---|
 | 애플리케이션 | Spring Boot test context |
-| DB | OpenSQL/PostgreSQL 14.6 |
+| DB | Tmax OpenSQL 14.6(PostgreSQL 호환) |
 | Schema | `docgrid_test` |
 | Object Storage | 실제 MinIO Docker container |
 | 테스트 profile | `test`, `minio-integration` |
-| 테스트 bucket | 실행별 `docgrid-pr22-{uuid}` |
+| 테스트 bucket | 실행별 UUID를 포함한 전용 Bucket |
 | 동시 실행 | 2개 Executor thread |
 
 MinIO 인증값은 코드에 하드코딩하지 않고 `.env`의 환경변수에서 읽었다. 개발용 `docgrid` bucket과 데이터를 분리하기 위해 테스트 전용 bucket을 동적으로 주입했다.
@@ -38,7 +38,7 @@ MinIO 인증값은 코드에 하드코딩하지 않고 `.env`의 환경변수에
 → 파일 검증 및 SHA-256 계산
 → 실제 MinIOStorageService를 감싼 Barrier Wrapper
 → FileObjectResolutionService
-→ 실제 OpenSQL/PostgreSQL transaction
+→ 실제 Tmax OpenSQL transaction
 → 후보 채택 또는 보상 삭제
 ```
 
@@ -216,7 +216,7 @@ POST /api/documents
 Content-Type: multipart/form-data
 ```
 
-PR 2.2 시점에는 Worker와 인덱싱 완료 API가 없으므로 테스트에서 다음 쿼리로 초기 Version의 완료 상태를 모의했다.
+테스트 시점에는 Worker와 인덱싱 완료 API가 없으므로 다음 쿼리로 초기 Version의 완료 상태를 모의했다.
 
 ```sql
 UPDATE document_versions
@@ -373,7 +373,7 @@ current_version_id는 Version 1 유지
 
 ## 7. Version Facade 보상 분기 단위 테스트
 
-PR 2.1에서 추가된 Version Facade의 보상 경계도 6개 단위 테스트로 고정했다.
+새 버전 업로드에서 추가된 Version Facade의 보상 경계도 6개 단위 테스트로 고정했다.
 
 | 상황 | 검증 결과 |
 |---|---|
@@ -456,7 +456,7 @@ MinIO는 다음 순서로 정리했다.
 ```sql
 SELECT COUNT(*)
 FROM docgrid_test.file_objects
-WHERE bucket_name LIKE 'docgrid-pr22-%';
+WHERE bucket_name LIKE :testBucketPrefix || '%';
 ```
 
 결과:
@@ -480,7 +480,7 @@ WHERE title LIKE '동시 신규 문서 %'
 0
 ```
 
-MinIO bucket 목록에서도 `docgrid-pr22-*` bucket이 남아 있지 않았다.
+MinIO Bucket 목록에서도 해당 테스트 전용 Prefix를 사용하는 Bucket이 남아 있지 않았다.
 
 ## 10. 최종 결론
 
@@ -496,7 +496,7 @@ MinIO bucket 목록에서도 `docgrid-pr22-*` bucket이 남아 있지 않았다.
 - 남은 Object의 크기, Content-Type, SHA-256도 DB 값과 일치한다.
 - 기본 테스트는 MinIO 의존 없이 실행되고 실제 MinIO 검증은 전용 task로 분리된다.
 
-Mock에서 `delete()` 호출을 검증한 것과 실제 Object가 존재하지 않는 것을 검증한 것은 서로 다른 보장이다. PR 2.2에서는 후자의 보장까지 자동화했다.
+Mock에서 `delete()` 호출을 검증한 것과 실제 Object가 존재하지 않는 것을 검증한 것은 서로 다른 보장이다. 이번 작업에서는 후자의 보장까지 자동화했다.
 
 ## 11. 남아 있는 한계
 

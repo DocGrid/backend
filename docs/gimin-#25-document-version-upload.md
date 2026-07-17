@@ -1,4 +1,4 @@
-# PR 2.1 문서 새 버전 업로드 설계
+# Issue #25 문서 새 버전 업로드 설계
 
 ## 1. 목적
 
@@ -15,7 +15,7 @@ current_version_id는 새 버전이 INDEXED될 때까지 기존 버전 유지
 이 API에서는 파싱, 청킹, 임베딩을 수행하지 않는다. 새 버전의 원본 파일과 인덱싱 Job만 접수한다.
 
 ```text
-브랜치명: feature/25
+GitHub Issue: #25
 ```
 
 ---
@@ -160,14 +160,14 @@ public record DocumentVersionUploadRequest(
 }
 ```
 
-PR 2.1은 파일 내용의 버전만 관리한다. 제목과 설명은 Document 공통 메타데이터이며 별도 메타데이터 수정 API에서 변경한다.
+이번 구현은 파일 내용의 버전만 관리한다. 제목과 설명은 Document 공통 메타데이터이며 별도 메타데이터 수정 API에서 변경한다.
 
 ```text
 새 Version.title_snapshot
 → Version 접수 시점의 Document.title 복사
 
 Version 처리 중 별도 API로 Document.title 변경
-→ PR 9 완료 처리에서 title_snapshot으로 덮어쓰지 않음
+→ 후속 인덱싱 완료 처리에서 title_snapshot으로 덮어쓰지 않음
 ```
 
 `title_snapshot`은 해당 Version이 접수될 당시의 제목을 기록하는 감사·출처용 스냅샷이다. 현재 문서 제목을 교체하기 위한 후보 값으로 사용하지 않는다. 추후 제목이나 설명 자체를 버전 자산으로 관리해야 한다면 메타데이터 revision과 `description_snapshot`을 포함한 별도 설계를 추가한다.
@@ -225,7 +225,7 @@ document_versions
 - created_by
 ```
 
-PR 2.1 마이그레이션에서 다음 컬럼을 추가한다.
+이슈 #25 마이그레이션에서 다음 컬럼을 추가한다.
 
 ```sql
 ALTER TABLE document_versions
@@ -245,7 +245,7 @@ URL / API / MCP Version
 
 기존 데이터는 `file_object_id`가 있는 행만 연결된 `file_objects` 값으로 백필한다. `file_objects.original_filename`과 `content_type`은 기존 호환성을 위해 이번 PR에서는 제거하지 않는다.
 
-PR 2.1 이후에는 두 업로드 경로가 모두 Version 메타데이터를 채워야 한다.
+이슈 #25 적용 이후에는 두 업로드 경로가 모두 Version 메타데이터를 채워야 한다.
 
 ```text
 DocumentUploadService
@@ -282,7 +282,7 @@ DOCUMENT_VERSION_TYPE_MISMATCH
 
 ## 8. 권한 및 보안 정책
 
-PR 2.1 MVP에서는 문서 소유자만 새 버전을 생성한다.
+현재 MVP에서는 문서 소유자만 새 버전을 생성한다.
 
 ```text
 document.owner_user_id = 현재 인증 사용자
@@ -364,7 +364,7 @@ documents.source_type = UPLOAD
 → 기존 FAILED current_version_id는 새 Version 완료 전까지 유지
 ```
 
-최신 FAILED Version과 같은 파일을 다시 전송하면 새 Version을 만들지 않고 PR 17 수동 재처리를 안내한다. FAILED Version 뒤에 더 최신 Version이 생성되면 과거 FAILED Version은 수동 재처리할 수 없다.
+최신 FAILED Version과 같은 파일을 다시 전송하면 새 Version을 만들지 않고 별도의 수동 재처리 기능을 사용한다. FAILED Version 뒤에 더 최신 Version이 생성되면 과거 FAILED Version은 수동 재처리할 수 없다.
 
 ---
 
@@ -450,7 +450,7 @@ embedding_jobs.document_version_id = 21
 embedding_jobs.status = PENDING
 ```
 
-Version 2가 INDEXED되면 PR 9에서:
+Version 2가 INDEXED되면 후속 인덱싱 완료 처리에서:
 
 ```text
 documents.current_version_id = 21
@@ -497,7 +497,7 @@ CREATE UNIQUE INDEX uk_document_versions_one_in_progress
 
 ### current_version 단조 증가
 
-PR 9 완료 처리에서는 Document를 Lock하고 버전 번호를 비교한다.
+후속 인덱싱 완료 처리에서는 Document를 Lock하고 버전 번호를 비교한다.
 
 ```text
 완료 Version.version_no > currentVersion.version_no
@@ -510,7 +510,7 @@ PR 9 완료 처리에서는 Document를 Lock하고 버전 번호를 비교한다
 
 stale 완료 오류는 `INDEXING_STALE_VERSION_COMPLETION`을 사용한다. Claim Token 검증과 별개로 오래된 완료 요청의 상태 쓰기를 최종 차단한다.
 
-PR 17 수동 재처리에서는 FAILED Version보다 최신 Version이 이미 존재하면 재처리를 거부한다.
+후속 수동 재처리 기능에서는 FAILED Version보다 최신 Version이 이미 존재하면 재처리를 거부한다.
 
 ---
 
@@ -603,9 +603,9 @@ FileObject 저장·재사용 로직은 신규 문서 업로드와 버전 업로�
 
 ---
 
-## 16. 후속 PR 계약
+## 16. 후속 기능 계약
 
-### PR 3 문서 상태 조회
+### 문서 상태 조회
 
 현재 검색 가능한 버전과 처리 중 버전을 함께 반환한다.
 
@@ -623,7 +623,7 @@ FileObject 저장·재사용 로직은 신규 문서 업로드와 버전 업로�
 }
 ```
 
-### PR 9 인덱싱 완료
+### 인덱싱 완료
 
 - 완료 Version이 현재 Version보다 최신인지 검증한다.
 - 최신 Version이면 `current_version_id`를 교체한다.
@@ -631,16 +631,16 @@ FileObject 저장·재사용 로직은 신규 문서 업로드와 버전 업로�
 - 오래된 Version 완료가 현재 Version을 덮어쓰지 못하게 한다.
 - stale 완료 요청은 Version과 Job 상태를 포함해 아무것도 변경하지 않고 409로 거절한다.
 
-### PR 10 실패 및 자동 재시도
+### 실패 및 자동 재시도
 
 - 새 Version 실패 시 기존 current Version을 유지한다.
 - 재시도 중에도 기존 INDEXED Version을 검색 가능하게 유지한다.
 
-### PR 17 수동 재처리
+### 수동 재처리
 
 - FAILED Version보다 최신 Version이 존재하면 오래된 Version 재처리를 거부한다.
 
-### PR 18 E2E
+### E2E 검증
 
 - Version 2 처리 중 Version 1 검색 가능 여부
 - Version 2 성공 후 current Version 교체
@@ -702,4 +702,4 @@ FileObject 저장·재사용 로직은 신규 문서 업로드와 버전 업로�
 - 새 Version마다 별도의 PENDING Job이 생성된다.
 - DB 실패 또는 동시성 패배 시 이번 요청의 미사용 MinIO 후보만 삭제된다.
 - FileObject 직접 접근 없이 문서 권한을 거쳐 파일에 접근한다.
-- PR 3, 9, 10, 17, 18과의 계약이 문서화된다.
+- 문서 상태 조회, 인덱싱 완료, 실패·재시도, 수동 재처리, E2E 검증과의 계약이 문서화된다.

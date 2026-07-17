@@ -399,7 +399,24 @@ collections: id=1, status=DELETED, deleted_at=2026-07-17 17:24:59.612
 
 컬렉션 레코드는 삭제되지 않고 status와 deleted_at만 변경됐다.
 
-컬렉션 삭제 후 collection_permissions 행이 삭제돼 ROLE live 조회가 차단되는 것은 DB에서 확인했으나, B의 `/me` 응답을 통한 최종 접근 차단 검증은 이번 테스트에서 누락됐다. 추후 별도 시나리오로 추가 필요하다.
+컬렉션 삭제 후 B가 `/me`를 호출한다.
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "data": {
+    "documentId": 1,
+    "canRead": false,
+    "canWrite": false,
+    "canAdmin": false,
+    "sources": []
+  },
+  "timestamp": "2026-07-17 18:34:10"
+}
+```
+
+collection_permissions 행이 삭제돼 ROLE live 조회가 차단되고 접근이 완전히 막혔다.
 
 ---
 

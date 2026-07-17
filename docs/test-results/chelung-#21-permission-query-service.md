@@ -5,11 +5,11 @@
 이슈 #16 · #18 · #21 · #24 · #29에서 구현한 권한 시스템 전체가 다음 계약을 지키는지 Swagger에서 확인했다.
 
 - 문서 소유자는 별도 권한 부여 없이 read · write · admin 전부 보유한다.
-- PUBLIC 문서는 canRead만 true이고 canWrite · canAdmin은 false다.
+- PUBLIC 문서는 별도 권한이 없는 사용자에게 canRead만 true이고 canWrite · canAdmin은 false다. USER·ROLE·DEPT 권한이 추가로 있으면 해당 경로도 sources에 수집되고 canWrite·canAdmin도 true가 될 수 있다.
 - USER 직접 권한을 부여하면 user_document_access_cache에 즉시 캐시가 생성된다.
 - 컬렉션에 ROLE 권한을 부여하면 해당 역할 보유자가 소속 문서에 접근할 수 있다.
 - USER 직접 권한을 회수해도 ROLE 경로가 남아 있으면 접근이 유지된다.
-- 컬렉션에서 문서를 제거하면 ROLE/DEPT 경로가 끊겨 접근이 차단된다.
+- 컬렉션에서 문서를 제거하면 ROLE 경로가 끊겨 접근이 차단된다. (DEPARTMENT 시나리오는 이번 테스트 범위에서 제외)
 - 컬렉션 삭제는 soft delete(status=DELETED)로 처리되고 목록에서 제외된다.
 - sources 필드에 권한이 부여된 경로가 모두 수집된다.
 
@@ -398,6 +398,8 @@ collections: id=1, status=DELETED, deleted_at=2026-07-17 17:24:59.612
 ```
 
 컬렉션 레코드는 삭제되지 않고 status와 deleted_at만 변경됐다.
+
+컬렉션 삭제 후 collection_permissions 행이 삭제돼 ROLE live 조회가 차단되는 것은 DB에서 확인했으나, B의 `/me` 응답을 통한 최종 접근 차단 검증은 이번 테스트에서 누락됐다. 추후 별도 시나리오로 추가 필요하다.
 
 ---
 

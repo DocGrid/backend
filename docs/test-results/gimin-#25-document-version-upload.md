@@ -1,4 +1,4 @@
-# 문서 새 버전 업로드 테스트 결과
+# Issue #25 문서 새 버전 업로드 테스트 결과
 
 ## 1. 테스트 목적
 
@@ -12,7 +12,7 @@
 - 파일명이 달라도 파일 바이트가 같으면 동일 파일로 판정한다.
 - 파일 크기가 같아도 SHA-256이 다르면 다른 파일로 판정한다.
 
-상세 설계는 [`docs/pr-2.1-document-version-upload.md`](../pr-2.1-document-version-upload.md)를 참고한다.
+상세 설계는 [Issue #25 문서 새 버전 업로드 설계](../gimin-#25-document-version-upload.md)를 참고한다.
 
 ## 2. 테스트 환경과 제약
 
@@ -22,7 +22,7 @@
 - Swagger UI를 통한 API 호출
 - `./gradlew test` 전체 테스트 수행
 
-PR 2.1은 Version과 PENDING EmbeddingJob을 접수하는 범위까지만 담당한다. 실제 Worker와 인덱싱 완료 처리는 아직 구현되지 않았으므로, 연속 Version 테스트에서는 기존 Version과 Job을 DB에서 `INDEXED`로 변경해 완료 상태를 모의했다.
+이슈 #25는 Version과 PENDING EmbeddingJob을 접수하는 범위까지만 담당한다. 실제 Worker와 인덱싱 완료 처리는 아직 구현되지 않았으므로, 연속 Version 테스트에서는 기존 Version과 Job을 DB에서 `INDEXED`로 변경해 완료 상태를 모의했다.
 
 이 수동 변경은 테스트 전용이며 운영 흐름에서는 후속 인덱싱 완료 API가 담당한다.
 

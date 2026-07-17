@@ -34,7 +34,7 @@ Don't assume. Don't hide confusion. Surface tradeoffs.
 - Java 코드 작성 시 → `code_style.md`
 - 테스트 작성/수정 시 → `testing_guide.md`
 - Security/Config 만질 때 → `security.md`
-- 배포/Docker/GitHub Actions 관련 → `deploy.md`
+- Git 전략/커밋/문서 관리 규칙 → `workflow.md`
 
 ### 🟣 AI 작업 흔적 (`.dev/`)
 - 새로 알게 된 패턴·주의점·오류 기록 → `learnings/`

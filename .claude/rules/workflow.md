@@ -1,8 +1,8 @@
 ---
-globs: "docker-compose*.yml, deploy.sh, .github/workflows/**, Dockerfile"
+globs: ".github/workflows/**, .github/issue-branch.yml"
 ---
 
-# 배포 규칙
+# 개발 워크플로 규칙
 
 ## Git 전략
 - 기본 브랜치: `develop`

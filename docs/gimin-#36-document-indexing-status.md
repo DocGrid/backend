@@ -357,7 +357,11 @@ Version 상태는 전체 처리 단계를 나타내고 Job 상태는 비동기 �
 
 ### 4.5 상태 불일치 판정
 
-처리 중 Version은 있지만 활성 Job이 없으면 정상 상태로 숨기지 않는다.
+현재 상태 모델에서는 처리 중인 DocumentVersion이 존재하면 해당 Version을 수행할 활성 EmbeddingJob이 정확히 하나 존재해야 한다.
+
+따라서 상태가 UPLOADED, PARSING, CHUNKED 또는 EMBEDDING인 Version은 존재하지만 PENDING 또는 PROCESSING 상태의 EmbeddingJob이 없다면, 해당 Version은 더 이상 처리될 수 없는 고아 상태로 판단한다.
+
+이 경우 processingVersion을 정상 응답으로 반환하지 않고 INDEXING_STATUS_INCONSISTENT 오류로 처리한다.
 
 ```text
 Processing Version 존재

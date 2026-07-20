@@ -52,6 +52,9 @@ public enum ErrorCode {
     DOCUMENT_VERSION_TYPE_MISMATCH(
         HttpStatus.BAD_REQUEST, "DOCUMENT-VERSION-004", "기존 문서와 다른 파일 형식은 업로드할 수 없습니다."
     ),
+    INDEXING_STATUS_INCONSISTENT(
+        HttpStatus.INTERNAL_SERVER_ERROR, "DOCUMENT-STATUS-001", "문서 인덱싱 상태를 조회할 수 없습니다."
+    ),
     EMPTY_FILE(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-001", "빈 파일은 업로드할 수 없습니다."),
     FILE_SIZE_EXCEEDED(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-002", "파일 크기 제한을 초과했습니다."),
     UNSUPPORTED_FILE_EXTENSION(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-003", "지원하지 않는 파일 확장자입니다."),

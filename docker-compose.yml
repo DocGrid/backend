@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: tmaxopensql/postgres:14.6
+    build:
+      context: ./docker/opensql
+      dockerfile: Dockerfile
     platform: linux/amd64
     container_name: local-opensql
     environment:
@@ -41,6 +43,24 @@ services:
     networks:
       - docgrid-local
 
+  embedding-server:
+    build:
+      context: ./embedding-server
+      dockerfile: Dockerfile
+    container_name: docgrid-embedding
+    ports:
+      - "8000:8000"
+    volumes:
+      - huggingface-cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    networks:
+      - docgrid-local
+
 networks:
   docgrid-local:
 
@@ -48,3 +68,4 @@ volumes:
   opensql_data:
     name: opensql_data
   minio-data:
+  huggingface-cache:

@@ -14,6 +14,13 @@ document:
   upload:
     max-file-size: 10MB
 
+indexing:
+  worker:
+    enabled: ${INDEXING_WORKER_ENABLED:false}
+    name: ${INDEXING_WORKER_NAME:indexing-worker}
+    heartbeat-interval: ${INDEXING_WORKER_HEARTBEAT_INTERVAL:10s}
+    dead-threshold: ${INDEXING_WORKER_DEAD_THRESHOLD:30s}
+
 server:
   port: 8080
 

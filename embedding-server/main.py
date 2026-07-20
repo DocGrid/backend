@@ -1,3 +1,4 @@
+import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -9,13 +10,19 @@ logger = logging.getLogger(__name__)
 model: BGEM3FlagModel | None = None
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+def _load_model():
     global model
     logger.info("Loading BAAI/bge-m3 model...")
     model = BGEM3FlagModel("BAAI/bge-m3", use_fp16=True)
     logger.info("Model loaded.")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    thread = threading.Thread(target=_load_model, daemon=True)
+    thread.start()
     yield
+    global model
     model = None
 
 

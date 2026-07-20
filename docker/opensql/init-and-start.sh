@@ -14,8 +14,8 @@ psql -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'docgrid'" | gre
 psql -d docgrid -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
 # Allow TCP connections from any host (needed for host-machine Spring Boot)
-grep -qxF "host all all 0.0.0.0/0 trust" "$PGDATA/pg_hba.conf" \
-    || echo "host all all 0.0.0.0/0 trust" >> "$PGDATA/pg_hba.conf"
+grep -qxF "host all all 0.0.0.0/0 scram-sha-256" "$PGDATA/pg_hba.conf" \
+    || echo "host all all 0.0.0.0/0 scram-sha-256" >> "$PGDATA/pg_hba.conf"
 
 # Stop temp postgres cleanly before handing off
 pg_ctl stop -D "$PGDATA" -m fast -w

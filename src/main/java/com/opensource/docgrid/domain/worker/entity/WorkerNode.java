@@ -14,6 +14,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -35,6 +36,9 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(
         name = "worker_nodes",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_worker_nodes_instance_id", columnNames = "instance_id")
+        },
         indexes = {
                 @Index(name = "idx_worker_nodes_status", columnList = "status"),
                 @Index(name = "idx_worker_nodes_last_heartbeat_at", columnList = "last_heartbeat_at")
@@ -48,6 +52,9 @@ public class WorkerNode extends BaseEntity {
 
     @Column(name = "worker_name", nullable = false, length = 200)
     private String workerName;
+
+    @Column(name = "instance_id", nullable = false, length = 64)
+    private String instanceId;
 
     @Column(name = "host_name", length = 255)
     private String hostName;
@@ -69,9 +76,10 @@ public class WorkerNode extends BaseEntity {
     private LocalDateTime stoppedAt;
 
     @Builder
-    public WorkerNode(String workerName, String hostName, String ipAddress, WorkerStatus status,
+    public WorkerNode(String workerName, String instanceId, String hostName, String ipAddress, WorkerStatus status,
                        LocalDateTime lastHeartbeatAt, LocalDateTime startedAt) {
         this.workerName = workerName;
+        this.instanceId = instanceId;
         this.hostName = hostName;
         this.ipAddress = ipAddress;
         this.status = status != null ? status : WorkerStatus.ACTIVE;
@@ -80,6 +88,9 @@ public class WorkerNode extends BaseEntity {
     }
 
     public void updateHeartbeat(LocalDateTime heartbeatAt) {
+        if (status != WorkerStatus.ACTIVE && status != WorkerStatus.IDLE) {
+            return;
+        }
         this.lastHeartbeatAt = heartbeatAt;
     }
 
@@ -90,5 +101,17 @@ public class WorkerNode extends BaseEntity {
     public void markStopped(LocalDateTime stoppedAt) {
         this.status = WorkerStatus.STOPPED;
         this.stoppedAt = stoppedAt;
+    }
+
+    public WorkerStatus resolveEffectiveStatus(LocalDateTime heartbeatDeadline) {
+        if (status == WorkerStatus.STOPPED || status == WorkerStatus.DEAD) {
+            return status;
+        }
+
+        if (lastHeartbeatAt == null || !lastHeartbeatAt.isAfter(heartbeatDeadline)) {
+            return WorkerStatus.DEAD;
+        }
+
+        return status;
     }
 }

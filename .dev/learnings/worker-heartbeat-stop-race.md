@@ -1,0 +1,28 @@
+# Worker Heartbeat와 종료 상태 갱신 경쟁 조건
+
+## 문제
+
+Heartbeat와 애플리케이션 종료 처리가 같은 Worker 행을 동시에 읽고 엔티티 Dirty Checking으로 저장하면,
+종료 트랜잭션이 STOPPED를 Commit한 뒤 오래된 Heartbeat 엔티티가 ACTIVE 상태를 다시 덮어쓸 수 있다.
+
+## 적용 패턴
+
+Heartbeat는 엔티티 전체를 저장하지 않고 다음 조건의 짧은 UPDATE를 사용한다.
+
+```text
+id = 현재 worker_id
+instance_id = 현재 실행 instance_id
+status IN (ACTIVE, IDLE)
+```
+
+UPDATE 대상도 `last_heartbeat_at`, `updated_at`으로 제한한다. 이 방식은 종료가 먼저 Commit되면
+Heartbeat UPDATE 결과가 0건이 되어 STOPPED 상태를 되살리지 않는다.
+
+## 검증
+
+실제 OpenSQL Repository 테스트에서 STOPPED 갱신 후 늦은 Heartbeat를 실행하고 다음을 확인한다.
+
+- Heartbeat UPDATE 결과 0건
+- 상태 STOPPED 유지
+- `stopped_at` 유지
+- 마지막 Heartbeat 시각 미변경

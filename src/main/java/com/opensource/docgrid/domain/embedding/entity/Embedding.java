@@ -6,6 +6,8 @@ import com.opensource.docgrid.domain.document.entity.DocumentVersion;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingStatus;
 import com.opensource.docgrid.global.common.entity.BaseEntity;
 
+import com.opensource.docgrid.global.common.type.VectorType;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -23,6 +25,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.Type;
 
 /**
  * 임베딩(벡터) 테이블.
@@ -36,8 +39,7 @@ import lombok.NoArgsConstructor;
  * unique 제약: (chunk_id, embedding_model_id) 조합은 유일해야 한다 — 같은 chunk를 같은 모델로 중복 임베딩 금지.
  * index: (embedding_model_id, status), document_id, document_version_id.
  *
- * <p>주의사항: vector 컬럼은 이 프로젝트에 아직 Hibernate vector 타입 매핑이 없어 TEXT로 임시 매핑했다.
- * TODO: 추후 OpenSQL vector 타입(예: vector(768/1024/1536))으로 반드시 교체해야 한다.
+ * <p>주의사항: vector 컬럼은 VectorType(커스텀 Hibernate UserType)으로 float[]에 매핑한다.
  * dimension은 vector 값의 차원 수 검증용으로 별도 저장하며 embedding_models.dimension과 일치해야 한다.
  * MVP는 단일 active/searchable 모델 + 고정 dimension을 전제로 한다.
  */
@@ -84,9 +86,9 @@ public class Embedding extends BaseEntity {
     @JoinColumn(name = "embedding_model_id", nullable = false)
     private EmbeddingModel embeddingModel;
 
-    // TODO: 추후 OpenSQL vector 타입(예: vector(768/1024/1536))으로 교체 필요. 현재는 TEXT 임시 매핑.
-    @Column(nullable = false, columnDefinition = "TEXT")
-    private String vector;
+    @Type(VectorType.class)
+    @Column(nullable = false, columnDefinition = "vector(1024)")
+    private float[] vector;
 
     @Column(nullable = false)
     private int dimension;
@@ -100,7 +102,7 @@ public class Embedding extends BaseEntity {
 
     @Builder
     public Embedding(DocumentChunk chunk, Document document, DocumentVersion documentVersion,
-                      EmbeddingModel embeddingModel, String vector, int dimension, String vectorHash,
+                      EmbeddingModel embeddingModel, float[] vector, int dimension, String vectorHash,
                       EmbeddingStatus status) {
         this.chunk = chunk;
         this.document = document;

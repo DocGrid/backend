@@ -6,6 +6,7 @@ import com.opensource.docgrid.domain.search.enums.ResultStatus;
 import com.opensource.docgrid.domain.search.enums.SearchType;
 import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.global.common.entity.BaseEntity;
+import com.opensource.docgrid.global.common.type.VectorType;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -23,6 +24,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.Type;
 
 /**
  * 검색 요청 루트 테이블.
@@ -35,8 +37,8 @@ import lombok.NoArgsConstructor;
  * index: user_id, collection_id, query_embedding_model_id, search_type, created_at.
  *
  * <p>주의사항: MVP는 SearchType.VECTOR 중심으로 동작하며 KEYWORD/HYBRID는 확장 여지로 남겨둔다.
- * queryVector는 추후 OpenSQL vector 타입으로 교체 필요(TODO), filtersJson은 Hibernate JSON 매핑이 없어
- * TEXT로 임시 매핑했다.
+ * queryVector는 VectorType(커스텀 Hibernate UserType)으로 float[]에 매핑한다.
+ * filtersJson은 Hibernate JSON 매핑이 없어 TEXT로 임시 매핑했다.
  */
 @Getter
 @Entity
@@ -75,9 +77,9 @@ public class SearchQuery extends BaseEntity {
     @JoinColumn(name = "query_embedding_model_id")
     private EmbeddingModel queryEmbeddingModel;
 
-    // TODO: 추후 OpenSQL vector 타입(예: vector(768/1024/1536))으로 교체 필요. 현재는 TEXT 임시 매핑.
-    @Column(name = "query_vector", columnDefinition = "TEXT")
-    private String queryVector;
+    @Type(VectorType.class)
+    @Column(name = "query_vector", columnDefinition = "vector(1024)")
+    private float[] queryVector;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "search_type", nullable = false, length = 20)
@@ -102,7 +104,7 @@ public class SearchQuery extends BaseEntity {
 
     @Builder
     public SearchQuery(User user, DocumentCollection collection, String queryText,
-                        EmbeddingModel queryEmbeddingModel, String queryVector, SearchType searchType, int topK,
+                        EmbeddingModel queryEmbeddingModel, float[] queryVector, SearchType searchType, int topK,
                         String filtersJson, Integer latencyMs, ResultStatus status, String errorMessage) {
         this.user = user;
         this.collection = collection;

@@ -18,11 +18,6 @@ globs: "**/SecurityConfig.java, **/config/**/*.java, **/*Controller.java, .env, 
 - `@Valid`, `@NotBlank` 등으로 Controller 계층에서 검증
 - 외부 입력 신뢰 금지 — 시스템 경계에서만 검증
 
-## 예외 처리에 중점을 둔다
-- 모든 예외는 `GlobalExceptionHandler`에서 일괄 처리
-- 민감한 에러 정보(스택트레이스 등)는 응답 본문에 포함 금지
-- 운영 환경에서 내부 오류는 `INTERNAL_SERVER_ERROR` 공통 메시지만 반환
-
 ## 트러블슈팅
 - Spring Security 403: SecurityConfig의 requestMatchers 경로 확인
 - Spring Security 401: 인증 토큰 또는 세션 상태 확인

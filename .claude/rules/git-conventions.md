@@ -1,8 +1,4 @@
----
-globs: ".github/workflows/**, .github/issue-branch.yml"
----
-
-# 개발 워크플로 규칙
+# Git·개발 워크플로 규칙
 
 ## Git 전략
 - 기본 브랜치: `develop`
@@ -23,26 +19,6 @@ globs: ".github/workflows/**, .github/issue-branch.yml"
 - `application-local.yml` — 로컬 전용 (DB 접속정보 환경변수로 주입)
 - `application-prod.yml` — 프로덕션 (환경변수로 시크릿 주입)
 
-## DB 마이그레이션
-- 스키마 변경은 반드시 Flyway 마이그레이션 파일로 관리
-- 파일명: `V{버전}__{설명}.sql` (예: `V1__create_user_table.sql`)
-- 마이그레이션 파일은 한 번 적용 후 수정 금지 — 새 파일 추가
-- `spring.jpa.hibernate.ddl-auto=validate` 유지 (Flyway가 스키마 관리)
-
-## 문서 관리
-
-### PR 설계 문서
-- 위치: `docs/`
-- 파일명: `{github아이디}-#{이슈번호}-{설명}.md` (예: `chelung-#29-collection-management.md`)
-- 기능 구현 PR과 함께 작성 — 설계 배경, API 명세, 구현 구조, 주요 설계 결정 포함
-
-### 테스트 결과 문서
-- 위치: `docs/test-results/`
-- 파일명: 설계 문서와 동일한 이름 사용
-- 기능 머지 후 **별도 테스트 이슈**로 분리해서 작성
-- Swagger 수동 테스트(시나리오별 결과, DB 검증)와 `./gradlew test` 자동 테스트 결과를 **하나의 문서**에 통합 작성
-- 섹션 구성 참고: 테스트 목적 → 환경/제약 → 테스트 데이터 → 시나리오별 결과 → 자동 테스트 결과 → 최종 결론
-
 ## 빌드
 ```bash
 ./gradlew build -x test   # CI용 (테스트 제외)
@@ -52,5 +28,4 @@ globs: ".github/workflows/**, .github/issue-branch.yml"
 ## 트러블슈팅
 - LazyInitializationException: 트랜잭션 범위 밖 연관관계 접근, JOIN FETCH 추가
 - PostgreSQL 연결 실패: `application-local.yml` DB 설정 및 PostgreSQL 실행 여부 확인
-- Flyway 마이그레이션 실패: `flyway_schema_history` 테이블 확인, 중복 버전 체크
 - 빌드 실패: `./gradlew clean build` 후 재시도

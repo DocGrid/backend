@@ -229,3 +229,4 @@ public enum {Domain}Status {
 3. ErrorCode에 도메인 전용 에러코드 추가 필요
 4. Flyway 마이그레이션 파일 작성 필요 (`V{버전}__{설명}.sql`)
 5. Scheduler 생성 시 메인 클래스에 `@EnableScheduling` 추가 필요
+6. `docs/design/{github아이디}-#{이슈번호}-{설명}.md` 설계 문서 작성 필요 (배경·API명세·에러케이스·이슈번호 필수)

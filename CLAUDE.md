@@ -31,10 +31,15 @@ Don't assume. Don't hide confusion. Surface tradeoffs.
 - 도메인 목록 → `src/main/java/com/opensource/docgrid/domain/`
 
 ### 🟢 상황별 룰 (`.claude/rules/`) — 자동 로드됨
-- Java 코드 작성 시 → `code_style.md`
+- 항상 로드 → `git-conventions.md` (브랜치·커밋·환경설정)
+- Java 파일 작업 시 → `java-style.md`
+- Service 작업 시 → `service-pattern.md`
+- Controller 작업 시 → `controller-pattern.md`
+- Converter 작업 시 → `converter-pattern.md`
 - 테스트 작성/수정 시 → `testing_guide.md`
 - Security/Config 만질 때 → `security.md`
-- Git 전략/커밋/문서 관리 규칙 → `workflow.md`
+- Flyway 마이그레이션 작성 시 → `db-migration.md`
+- docs/ 문서 작성 시 → `docs-management.md`
 
 ### 🟣 AI 작업 흔적 (`.dev/`)
 - 새로 알게 된 패턴·주의점·오류 기록 → `learnings/`
@@ -73,9 +78,10 @@ src/main/java/com/opensource/docgrid/
         └── enums/
 
 docs/
-├── {github아이디}-#{이슈번호}-{설명}.md        # PR 상세 설계 문서
-└── test-results/
-    └── {github아이디}-#{이슈번호}-{설명}.md    # 테스트 결과 문서 (Swagger 수동 + 자동 테스트 통합)
+├── design/
+│   └── {github아이디}-#{이슈번호}-{설명}.md    # PR 설계 문서 (배경·API명세·에러케이스)
+├── test-results/
+│   └── {github아이디}-#{이슈번호}-{설명}.md    # 테스트 결과 문서 (Swagger 수동 + 자동 테스트 통합)
 ```
 
 ## 주요 명령어

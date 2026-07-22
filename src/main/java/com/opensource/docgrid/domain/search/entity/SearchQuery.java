@@ -102,6 +102,16 @@ public class SearchQuery extends BaseEntity {
     @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
 
+    public void updateToSuccess(int latencyMs) {
+        this.status = ResultStatus.SUCCESS;
+        this.latencyMs = latencyMs;
+    }
+
+    public void updateToFailed(String errorMessage) {
+        this.status = ResultStatus.FAILED;
+        this.errorMessage = errorMessage;
+    }
+
     @Builder
     public SearchQuery(User user, DocumentCollection collection, String queryText,
                         EmbeddingModel queryEmbeddingModel, float[] queryVector, SearchType searchType, int topK,

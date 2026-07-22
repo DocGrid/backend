@@ -6,6 +6,12 @@ import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+/**
+ * Worker가 Embedding Job Claim에 성공했을 때 반환되는 소유권 응답 DTO.
+ *
+ * <p>처리 대상 식별자와 함께 현재 Lease를 증명할 Claim Token 및 유효 시간을 전달한다. 후속 완료·실패
+ * 처리에서는 Job ID만 신뢰하지 않고 Worker ID와 Claim Token을 함께 검증해야 한다.
+ */
 public record ClaimedEmbeddingJobResponse(
     @Schema(description = "Claim한 Embedding Job 식별자", example = "10")
     Long jobId,

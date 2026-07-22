@@ -18,6 +18,12 @@ import com.opensource.docgrid.domain.embedding.fixture.EmbeddingModelFixture;
 import com.opensource.docgrid.domain.worker.entity.WorkerNode;
 import com.opensource.docgrid.domain.worker.fixture.WorkerNodeFixture;
 
+/**
+ * Claim이 완료된 Embedding Job Entity가 외부 노출용 DTO로 정확히 변환되는지 검증하는 단위 테스트.
+ *
+ * <p>Entity 자체나 연관 Entity를 응답에 노출하지 않고 Job, Worker, 문서 버전, 모델 식별자와 Lease
+ * 소유권 정보만 복사하는지 확인한다.
+ */
 @DisplayName("EmbeddingJobConverter 테스트")
 class EmbeddingJobConverterTest {
 

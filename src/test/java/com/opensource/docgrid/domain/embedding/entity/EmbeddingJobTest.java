@@ -12,6 +12,12 @@ import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.worker.entity.WorkerNode;
 import com.opensource.docgrid.domain.worker.enums.WorkerStatus;
 
+/**
+ * Embedding Job의 Claim 상태 전이와 소유권 불변식을 검증하는 Entity 단위 테스트.
+ *
+ * <p>PENDING Job이 PROCESSING으로 바뀔 때 Worker, Token, Lease, 최초 시작 시각이 함께 기록되는지와
+ * 이미 Claim된 Job의 소유권 덮어쓰기가 차단되는지 확인한다.
+ */
 @DisplayName("EmbeddingJob 테스트")
 class EmbeddingJobTest {
 

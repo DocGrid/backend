@@ -40,6 +40,12 @@ import com.opensource.docgrid.domain.worker.repository.WorkerNodeRepository;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
+/**
+ * Embedding Job Claim Command의 Worker 검증, Lease 계산, 상태 전이, 이벤트 저장을 검증하는 단위 테스트.
+ *
+ * <p>고정 Clock과 Mock Repository를 사용해 Heartbeat 경계와 Claim 시각을 결정적으로 검증하고,
+ * 오류 상황에서는 Job 잠금 조회가 실행되지 않는지도 확인한다.
+ */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("EmbeddingJobClaimService 테스트")
 class EmbeddingJobClaimServiceTest {

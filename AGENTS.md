@@ -18,6 +18,13 @@ Don't assume. Don't hide confusion. Surface tradeoffs.
 - Match existing style, even if you'd do it differently.
 - Every changed line should trace directly to the user's request.
 
+**Commenting Rules**
+- Every newly created class/interface/record must have a class-level comment explaining its role, responsibility, and boundary.
+- When modifying a file, update any affected class, method, field, or flow comments so they remain consistent with the code.
+- Add concise comments to important code lines to explain why the logic or invariant is necessary, not merely restate syntax.
+- For sequential execution flows, add numbered comments such as `1.`, `2.`, `3.`, `4.` at the relevant steps.
+- Keep comments accurate and maintainable; remove or revise stale comments whenever behavior changes.
+
 **Goal-Driven Execution**
 - Define success criteria before starting.
 - For multi-step tasks, state a brief plan and verify each step.

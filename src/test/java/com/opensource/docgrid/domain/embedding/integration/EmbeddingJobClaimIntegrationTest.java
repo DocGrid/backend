@@ -38,6 +38,12 @@ import com.opensource.docgrid.domain.embedding.dto.response.ClaimedEmbeddingJobR
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobClaimService;
 
+/**
+ * 실제 OpenSQL에서 Embedding Job Queue의 정렬, 행 잠금, 동시 Claim 불변식을 검증하는 통합 테스트.
+ *
+ * <p>서로 다른 Thread와 {@code REQUIRES_NEW} Transaction을 사용해 단일 Persistence Context의 순차
+ * 호출로는 재현할 수 없는 {@code FOR UPDATE SKIP LOCKED} 경쟁을 검증한다.
+ */
 @Tag("integration")
 @ActiveProfiles("test")
 @SpringBootTest
@@ -119,6 +125,7 @@ class EmbeddingJobClaimIntegrationTest {
         CountDownLatch rowLocked = new CountDownLatch(1);
         CountDownLatch releaseLock = new CountDownLatch(1);
 
+        // 1. 첫 번째 Transaction이 최우선 Job의 행 잠금을 잡은 채 Commit을 지연한다.
         Future<Long> lockHolder = executorService.submit(() -> inNewTransaction(() -> {
             Long selectedId = embeddingJobRepository.findNextPendingForUpdate().orElseThrow().getId();
             rowLocked.countDown();
@@ -126,7 +133,10 @@ class EmbeddingJobClaimIntegrationTest {
             return selectedId;
         }));
 
+        // 2. 첫 번째 행이 실제로 잠긴 뒤에만 두 번째 Transaction을 시작해 경쟁 조건을 확정한다.
         assertThat(rowLocked.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+
+        // 3. 두 번째 Transaction은 잠금 해제를 기다리지 않고 다음 PENDING Job을 선택해야 한다.
         Future<Long> skipLockedReader = executorService.submit(() -> inNewTransaction(() ->
             embeddingJobRepository.findNextPendingForUpdate().orElseThrow().getId()
         ));
@@ -136,6 +146,8 @@ class EmbeddingJobClaimIntegrationTest {
         } finally {
             releaseLock.countDown();
         }
+
+        // 4. 잠금을 보유했던 첫 번째 Transaction은 원래의 최우선 Job을 선택했는지 확인한다.
         assertThat(lockHolder.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo(firstJobId);
     }
 
@@ -148,11 +160,13 @@ class EmbeddingJobClaimIntegrationTest {
         Long secondWorkerId = insertActiveWorker("worker-b");
         CyclicBarrier startBarrier = new CyclicBarrier(2);
 
+        // 1. 두 Worker가 Barrier를 통과한 직후 같은 PENDING Job을 동시에 Claim하도록 시도한다.
         List<Future<Optional<ClaimedEmbeddingJobResponse>>> attempts = List.of(
             executorService.submit(() -> claimAfterBarrier(firstWorkerId, startBarrier)),
             executorService.submit(() -> claimAfterBarrier(secondWorkerId, startBarrier))
         );
 
+        // 2. 두 독립 Transaction의 결과를 모두 수집해 성공과 빈 결과의 개수를 비교한다.
         List<Optional<ClaimedEmbeddingJobResponse>> results = List.of(
             attempts.get(0).get(TIMEOUT_SECONDS, TimeUnit.SECONDS),
             attempts.get(1).get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -161,6 +175,7 @@ class EmbeddingJobClaimIntegrationTest {
         assertThat(results).filteredOn(Optional::isPresent).hasSize(1);
         assertThat(results).filteredOn(Optional::isEmpty).hasSize(1);
 
+        // 3. 성공한 한 Worker만 유효한 UUID Token과 미래의 Lease 만료 시각을 받았는지 확인한다.
         ClaimedEmbeddingJobResponse claimedJob = results.stream()
             .flatMap(Optional::stream)
             .findFirst()
@@ -170,6 +185,7 @@ class EmbeddingJobClaimIntegrationTest {
         assertThatCodeIsUuid(claimedJob.claimToken());
         assertThat(claimedJob.lockExpiresAt()).isAfter(claimedJob.lockedAt());
 
+        // 4. API 결과뿐 아니라 DB 상태와 이벤트도 정확히 한 소유자 기준으로 Commit됐는지 확인한다.
         assertThat(jdbcTemplate.queryForObject(
             "SELECT status FROM embedding_jobs WHERE id = ?",
             String.class,

@@ -5,6 +5,12 @@ import org.springframework.http.HttpStatus;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * 전역 예외 응답에서 사용하는 HTTP 상태, 안정적인 오류 코드, 사용자 메시지의 중앙 정의 목록.
+ *
+ * <p>Controller와 Service는 개별 HTTP 응답을 직접 조립하지 않고 이 값을 담은 {@link DocGridException}을
+ * 발생시켜 {@code GlobalExceptionHandler}가 일관된 오류 응답을 생성하도록 한다.
+ */
 @Getter
 @RequiredArgsConstructor
 public enum ErrorCode {
@@ -82,7 +88,9 @@ public enum ErrorCode {
     DOCUMENT_PERMISSION_NOT_FOUND(HttpStatus.NOT_FOUND, "PERMISSION-003", "문서 권한을 찾을 수 없습니다."),
 
     // WORKER
+    // Claim 요청의 Worker 식별자가 등록된 실행 인스턴스와 연결되지 않은 경우 사용한다.
     WORKER_NOT_FOUND(HttpStatus.NOT_FOUND, "WORKER-001", "Worker를 찾을 수 없습니다."),
+    // 저장 상태 또는 Heartbeat 기준 실질 상태가 Job을 받을 수 없는 경우 사용한다.
     WORKER_NOT_AVAILABLE(HttpStatus.CONFLICT, "WORKER-002", "Worker가 Job을 처리할 수 없는 상태입니다."),
 
     // EMBEDDING MODEL

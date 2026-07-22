@@ -28,6 +28,12 @@ import com.opensource.docgrid.global.config.SecurityConfig;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
+/**
+ * 관리자용 Embedding Job Claim API의 HTTP 계약과 접근 권한을 검증하는 Web MVC 테스트.
+ *
+ * <p>Claim 성공·빈 Queue·Worker 오류 응답과 ADMIN, 일반 사용자, 미인증 사용자의 Security 동작을
+ * Service 실행 없이 Controller 경계에서 확인한다.
+ */
 @WebMvcTest(IndexingJobAdminController.class)
 @Import(SecurityConfig.class)
 @DisplayName("IndexingJobAdminController 테스트")

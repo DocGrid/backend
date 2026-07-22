@@ -22,6 +22,12 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * 관리자용 Embedding Job Claim 요청을 HTTP API로 제공하는 Controller.
+ *
+ * <p>요청의 Worker ID를 Command Service에 전달하고, Claim 결과 유무를 200 또는 204 응답으로 변환한다.
+ * Job 선택, Worker 생존 검증, Lease 생성 같은 비즈니스 규칙은 {@link EmbeddingJobClaimService}에 위임한다.
+ */
 @Tag(name = "Admin - Indexing Job", description = "관리자 전용 인덱싱 Job 제어 API")
 @RestController
 @RequestMapping("/admin/indexing-jobs")
@@ -64,10 +70,15 @@ public class IndexingJobAdminController {
     public ResponseEntity<ApiResponse<ClaimedEmbeddingJobResponse>> claim(
         @RequestParam Long workerId
     ) {
+        // 1. Service가 Worker 검증부터 DB 행 잠금과 Lease 발급까지 하나의 Transaction으로 처리한다.
         Optional<ClaimedEmbeddingJobResponse> claimedJob = embeddingJobClaimService.claim(workerId);
+
+        // 2. PENDING Job이 없거나 모든 후보가 잠겨 있으면 정상적인 빈 Queue 응답을 반환한다.
         if (claimedJob.isEmpty()) {
             return ResponseUtils.noContent();
         }
+
+        // 3. Claim에 성공하면 Worker가 후속 처리에 사용할 소유권 정보와 Token을 반환한다.
         return ResponseUtils.ok(claimedJob.get());
     }
 }

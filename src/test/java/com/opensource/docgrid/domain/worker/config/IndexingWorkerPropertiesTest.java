@@ -7,6 +7,11 @@ import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Worker Lease 설정의 기본값과 애플리케이션 시작 단계 유효성 검사를 검증하는 단위 테스트.
+ *
+ * <p>정상적인 양수 기간은 허용하고 발급 즉시 만료되는 0 또는 음수 기간은 차단하는지 확인한다.
+ */
 @DisplayName("IndexingWorkerProperties 테스트")
 class IndexingWorkerPropertiesTest {
 

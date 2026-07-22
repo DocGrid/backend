@@ -30,6 +30,9 @@ public class IndexingWorkerProperties {
     @NotNull
     private Duration deadThreshold = Duration.ofSeconds(30);
 
+    @NotNull
+    private Duration leaseDuration = Duration.ofMinutes(5);
+
     @AssertTrue(message = "Heartbeat 주기는 0보다 크고 DEAD 기준 시간보다 짧아야 합니다.")
     public boolean isTimingValid() {
         return heartbeatInterval != null
@@ -37,5 +40,12 @@ public class IndexingWorkerProperties {
             && !heartbeatInterval.isZero()
             && !heartbeatInterval.isNegative()
             && deadThreshold.compareTo(heartbeatInterval) > 0;
+    }
+
+    @AssertTrue(message = "Lease 기간은 0보다 커야 합니다.")
+    public boolean isLeaseDurationValid() {
+        return leaseDuration != null
+            && !leaseDuration.isZero()
+            && !leaseDuration.isNegative();
     }
 }

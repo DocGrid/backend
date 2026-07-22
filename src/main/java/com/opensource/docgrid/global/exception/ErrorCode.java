@@ -81,6 +81,10 @@ public enum ErrorCode {
     COLLECTION_PERMISSION_NOT_FOUND(HttpStatus.NOT_FOUND, "PERMISSION-002", "컬렉션 권한을 찾을 수 없습니다."),
     DOCUMENT_PERMISSION_NOT_FOUND(HttpStatus.NOT_FOUND, "PERMISSION-003", "문서 권한을 찾을 수 없습니다."),
 
+    // WORKER
+    WORKER_NOT_FOUND(HttpStatus.NOT_FOUND, "WORKER-001", "Worker를 찾을 수 없습니다."),
+    WORKER_NOT_AVAILABLE(HttpStatus.CONFLICT, "WORKER-002", "Worker가 Job을 처리할 수 없는 상태입니다."),
+
     // EMBEDDING MODEL
     EMBEDDING_MODEL_NOT_CONFIGURED(
         HttpStatus.INTERNAL_SERVER_ERROR,

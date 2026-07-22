@@ -93,6 +93,9 @@ public class EmbeddingJob extends BaseEntity {
     @Column(name = "lock_expires_at")
     private LocalDateTime lockExpiresAt;
 
+    @Column(name = "claim_token", length = 36)
+    private String claimToken;
+
     @Column(name = "started_at")
     private LocalDateTime startedAt;
 
@@ -119,15 +122,20 @@ public class EmbeddingJob extends BaseEntity {
         this.maxRetryCount = maxRetryCount;
     }
 
-    public void lock(WorkerNode workerNode, LocalDateTime lockedAt, LocalDateTime lockExpiresAt) {
-        this.lockedByWorker = workerNode;
-        this.lockedAt = lockedAt;
-        this.lockExpiresAt = lockExpiresAt;
-    }
+    public void claim(WorkerNode workerNode, String claimToken, LocalDateTime claimedAt,
+                      LocalDateTime lockExpiresAt) {
+        if (status != EmbeddingJobStatus.PENDING) {
+            throw new IllegalStateException("PENDING 상태의 Job만 Claim할 수 있습니다.");
+        }
 
-    public void markProcessing(LocalDateTime startedAt) {
         this.status = EmbeddingJobStatus.PROCESSING;
-        this.startedAt = startedAt;
+        this.lockedByWorker = workerNode;
+        this.claimToken = claimToken;
+        this.lockedAt = claimedAt;
+        this.lockExpiresAt = lockExpiresAt;
+        if (startedAt == null) {
+            this.startedAt = claimedAt;
+        }
     }
 
     public void markIndexed(LocalDateTime completedAt) {

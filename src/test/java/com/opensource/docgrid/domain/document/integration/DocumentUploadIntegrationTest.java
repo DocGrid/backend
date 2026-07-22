@@ -192,8 +192,8 @@ class DocumentUploadIntegrationTest {
             jdbcTemplate.update("""
                 UPDATE embedding_models
                    SET is_active = TRUE
-                 WHERE model_name = 'mock-bge-m3'
-                   AND model_version = 'v1'
+                 WHERE model_name = 'BAAI/bge-m3'
+                   AND model_version = '1.0'
                 """);
         }
 

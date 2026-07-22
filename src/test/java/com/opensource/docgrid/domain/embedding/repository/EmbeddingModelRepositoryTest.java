@@ -23,6 +23,9 @@ import com.opensource.docgrid.domain.embedding.fixture.EmbeddingModelFixture;
 @DisplayName("EmbeddingModelRepository 테스트")
 class EmbeddingModelRepositoryTest {
 
+    private static final String SEEDED_MODEL_NAME = "BAAI/bge-m3";
+    private static final String SEEDED_MODEL_VERSION = "1.0";
+
     @Autowired
     private EmbeddingModelRepository embeddingModelRepository;
 
@@ -33,7 +36,7 @@ class EmbeddingModelRepositoryTest {
 
         assertThat(result)
             .extracting(EmbeddingModel::getModelName)
-            .containsExactly(EmbeddingModelFixture.MODEL_NAME);
+            .containsExactly(SEEDED_MODEL_NAME);
     }
 
     @Test
@@ -55,9 +58,9 @@ class EmbeddingModelRepositoryTest {
     @DisplayName("provider, 모델 이름, 버전 조합으로 존재 여부를 확인한다")
     void existsByProviderAndModelNameAndModelVersion_returnsTrue() {
         boolean exists = embeddingModelRepository.existsByProviderAndModelNameAndModelVersion(
-            EmbeddingProvider.MOCK,
-            EmbeddingModelFixture.MODEL_NAME,
-            EmbeddingModelFixture.MODEL_VERSION
+            EmbeddingProvider.HUGGINGFACE,
+            SEEDED_MODEL_NAME,
+            SEEDED_MODEL_VERSION
         );
 
         assertThat(exists).isTrue();

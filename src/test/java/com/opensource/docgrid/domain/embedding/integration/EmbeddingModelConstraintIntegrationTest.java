@@ -106,6 +106,8 @@ class EmbeddingModelConstraintIntegrationTest {
     @BeforeEach
     void resetModelState() {
         jdbcTemplate.execute("DROP TABLE IF EXISTS " + RACE_TABLE);
+        jdbcTemplate.update("DELETE FROM embeddings");
+        jdbcTemplate.update("DELETE FROM document_chunks");
         jdbcTemplate.update("DELETE FROM " + MODEL_TABLE);
     }
 

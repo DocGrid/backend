@@ -27,3 +27,7 @@ server:
 jwt:
   secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:3600}
+
+embedding:
+  server:
+    base-url: ${EMBEDDING_SERVER_URL:http://localhost:8000}

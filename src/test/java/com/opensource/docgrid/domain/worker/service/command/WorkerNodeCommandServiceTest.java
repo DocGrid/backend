@@ -113,19 +113,36 @@ class WorkerNodeCommandServiceTest {
     @Test
     @DisplayName("정상 종료 시 Worker를 STOPPED 상태로 갱신한다")
     void stop_marksWorkerStopped() {
-        given(workerNodeRepository.markStopped(any(), any(), any(), any())).willReturn(1);
+        given(workerNodeRepository.markStopped(any(), any(), any(), any(), any())).willReturn(1);
 
         boolean result = workerNodeCommandService.stop(
             WorkerNodeFixture.WORKER_ID,
             WorkerNodeFixture.INSTANCE_ID
         );
 
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<WorkerStatus>> statusCaptor = ArgumentCaptor.forClass(Collection.class);
         then(workerNodeRepository).should().markStopped(
-            WorkerNodeFixture.WORKER_ID,
-            WorkerNodeFixture.INSTANCE_ID,
-            NOW,
-            WorkerStatus.STOPPED
+            eq(WorkerNodeFixture.WORKER_ID),
+            eq(WorkerNodeFixture.INSTANCE_ID),
+            eq(NOW),
+            eq(WorkerStatus.STOPPED),
+            statusCaptor.capture()
         );
         assertThat(result).isTrue();
+        assertThat(statusCaptor.getValue()).containsExactly(WorkerStatus.ACTIVE, WorkerStatus.IDLE);
+    }
+
+    @Test
+    @DisplayName("종료 가능한 Worker가 아니면 false를 반환한다")
+    void stop_returnsFalse_when_workerCannotBeStopped() {
+        given(workerNodeRepository.markStopped(any(), any(), any(), any(), any())).willReturn(0);
+
+        boolean result = workerNodeCommandService.stop(
+            WorkerNodeFixture.WORKER_ID,
+            WorkerNodeFixture.INSTANCE_ID
+        );
+
+        assertThat(result).isFalse();
     }
 }

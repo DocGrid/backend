@@ -88,17 +88,23 @@ public class WorkerNode extends BaseEntity {
     }
 
     public void updateHeartbeat(LocalDateTime heartbeatAt) {
-        if (status != WorkerStatus.ACTIVE && status != WorkerStatus.IDLE) {
+        if (!isLive()) {
             return;
         }
         this.lastHeartbeatAt = heartbeatAt;
     }
 
     public void markDead() {
+        if (!isLive()) {
+            return;
+        }
         this.status = WorkerStatus.DEAD;
     }
 
     public void markStopped(LocalDateTime stoppedAt) {
+        if (!isLive()) {
+            return;
+        }
         this.status = WorkerStatus.STOPPED;
         this.stoppedAt = stoppedAt;
     }
@@ -113,5 +119,9 @@ public class WorkerNode extends BaseEntity {
         }
 
         return status;
+    }
+
+    private boolean isLive() {
+        return status == WorkerStatus.ACTIVE || status == WorkerStatus.IDLE;
     }
 }

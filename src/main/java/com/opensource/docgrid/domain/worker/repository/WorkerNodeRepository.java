@@ -40,12 +40,13 @@ public interface WorkerNodeRepository extends JpaRepository<WorkerNode, Long> {
             worker.updatedAt = :stoppedAt
         WHERE worker.id = :workerId
           AND worker.instanceId = :instanceId
-          AND worker.status <> :stoppedStatus
+          AND worker.status IN :stoppableStatuses
         """)
     int markStopped(
         @Param("workerId") Long workerId,
         @Param("instanceId") String instanceId,
         @Param("stoppedAt") LocalDateTime stoppedAt,
-        @Param("stoppedStatus") WorkerStatus stoppedStatus
+        @Param("stoppedStatus") WorkerStatus stoppedStatus,
+        @Param("stoppableStatuses") Collection<WorkerStatus> stoppableStatuses
     );
 }

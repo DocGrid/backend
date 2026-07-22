@@ -456,7 +456,8 @@ Heartbeat UPDATE
 → STOPPED
 ```
 
-실행 순서와 관계없이 정상 종료 후 최종 상태가 `STOPPED`로 수렴한다.
+살아 있는 Worker에서 Heartbeat와 정상 종료가 경쟁하면 실행 순서와 관계없이 최종 상태가 `STOPPED`로
+수렴한다. 이미 `DEAD` 또는 `STOPPED`로 확정된 Worker는 정상 종료 요청으로 상태를 덮어쓰지 않는다.
 
 ## 10. 정상 종료
 
@@ -476,7 +477,30 @@ Spring Context 종료 시작
 `workerId`를 `getAndSet(null)`로 가져오기 때문에 종료 이벤트가 중복으로 전달돼도 동일한 Worker를
 반복해서 종료하지 않는다.
 
-### 10.2 종료 기록 실패
+### 10.2 조건부 종료 UPDATE
+
+정상 종료는 다음 조건을 모두 만족하는 행만 갱신한다.
+
+```text
+id = 현재 프로세스가 등록한 workerId
+instance_id = 현재 프로세스가 가진 instanceId
+status IN (ACTIVE, IDLE)
+```
+
+```sql
+UPDATE worker_nodes
+SET status = 'STOPPED',
+    stopped_at = :stoppedAt,
+    updated_at = :stoppedAt
+WHERE id = :workerId
+  AND instance_id = :instanceId
+  AND status IN ('ACTIVE', 'IDLE');
+```
+
+이미 `DEAD`인 Worker는 종료 요청이 와도 갱신 행 수가 0이므로 `DEAD`를 유지한다. 이미 `STOPPED`인
+Worker도 두 번째 종료 시각으로 덮어쓰지 않는다.
+
+### 10.3 종료 기록 실패
 
 애플리케이션 종료 중 DB 연결이 이미 끊겼거나 저장소 장애가 발생할 수 있다. 종료 상태 기록 실패는
 로그로 남기되 애플리케이션 종료를 방해하지 않는다.
@@ -579,9 +603,18 @@ Job 회수는 별도 감시·복구 흐름에서 처리한다.
 → ACTIVE
 
 ACTIVE 또는 IDLE
-├─ 정상 종료 → STOPPED
-└─ Heartbeat 만료 → Effective DEAD
+├─ 정상 종료 성공 → STOPPED
+└─ Heartbeat 만료 확정 → DEAD
+
+DEAD
+└─ 종료 요청 → DEAD 유지
+
+STOPPED
+└─ DEAD 확정 또는 종료 요청 → STOPPED 유지
 ```
+
+현재 관리자 조회는 Heartbeat 만료를 Effective `DEAD`로 계산할 뿐 DB 상태를 변경하지 않는다. 향후 별도
+감시 작업이 `DEAD`를 영속화할 때도 Entity 상태 전이는 `ACTIVE`, `IDLE`에서만 허용한다.
 
 `STOPPED`와 `DEAD`는 의미가 다르다.
 
@@ -807,6 +840,9 @@ claim_token
 - ACTIVE Worker Heartbeat 갱신
 - STOPPED Worker가 Entity 메서드로 Heartbeat 갱신되지 않음
 - 정상 종료 시 STOPPED와 `stopped_at` 기록
+- ACTIVE와 IDLE만 STOPPED 또는 DEAD로 전환
+- DEAD Worker의 종료 요청이 상태와 `stopped_at`을 변경하지 않음
+- STOPPED Worker의 반복 종료와 DEAD 확정이 기존 상태와 `stopped_at`을 변경하지 않음
 - 최근 Heartbeat는 ACTIVE 유지
 - 만료 Heartbeat는 DEAD 계산
 - 저장 상태 STOPPED와 DEAD는 실질 상태 계산에서도 유지
@@ -817,7 +853,8 @@ claim_token
 - 중복 `instance_id` 저장 시 DB Unique 제약 위반
 - ACTIVE Worker 조건부 Heartbeat 성공 및 갱신 행 수 1
 - STOPPED Worker의 늦은 Heartbeat 갱신 행 수 0
-- 종료 시 Instance ID가 일치하는 Worker만 STOPPED 처리
+- 종료 시 Instance ID가 일치하는 ACTIVE 또는 IDLE Worker만 STOPPED 처리
+- DEAD와 STOPPED Worker의 종료 갱신 행 수 0
 - 최근 시작 시각과 ID 기준 목록 정렬
 - 실제 OpenSQL에서 Migration과 조건부 UPDATE 검증
 
@@ -827,6 +864,7 @@ claim_token
 - Heartbeat 결과가 1행이면 성공 반환
 - Heartbeat 결과가 0행이면 실패 반환
 - 정상 종료 결과가 1행이면 성공 반환
+- 종료 가능한 상태가 아니어서 갱신 결과가 0행이면 실패 반환
 - Worker 목록 조회에서 단일 기준 시각으로 모든 실질 상태 계산
 
 ### 17.4 생명주기 테스트
@@ -860,7 +898,8 @@ claim_token
 - Worker 등록 시 시작 시각과 최초 Heartbeat 시각이 기록된다.
 - ACTIVE와 IDLE Worker의 Heartbeat가 설정 주기로 갱신된다.
 - STOPPED Worker는 늦은 Heartbeat로 다시 활성 상태가 되지 않는다.
-- 정상 종료 시 STOPPED와 종료 시각이 기록된다.
+- ACTIVE와 IDLE Worker는 정상 종료 시 STOPPED와 종료 시각이 기록된다.
+- DEAD와 STOPPED Worker는 정상 종료 요청으로 상태와 종료 시각을 덮어쓰지 않는다.
 - 비정상 종료 Worker는 Heartbeat 만료 후 관리자 조회에서 DEAD로 보인다.
 - DEAD 판정을 위한 조회가 DB 상태를 변경하지 않는다.
 - 관리자는 Worker 목록과 실행 인스턴스·호스트·Heartbeat·시작·종료 정보를 조회할 수 있다.

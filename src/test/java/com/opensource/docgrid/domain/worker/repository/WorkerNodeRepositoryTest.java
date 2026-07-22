@@ -82,7 +82,8 @@ class WorkerNodeRepositoryTest {
             workerNode.getId(),
             workerNode.getInstanceId(),
             stoppedAt,
-            WorkerStatus.STOPPED
+            WorkerStatus.STOPPED,
+            List.of(WorkerStatus.ACTIVE, WorkerStatus.IDLE)
         );
 
         int updatedRows = workerNodeRepository.updateHeartbeat(
@@ -100,13 +101,84 @@ class WorkerNodeRepositoryTest {
         assertThat(stoppedWorker.getLastHeartbeatAt()).isEqualTo(STARTED_AT);
     }
 
+    @Test
+    @DisplayName("ACTIVE와 IDLE Worker만 STOPPED 상태로 갱신한다")
+    void markStopped_updatesOnlyLiveWorkers() {
+        WorkerNode activeWorker = createWorker("active-instance", STARTED_AT, WorkerStatus.ACTIVE);
+        WorkerNode idleWorker = createWorker("idle-instance", STARTED_AT, WorkerStatus.IDLE);
+        workerNodeRepository.saveAllAndFlush(List.of(activeWorker, idleWorker));
+        LocalDateTime stoppedAt = STARTED_AT.plusSeconds(5);
+
+        int activeUpdatedRows = workerNodeRepository.markStopped(
+            activeWorker.getId(),
+            activeWorker.getInstanceId(),
+            stoppedAt,
+            WorkerStatus.STOPPED,
+            List.of(WorkerStatus.ACTIVE, WorkerStatus.IDLE)
+        );
+        int idleUpdatedRows = workerNodeRepository.markStopped(
+            idleWorker.getId(),
+            idleWorker.getInstanceId(),
+            stoppedAt,
+            WorkerStatus.STOPPED,
+            List.of(WorkerStatus.ACTIVE, WorkerStatus.IDLE)
+        );
+        flushAndClear();
+
+        assertThat(activeUpdatedRows).isEqualTo(1);
+        assertThat(idleUpdatedRows).isEqualTo(1);
+        assertThat(workerNodeRepository.findById(activeWorker.getId()).orElseThrow().getStatus())
+            .isEqualTo(WorkerStatus.STOPPED);
+        assertThat(workerNodeRepository.findById(idleWorker.getId()).orElseThrow().getStatus())
+            .isEqualTo(WorkerStatus.STOPPED);
+    }
+
+    @Test
+    @DisplayName("DEAD와 STOPPED Worker는 종료 요청으로 갱신하지 않는다")
+    void markStopped_doesNotOverwriteTerminalWorkers() {
+        WorkerNode deadWorker = createWorker("dead-instance", STARTED_AT, WorkerStatus.DEAD);
+        WorkerNode stoppedWorker = createWorker("stopped-instance", STARTED_AT, WorkerStatus.ACTIVE);
+        LocalDateTime originalStoppedAt = STARTED_AT.plusSeconds(5);
+        stoppedWorker.markStopped(originalStoppedAt);
+        workerNodeRepository.saveAllAndFlush(List.of(deadWorker, stoppedWorker));
+
+        int deadUpdatedRows = workerNodeRepository.markStopped(
+            deadWorker.getId(),
+            deadWorker.getInstanceId(),
+            STARTED_AT.plusSeconds(10),
+            WorkerStatus.STOPPED,
+            List.of(WorkerStatus.ACTIVE, WorkerStatus.IDLE)
+        );
+        int stoppedUpdatedRows = workerNodeRepository.markStopped(
+            stoppedWorker.getId(),
+            stoppedWorker.getInstanceId(),
+            STARTED_AT.plusSeconds(10),
+            WorkerStatus.STOPPED,
+            List.of(WorkerStatus.ACTIVE, WorkerStatus.IDLE)
+        );
+        flushAndClear();
+
+        WorkerNode persistedDeadWorker = workerNodeRepository.findById(deadWorker.getId()).orElseThrow();
+        WorkerNode persistedStoppedWorker = workerNodeRepository.findById(stoppedWorker.getId()).orElseThrow();
+        assertThat(deadUpdatedRows).isZero();
+        assertThat(stoppedUpdatedRows).isZero();
+        assertThat(persistedDeadWorker.getStatus()).isEqualTo(WorkerStatus.DEAD);
+        assertThat(persistedDeadWorker.getStoppedAt()).isNull();
+        assertThat(persistedStoppedWorker.getStatus()).isEqualTo(WorkerStatus.STOPPED);
+        assertThat(persistedStoppedWorker.getStoppedAt()).isEqualTo(originalStoppedAt);
+    }
+
     private WorkerNode createWorker(String instanceId, LocalDateTime startedAt) {
+        return createWorker(instanceId, startedAt, WorkerStatus.ACTIVE);
+    }
+
+    private WorkerNode createWorker(String instanceId, LocalDateTime startedAt, WorkerStatus status) {
         return WorkerNode.builder()
             .workerName("indexing-worker")
             .instanceId(instanceId)
             .hostName("test-host")
             .ipAddress("127.0.0.1")
-            .status(WorkerStatus.ACTIVE)
+            .status(status)
             .lastHeartbeatAt(startedAt)
             .startedAt(startedAt)
             .build();

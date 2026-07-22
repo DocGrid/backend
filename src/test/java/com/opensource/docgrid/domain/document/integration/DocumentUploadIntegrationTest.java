@@ -44,6 +44,12 @@ import com.opensource.docgrid.domain.user.repository.UserRepository;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
+/**
+ * 문서 업로드가 파일·문서·버전·Embedding Job을 하나의 흐름으로 생성하는지 검증하는 통합 테스트.
+ *
+ * <p>실제 기본 모델 Seed인 {@code BAAI/bge-m3}를 기준으로 정상 생성, 파일 중복 제거, 동시 업로드,
+ * 기본 모델 부재 시 Rollback과 저장소 보상 삭제를 확인한다.
+ */
 @Tag("integration")
 @SpringBootTest
 @ActiveProfiles("test")
@@ -189,11 +195,12 @@ class DocumentUploadIntegrationTest {
                 .isInstanceOf(DocGridException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMBEDDING_MODEL_NOT_CONFIGURED);
         } finally {
+            // 후속 테스트가 실제 운영 Seed를 다시 기본 모델로 조회할 수 있도록 비활성화 변경을 복구한다.
             jdbcTemplate.update("""
                 UPDATE embedding_models
                    SET is_active = TRUE
-                 WHERE model_name = 'mock-bge-m3'
-                   AND model_version = 'v1'
+                 WHERE model_name = 'BAAI/bge-m3'
+                   AND model_version = '1.0'
                 """);
         }
 

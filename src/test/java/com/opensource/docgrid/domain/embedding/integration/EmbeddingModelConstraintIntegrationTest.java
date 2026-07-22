@@ -42,6 +42,12 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+/**
+ * 기본 Embedding Model 단일성 제약과 동시 저장 경쟁을 실제 OpenSQL에서 검증하는 통합 테스트.
+ *
+ * <p>실제 bge-m3 Seed가 생성한 Chunk와 Embedding의 FK를 안전한 순서로 정리한 뒤 모델 제약 자체를
+ * 독립적으로 측정한다.
+ */
 @Tag("integration")
 @ActiveProfiles("test")
 @SpringBootTest
@@ -106,6 +112,9 @@ class EmbeddingModelConstraintIntegrationTest {
     @BeforeEach
     void resetModelState() {
         jdbcTemplate.execute("DROP TABLE IF EXISTS " + RACE_TABLE);
+        // Seed 데이터의 FK가 embedding_models 삭제를 막으므로 자식 테이블부터 역순으로 정리한다.
+        jdbcTemplate.update("DELETE FROM embeddings");
+        jdbcTemplate.update("DELETE FROM document_chunks");
         jdbcTemplate.update("DELETE FROM " + MODEL_TABLE);
     }
 

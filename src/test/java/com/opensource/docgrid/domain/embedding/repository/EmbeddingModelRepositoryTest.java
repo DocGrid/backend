@@ -17,23 +17,32 @@ import com.opensource.docgrid.domain.embedding.entity.EmbeddingModel;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingProvider;
 import com.opensource.docgrid.domain.embedding.fixture.EmbeddingModelFixture;
 
+/**
+ * Embedding Model 조회와 DB 제약을 실제 PostgreSQL Repository 계층에서 검증하는 테스트.
+ *
+ * <p>운영과 동일한 {@code BAAI/bge-m3} Seed를 기본 모델로 조회하고, 모델 식별자 Unique 제약과
+ * active·searchable 단일 모델 제약이 적용되는지 확인한다.
+ */
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @DisplayName("EmbeddingModelRepository 테스트")
 class EmbeddingModelRepositoryTest {
 
+    private static final String SEEDED_MODEL_NAME = "BAAI/bge-m3";
+    private static final String SEEDED_MODEL_VERSION = "1.0";
+
     @Autowired
     private EmbeddingModelRepository embeddingModelRepository;
 
     @Test
-    @DisplayName("active이면서 searchable인 기본 Mock 모델을 조회한다")
+    @DisplayName("active이면서 searchable인 기본 bge-m3 모델을 조회한다")
     void findAllByIsActiveTrueAndIsSearchableTrue_returnsSeedModel() {
         List<EmbeddingModel> result = embeddingModelRepository.findAllByIsActiveTrueAndIsSearchableTrue();
 
         assertThat(result)
             .extracting(EmbeddingModel::getModelName)
-            .containsExactly(EmbeddingModelFixture.MODEL_NAME);
+            .containsExactly(SEEDED_MODEL_NAME);
     }
 
     @Test
@@ -55,9 +64,9 @@ class EmbeddingModelRepositoryTest {
     @DisplayName("provider, 모델 이름, 버전 조합으로 존재 여부를 확인한다")
     void existsByProviderAndModelNameAndModelVersion_returnsTrue() {
         boolean exists = embeddingModelRepository.existsByProviderAndModelNameAndModelVersion(
-            EmbeddingProvider.MOCK,
-            EmbeddingModelFixture.MODEL_NAME,
-            EmbeddingModelFixture.MODEL_VERSION
+            EmbeddingProvider.HUGGINGFACE,
+            SEEDED_MODEL_NAME,
+            SEEDED_MODEL_VERSION
         );
 
         assertThat(exists).isTrue();

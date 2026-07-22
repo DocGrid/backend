@@ -36,9 +36,10 @@ import lombok.NoArgsConstructor;
  * index: (status, priority, created_at) 우선순위 큐 조회용, lock_expires_at, (document_version_id, embedding_model_id),
  * locked_by_worker_id.
  *
- * <p>주의사항: Worker는 이 테이블을 lock(locked_by_worker_id/locked_at/lock_expires_at 설정)한 뒤 PROCESSING으로
- * 전환한다. lock_expires_at이 경과했는데도 완료되지 않으면 다른 Worker가 재처리할 수 있어야 한다.
- * 이는 Worker 장애 복구의 핵심 메커니즘이다.
+ * <p>주의사항: Worker는 Claim 시 PROCESSING 상태, 소유 Worker, UUID Claim Token, Lease 시작·만료 시각을
+ * 함께 기록한다. DB 행 잠금은 Claim Transaction 동안의 중복 선택을 막고, Lease와 Claim Token은
+ * Transaction 종료 후에도 현재 소유권을 식별한다. lock_expires_at이 경과했는데도 완료되지 않으면 후속
+ * 복구 작업이 새로운 Token으로 다른 Worker에게 재할당할 수 있어야 한다.
  */
 @Getter
 @Entity
@@ -89,9 +90,13 @@ public class EmbeddingJob extends BaseEntity {
     @Column(name = "locked_at")
     private LocalDateTime lockedAt;
 
-    // lock 만료 시각, 경과 시 다른 Worker가 재처리 가능
+    // 현재 Claim의 Lease 만료 시각으로, 후속 장애 복구가 소유권 회수 가능 여부를 판단하는 기준이다.
     @Column(name = "lock_expires_at")
     private LocalDateTime lockExpiresAt;
+
+    // 같은 Job이 다시 Claim됐을 때 과거 Worker의 늦은 완료 요청을 구분하는 소유권 증명 값이다.
+    @Column(name = "claim_token", length = 36)
+    private String claimToken;
 
     @Column(name = "started_at")
     private LocalDateTime startedAt;
@@ -119,15 +124,37 @@ public class EmbeddingJob extends BaseEntity {
         this.maxRetryCount = maxRetryCount;
     }
 
-    public void lock(WorkerNode workerNode, LocalDateTime lockedAt, LocalDateTime lockExpiresAt) {
-        this.lockedByWorker = workerNode;
-        this.lockedAt = lockedAt;
-        this.lockExpiresAt = lockExpiresAt;
-    }
+    /**
+     * PENDING Job을 PROCESSING으로 전환하면서 이번 Claim의 소유권 정보를 원자적으로 반영한다.
+     *
+     * <p>이 메서드는 DB 행 잠금을 획득한 Transaction 안에서 호출해야 한다. Entity 내부 상태를 한 메서드에서
+     * 함께 바꿔 상태만 PROCESSING이고 Lease가 없는 불완전한 변경을 방지한다.
+     *
+     * @param workerNode Job을 처리할 Worker 실행 인스턴스
+     * @param claimToken 이번 Claim을 식별하는 UUID Token
+     * @param claimedAt Lease 시작 시각
+     * @param lockExpiresAt Lease 만료 시각
+     */
+    public void claim(WorkerNode workerNode, String claimToken, LocalDateTime claimedAt,
+                      LocalDateTime lockExpiresAt) {
+        // 1. 이미 처리 중이거나 완료된 Job의 소유권을 덮어쓰지 않도록 상태 전이를 제한한다.
+        if (status != EmbeddingJobStatus.PENDING) {
+            throw new IllegalStateException("PENDING 상태의 Job만 Claim할 수 있습니다.");
+        }
 
-    public void markProcessing(LocalDateTime startedAt) {
+        // 2. 처리 상태와 현재 소유 Worker 및 Token을 함께 설정한다.
         this.status = EmbeddingJobStatus.PROCESSING;
-        this.startedAt = startedAt;
+        this.lockedByWorker = workerNode;
+        this.claimToken = claimToken;
+
+        // 3. DB 행 잠금 이후에도 소유권 유효 기간을 판단할 수 있도록 Lease 시간을 기록한다.
+        this.lockedAt = claimedAt;
+        this.lockExpiresAt = lockExpiresAt;
+
+        // 4. startedAt은 전체 처리의 최초 시작 시각이므로 향후 재Claim에서도 기존 값을 보존한다.
+        if (startedAt == null) {
+            this.startedAt = claimedAt;
+        }
     }
 
     public void markIndexed(LocalDateTime completedAt) {

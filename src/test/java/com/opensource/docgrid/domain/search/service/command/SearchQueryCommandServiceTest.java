@@ -9,6 +9,7 @@ import static org.mockito.Mockito.times;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -17,6 +18,7 @@ import com.opensource.docgrid.domain.embedding.entity.EmbeddingModel;
 import com.opensource.docgrid.domain.embedding.fixture.EmbeddingModelFixture;
 import com.opensource.docgrid.domain.search.entity.SearchQuery;
 import com.opensource.docgrid.domain.search.enums.ResultStatus;
+import com.opensource.docgrid.domain.search.enums.SearchType;
 import com.opensource.docgrid.domain.search.fixture.SearchQueryFixture;
 import com.opensource.docgrid.domain.search.repository.SearchQueryRepository;
 
@@ -31,19 +33,24 @@ class SearchQueryCommandServiceTest {
     private SearchQueryRepository searchQueryRepository;
 
     @Test
-    @DisplayName("createProcessing: PROCESSING 상태로 SearchQuery를 저장한다")
+    @DisplayName("createProcessing: PROCESSING 상태와 VECTOR 타입으로 SearchQuery를 저장한다")
     void createProcessing_savesWithProcessingStatus() {
         EmbeddingModel model = EmbeddingModelFixture.createDefaultModel();
-        SearchQuery saved = SearchQueryFixture.createProcessing();
-        given(searchQueryRepository.save(any(SearchQuery.class))).willReturn(saved);
+        given(searchQueryRepository.save(any(SearchQuery.class))).willAnswer(i -> i.getArgument(0));
 
-        SearchQuery result = searchQueryCommandService.createProcessing(
+        searchQueryCommandService.createProcessing(
             null, null, SearchQueryFixture.QUERY_TEXT,
             model, SearchQueryFixture.VECTOR, SearchQueryFixture.TOP_K
         );
 
-        assertThat(result.getStatus()).isEqualTo(ResultStatus.PROCESSING);
-        then(searchQueryRepository).should(times(1)).save(any(SearchQuery.class));
+        ArgumentCaptor<SearchQuery> captor = ArgumentCaptor.forClass(SearchQuery.class);
+        then(searchQueryRepository).should(times(1)).save(captor.capture());
+
+        SearchQuery saved = captor.getValue();
+        assertThat(saved.getStatus()).isEqualTo(ResultStatus.PROCESSING);
+        assertThat(saved.getSearchType()).isEqualTo(SearchType.VECTOR);
+        assertThat(saved.getTopK()).isEqualTo(SearchQueryFixture.TOP_K);
+        assertThat(saved.getQueryText()).isEqualTo(SearchQueryFixture.QUERY_TEXT);
     }
 
     @Test

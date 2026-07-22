@@ -91,6 +91,18 @@ public enum ErrorCode {
         HttpStatus.INTERNAL_SERVER_ERROR,
         "EMBEDDING-MODEL-002",
         "사용 가능한 임베딩 모델이 여러 개 설정되어 있습니다."
+    ),
+
+    // SEARCH
+    EMBEDDING_SERVER_UNAVAILABLE(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        "SEARCH-001",
+        "임베딩 서버를 사용할 수 없습니다."
+    ),
+    EMBEDDING_DIMENSION_MISMATCH(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "SEARCH-002",
+        "임베딩 차원이 설정된 모델과 일치하지 않습니다."
     );
 
     private final HttpStatus httpStatus;

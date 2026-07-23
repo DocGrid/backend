@@ -1,6 +1,7 @@
 package com.opensource.docgrid.domain.search.service.command;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.opensource.docgrid.domain.collection.entity.DocumentCollection;
@@ -45,6 +46,8 @@ public class SearchQueryCommandService {
         searchQuery.updateToSuccess(latencyMs);
     }
 
+    // REQUIRES_NEW: Facade에서 예외 재전파로 롤백돼도 FAILED 상태가 독립 트랜잭션으로 저장된다.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markFailed(SearchQuery searchQuery, String errorMessage) {
         searchQuery.updateToFailed(errorMessage);
     }

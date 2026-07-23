@@ -15,7 +15,7 @@ public record SearchResponse(
         for (int i = 0; i < candidates.size(); i++) {
             items.add(SearchResultItem.of(i + 1, candidates.get(i)));
         }
-        return new SearchResponse(queryId, items);
+        return new SearchResponse(queryId, List.copyOf(items));
     }
 
     public static SearchResponse empty(Long queryId) {

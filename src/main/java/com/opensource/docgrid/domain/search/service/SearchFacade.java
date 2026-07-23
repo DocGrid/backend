@@ -31,15 +31,16 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <pre>
  * 1. 질문 임베딩
- * 2. search_queries PROCESSING 저장
- * 3. 권한 pre-filter → 접근 가능한 document_id 목록
- * 4. pgvector Top-K 후보 추출 (빈 목록이면 skip)
- * 5. live check — 캐시 stale 방어
- * 6. search_results 저장
- * 7. search_queries SUCCESS + latency_ms 마감
+ * 2. User/Collection 엔티티 조회 (search_queries FK)
+ * 3. search_queries PROCESSING 저장
+ * 4. 권한 pre-filter → 접근 가능한 document_id 목록 (빈 목록이면 skip)
+ * 5. pgvector Top-K 후보 추출
+ * 6. live check — 캐시 stale 방어
+ * 7. search_results 저장
+ * 8. search_queries SUCCESS + latency_ms 마감
  * </pre>
  *
- * <p>stale 캐시 방어 시나리오(권한 회수 직후 검색)는 5단계 live check 타이밍 로그로 추적 가능하다.
+ * <p>stale 캐시 방어 시나리오(권한 회수 직후 검색)는 6단계 live check 타이밍 로그로 추적 가능하다.
  */
 @Transactional
 @Service

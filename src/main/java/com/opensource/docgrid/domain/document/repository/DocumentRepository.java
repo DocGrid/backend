@@ -4,13 +4,12 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import jakarta.persistence.LockModeType;
-
-import org.springframework.data.jpa.repository.JpaRepository;
 
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
@@ -45,5 +44,107 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
         @Param("documentId") Long documentId,
         @Param("processingVersionStatuses") Collection<DocumentVersionStatus> processingVersionStatuses,
         @Param("activeJobStatuses") Collection<EmbeddingJobStatus> activeJobStatuses
+    );
+
+    // 검색 pre-filter — 사용자가 읽을 수 있는 INDEXED 문서 ID 전체 (컬렉션 미지정)
+    // 5가지 접근 경로: OWNER / PUBLIC / USER캐시 / ROLE live / DEPT live (문서·컬렉션 권한 모두 포함)
+    @Query(value = """
+        SELECT d.id FROM documents d
+        WHERE d.owner_user_id = :userId AND d.deleted_at IS NULL AND d.status = 'INDEXED'
+        UNION
+        SELECT d.id FROM documents d
+        WHERE d.visibility = 'PUBLIC' AND d.deleted_at IS NULL AND d.status = 'INDEXED'
+        UNION
+        SELECT d.id FROM documents d
+          JOIN user_document_access_cache c ON c.document_id = d.id
+        WHERE c.user_id = :userId AND c.can_read = true AND c.invalidated_at IS NULL
+          AND (c.expires_at IS NULL OR c.expires_at > NOW())
+          AND d.deleted_at IS NULL AND d.status = 'INDEXED'
+        UNION
+        SELECT d.id FROM documents d
+          JOIN document_permissions dp ON dp.document_id = d.id
+          JOIN user_roles ur ON ur.role_id = dp.role_id
+        WHERE dp.target_type = 'ROLE' AND ur.user_id = :userId AND dp.can_read = true
+          AND (dp.expires_at IS NULL OR dp.expires_at > NOW())
+          AND d.deleted_at IS NULL AND d.status = 'INDEXED'
+        UNION
+        SELECT d.id FROM documents d
+          JOIN document_permissions dp ON dp.document_id = d.id
+          JOIN users u ON u.department_id = dp.department_id
+        WHERE dp.target_type = 'DEPARTMENT' AND u.id = :userId AND dp.can_read = true
+          AND (dp.expires_at IS NULL OR dp.expires_at > NOW())
+          AND d.deleted_at IS NULL AND d.status = 'INDEXED'
+        UNION
+        SELECT d.id FROM documents d
+          JOIN collection_documents cd ON cd.document_id = d.id
+          JOIN collection_permissions cp ON cp.collection_id = cd.collection_id
+          JOIN user_roles ur ON ur.role_id = cp.role_id
+        WHERE cp.target_type = 'ROLE' AND ur.user_id = :userId AND cp.can_read = true
+          AND (cp.expires_at IS NULL OR cp.expires_at > NOW())
+          AND d.deleted_at IS NULL AND d.status = 'INDEXED'
+        UNION
+        SELECT d.id FROM documents d
+          JOIN collection_documents cd ON cd.document_id = d.id
+          JOIN collection_permissions cp ON cp.collection_id = cd.collection_id
+          JOIN users u ON u.department_id = cp.department_id
+        WHERE cp.target_type = 'DEPARTMENT' AND u.id = :userId AND cp.can_read = true
+          AND (cp.expires_at IS NULL OR cp.expires_at > NOW())
+          AND d.deleted_at IS NULL AND d.status = 'INDEXED'
+        """, nativeQuery = true)
+    List<Long> findReadableDocumentIds(@Param("userId") Long userId);
+
+    // 검색 pre-filter — 특정 컬렉션 내에서 사용자가 읽을 수 있는 INDEXED 문서 ID
+    @Query(value = """
+        SELECT sub.id FROM (
+            SELECT d.id FROM documents d
+            WHERE d.owner_user_id = :userId AND d.deleted_at IS NULL AND d.status = 'INDEXED'
+            UNION
+            SELECT d.id FROM documents d
+            WHERE d.visibility = 'PUBLIC' AND d.deleted_at IS NULL AND d.status = 'INDEXED'
+            UNION
+            SELECT d.id FROM documents d
+              JOIN user_document_access_cache c ON c.document_id = d.id
+            WHERE c.user_id = :userId AND c.can_read = true AND c.invalidated_at IS NULL
+              AND (c.expires_at IS NULL OR c.expires_at > NOW())
+              AND d.deleted_at IS NULL AND d.status = 'INDEXED'
+            UNION
+            SELECT d.id FROM documents d
+              JOIN document_permissions dp ON dp.document_id = d.id
+              JOIN user_roles ur ON ur.role_id = dp.role_id
+            WHERE dp.target_type = 'ROLE' AND ur.user_id = :userId AND dp.can_read = true
+              AND (dp.expires_at IS NULL OR dp.expires_at > NOW())
+              AND d.deleted_at IS NULL AND d.status = 'INDEXED'
+            UNION
+            SELECT d.id FROM documents d
+              JOIN document_permissions dp ON dp.document_id = d.id
+              JOIN users u ON u.department_id = dp.department_id
+            WHERE dp.target_type = 'DEPARTMENT' AND u.id = :userId AND dp.can_read = true
+              AND (dp.expires_at IS NULL OR dp.expires_at > NOW())
+              AND d.deleted_at IS NULL AND d.status = 'INDEXED'
+            UNION
+            SELECT d.id FROM documents d
+              JOIN collection_documents cd ON cd.document_id = d.id
+              JOIN collection_permissions cp ON cp.collection_id = cd.collection_id
+              JOIN user_roles ur ON ur.role_id = cp.role_id
+            WHERE cp.target_type = 'ROLE' AND ur.user_id = :userId AND cp.can_read = true
+              AND (cp.expires_at IS NULL OR cp.expires_at > NOW())
+              AND d.deleted_at IS NULL AND d.status = 'INDEXED'
+            UNION
+            SELECT d.id FROM documents d
+              JOIN collection_documents cd ON cd.document_id = d.id
+              JOIN collection_permissions cp ON cp.collection_id = cd.collection_id
+              JOIN users u ON u.department_id = cp.department_id
+            WHERE cp.target_type = 'DEPARTMENT' AND u.id = :userId AND cp.can_read = true
+              AND (cp.expires_at IS NULL OR cp.expires_at > NOW())
+              AND d.deleted_at IS NULL AND d.status = 'INDEXED'
+        ) sub
+        WHERE sub.id IN (
+            SELECT cd_filter.document_id FROM collection_documents cd_filter
+            WHERE cd_filter.collection_id = :collectionId
+        )
+        """, nativeQuery = true)
+    List<Long> findReadableDocumentIdsInCollection(
+        @Param("userId") Long userId,
+        @Param("collectionId") Long collectionId
     );
 }

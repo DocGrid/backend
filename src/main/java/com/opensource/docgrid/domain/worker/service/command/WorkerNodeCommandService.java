@@ -18,7 +18,7 @@ import lombok.RequiredArgsConstructor;
 @Transactional
 public class WorkerNodeCommandService {
 
-    private static final List<WorkerStatus> HEARTBEAT_STATUSES = List.of(
+    private static final List<WorkerStatus> LIVE_STATUSES = List.of(
         WorkerStatus.ACTIVE,
         WorkerStatus.IDLE
     );
@@ -46,7 +46,7 @@ public class WorkerNodeCommandService {
             workerId,
             instanceId,
             LocalDateTime.now(clock),
-            HEARTBEAT_STATUSES
+            LIVE_STATUSES
         );
         return updatedRows == 1;
     }
@@ -56,7 +56,8 @@ public class WorkerNodeCommandService {
             workerId,
             instanceId,
             LocalDateTime.now(clock),
-            WorkerStatus.STOPPED
+            WorkerStatus.STOPPED,
+            LIVE_STATUSES
         );
         return updatedRows == 1;
     }

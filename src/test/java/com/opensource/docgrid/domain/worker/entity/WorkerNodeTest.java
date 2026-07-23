@@ -68,4 +68,77 @@ class WorkerNodeTest {
         assertThat(workerNode.getLastHeartbeatAt()).isEqualTo(originalHeartbeat);
         assertThat(workerNode.getStatus()).isEqualTo(WorkerStatus.STOPPED);
     }
+
+    @Test
+    @DisplayName("ACTIVE와 IDLE Worker만 STOPPED 상태로 전환한다")
+    void markStopped_stopsOnlyLiveWorkers() {
+        WorkerNode activeWorker = createWorker(WorkerStatus.ACTIVE);
+        WorkerNode idleWorker = createWorker(WorkerStatus.IDLE);
+
+        activeWorker.markStopped(HEARTBEAT_DEADLINE);
+        idleWorker.markStopped(HEARTBEAT_DEADLINE);
+
+        assertThat(activeWorker.getStatus()).isEqualTo(WorkerStatus.STOPPED);
+        assertThat(idleWorker.getStatus()).isEqualTo(WorkerStatus.STOPPED);
+        assertThat(activeWorker.getStoppedAt()).isEqualTo(HEARTBEAT_DEADLINE);
+        assertThat(idleWorker.getStoppedAt()).isEqualTo(HEARTBEAT_DEADLINE);
+    }
+
+    @Test
+    @DisplayName("DEAD와 STOPPED Worker는 종료 요청으로 상태와 종료 시각을 덮어쓰지 않는다")
+    void markStopped_preservesTerminalWorkers() {
+        WorkerNode deadWorker = createWorker(WorkerStatus.DEAD);
+        WorkerNode stoppedWorker = createWorker(WorkerStatus.ACTIVE);
+        LocalDateTime originalStoppedAt = HEARTBEAT_DEADLINE.minusSeconds(1);
+        stoppedWorker.markStopped(originalStoppedAt);
+
+        deadWorker.markStopped(HEARTBEAT_DEADLINE);
+        stoppedWorker.markStopped(HEARTBEAT_DEADLINE);
+
+        assertThat(deadWorker.getStatus()).isEqualTo(WorkerStatus.DEAD);
+        assertThat(deadWorker.getStoppedAt()).isNull();
+        assertThat(stoppedWorker.getStatus()).isEqualTo(WorkerStatus.STOPPED);
+        assertThat(stoppedWorker.getStoppedAt()).isEqualTo(originalStoppedAt);
+    }
+
+    @Test
+    @DisplayName("ACTIVE와 IDLE Worker만 DEAD 상태로 전환한다")
+    void markDead_marksOnlyLiveWorkersDead() {
+        WorkerNode activeWorker = createWorker(WorkerStatus.ACTIVE);
+        WorkerNode idleWorker = createWorker(WorkerStatus.IDLE);
+
+        activeWorker.markDead();
+        idleWorker.markDead();
+
+        assertThat(activeWorker.getStatus()).isEqualTo(WorkerStatus.DEAD);
+        assertThat(idleWorker.getStatus()).isEqualTo(WorkerStatus.DEAD);
+    }
+
+    @Test
+    @DisplayName("DEAD와 STOPPED Worker는 DEAD 확정으로 상태를 덮어쓰지 않는다")
+    void markDead_preservesTerminalWorkers() {
+        WorkerNode deadWorker = createWorker(WorkerStatus.DEAD);
+        WorkerNode stoppedWorker = createWorker(WorkerStatus.ACTIVE);
+        LocalDateTime stoppedAt = HEARTBEAT_DEADLINE.minusSeconds(1);
+        stoppedWorker.markStopped(stoppedAt);
+
+        deadWorker.markDead();
+        stoppedWorker.markDead();
+
+        assertThat(deadWorker.getStatus()).isEqualTo(WorkerStatus.DEAD);
+        assertThat(stoppedWorker.getStatus()).isEqualTo(WorkerStatus.STOPPED);
+        assertThat(stoppedWorker.getStoppedAt()).isEqualTo(stoppedAt);
+    }
+
+    private WorkerNode createWorker(WorkerStatus status) {
+        return WorkerNode.builder()
+            .workerName(WorkerNodeFixture.WORKER_NAME)
+            .instanceId(WorkerNodeFixture.INSTANCE_ID + "-" + status)
+            .hostName(WorkerNodeFixture.HOST_NAME)
+            .ipAddress(WorkerNodeFixture.IP_ADDRESS)
+            .status(status)
+            .lastHeartbeatAt(HEARTBEAT_DEADLINE)
+            .startedAt(WorkerNodeFixture.STARTED_AT)
+            .build();
+    }
 }

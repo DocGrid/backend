@@ -54,7 +54,7 @@ WHERE sub.id IN (
 
 `domain/search/service/query/AccessibleDocumentQueryService.java`
 
-```
+```text
 findReadableDocumentIds(userId, collectionId)
   ├─ collectionId == null → findReadableDocumentIds(userId)
   └─ collectionId != null → findReadableDocumentIdsInCollection(userId, collectionId)

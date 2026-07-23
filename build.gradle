@@ -43,7 +43,7 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform {
-		excludeTags 'benchmark', 'minio-integration'
+		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency'
 	}
 }
 
@@ -65,6 +65,17 @@ tasks.register('benchmarkTest', Test) {
 	classpath = sourceSets.test.runtimeClasspath
 	useJUnitPlatform {
 		includeTags 'benchmark'
+	}
+	outputs.upToDateWhen { false }
+}
+
+tasks.register('claimConcurrencyTest', Test) {
+	group = 'verification'
+	description = '실제 OpenSQL에서 다중 Worker Embedding Job Claim 정합성 테스트를 실행합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'claim-concurrency'
 	}
 	outputs.upToDateWhen { false }
 }

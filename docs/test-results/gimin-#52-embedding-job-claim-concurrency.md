@@ -1,9 +1,8 @@
 # 다중 Worker Embedding Job Claim 정합성 테스트
 
 - GitHub Issue: [#52](https://github.com/DocGrid/backend/issues/52)
-- 작업 구분: PR 5-A
 - 브랜치: `test/52`
-- 테스트 대상: PR5 PENDING Job Claim 및 Lease Lock
+- 테스트 대상: PENDING Job Claim 및 Lease Lock
 - 테스트 종류: 실제 OpenSQL 동시성 통합 테스트
 
 ## 1. 이 문서의 목적
@@ -34,7 +33,7 @@
 
 ## 2. 테스트가 증명하려는 것
 
-PR5는 PENDING Job Claim을 다음 Transaction으로 처리한다.
+PENDING Job Claim 기능은 다음 Transaction으로 소유권을 기록한다.
 
 ```text
 Worker 조회
@@ -55,7 +54,8 @@ Claim A 완료
 → Claim B 시작
 ```
 
-PR 5-A는 여러 Java Thread가 각각 독립된 Spring Transaction을 시작하도록 만들어 다음 불변식을 검증한다.
+이 동시성 테스트는 여러 Java Thread가 각각 독립된 Spring Transaction을 시작하도록 만들어 다음 불변식을
+검증한다.
 
 ```text
 한 Job
@@ -98,7 +98,7 @@ Worker별 처리 건수의 균등성
 ```
 
 로그에 전체 실행 시간을 남기는 이유는 이전 실행보다 갑자기 지나치게 느려진 상황을 발견하기 위한 참고다.
-성능 수치와 Lock 경합 비교는 후속 PR 5-B에서 별도 환경을 고정해 측정한다.
+성능 수치와 Lock 경합 비교는 후속 처리량·Lock 경합 성능 테스트에서 별도 환경을 고정해 측정한다.
 
 ## 4. 구현 파일
 
@@ -139,6 +139,153 @@ claim-concurrency
 
 ```bash
 ./gradlew claimConcurrencyTest
+```
+
+### 4.3 처음 보는 사람을 위한 기본 개념
+
+동시성 테스트 코드를 읽기 전에 `Task`, `Executor`, `readyLatch`, `startLatch`, `Claim`의 역할을 먼저
+구분해야 한다. 이름은 비슷하게 느껴질 수 있지만 각각 담당하는 범위가 다르다.
+
+| 개념 | 의미 | 이 테스트에서의 역할 |
+|---|---|---|
+| Task | Thread가 실행할 수 있도록 만든 작업 단위 | 특정 Worker ID로 Job을 한 번 Claim하거나 Queue가 빌 때까지 반복 Claim하는 코드 |
+| Executor | Task를 받아 Thread에서 실행하는 관리자 | 정해진 크기의 Thread Pool을 만들고 Worker Task를 실제 Thread에 배정 |
+| readyLatch | 모든 Task가 출발 준비를 마쳤는지 세는 카운터 | 각 Task가 준비될 때마다 1씩 감소하고, 0이 될 때까지 메인 Test Thread가 기다림 |
+| startLatch | 준비된 Task를 같은 시점에 출발시키는 문 | 닫혀 있는 동안 모든 Task가 대기하고, 메인 Test Thread가 열면 Claim을 함께 시작 |
+| Claim | Job 처리 권한과 소유권을 확보하는 동작 | PENDING Job을 골라 PROCESSING으로 바꾸고 Worker·Token·Lease를 기록 |
+
+#### Task
+
+Task는 Worker가 실행할 작업 하나다. Java에서는 보통 `Runnable`이나 `Callable` 형태로 Executor에
+전달한다.
+
+```text
+Task
+→ 실행할 코드 묶음
+→ 아직 Thread 자체는 아님
+```
+
+이 테스트의 단일 Job 경쟁에서 Task 하나는 다음 의미다.
+
+```text
+내 Worker ID로 embeddingJobClaimService.claim(workerId)를 한 번 호출한다.
+```
+
+1,000개 Queue 소진 테스트에서 Task 하나는 다음 의미다.
+
+```text
+내 Worker ID로 Claim을 반복한다.
+→ Job을 받으면 결과를 모은다.
+→ Queue가 비면 반복을 끝낸다.
+```
+
+Task와 DB의 `embedding_jobs` Job은 같은 것이 아니다.
+
+```text
+Task
+→ Java에서 실행되는 코드 단위
+
+Job
+→ DB Queue에 저장된 실제 처리 대상 Row
+```
+
+#### Executor
+
+Executor는 Task를 실행해 주는 Thread 관리자다. 내부에 Thread Pool을 가지고 있고, 제출된 Task를 실행
+가능한 Thread에 배정한다.
+
+```text
+Task 제출
+→ Executor가 Task를 Queue에 받음
+→ 비어 있는 Thread를 선택
+→ Thread가 Task 코드 실행
+```
+
+이 테스트에서는 모든 Task가 `startLatch` 앞까지 도착해야 하므로 Executor의 Thread 수를 Worker Task 수와
+같게 만든다.
+
+```text
+Worker Task 100개
+→ Executor Thread 100개
+```
+
+Executor Thread 수가 10개뿐이면 처음 10개 Task만 `startLatch` 앞에 도착하고 나머지 90개는 Executor
+Queue에서 기다린다. 그러면 `readyLatch`가 0이 되지 않아 테스트를 시작할 수 없다.
+
+#### readyLatch
+
+`readyLatch`는 모든 Task가 출발 준비를 마쳤는지 확인하는 카운터다. Worker 수로 초기화한다.
+
+```text
+초기값 100
+
+Task 1 준비 완료   → 99
+Task 2 준비 완료   → 98
+...
+Task 100 준비 완료 → 0
+```
+
+메인 Test Thread는 값이 0이 될 때까지 기다린다. 따라서 일부 Task만 먼저 실행되는 순차 테스트를 동시성
+테스트로 잘못 판단하지 않게 한다.
+
+#### startLatch
+
+`startLatch`는 준비된 Task들을 거의 동시에 출발시키는 문이다.
+
+```text
+startLatch 닫힘
+→ 준비된 모든 Task가 문 앞에서 대기
+
+startLatch 개방
+→ 대기 중인 모든 Task가 Claim 시작
+```
+
+`readyLatch`가 준비 상태를 확인하는 카운터라면 `startLatch`는 실제 출발 신호다.
+
+#### Claim
+
+Claim은 처리할 Job 하나를 가져와서 “이 Job은 내가 처리한다”라고 소유권을 확보하는 동작이다.
+
+```text
+PENDING Job 선택
+→ 다른 Worker와 겹치지 않도록 DB Row Lock 획득
+→ PROCESSING 전환
+→ locked_by_worker_id 기록
+→ claim_token 기록
+→ Lease 시간 기록
+→ Commit
+```
+
+단순 조회와 다른 점은 DB에 현재 소유자를 기록한다는 것이다. Claim 성공 후에는 다른 Worker가 같은 Job을
+동시에 자신의 작업으로 가져가면 안 된다.
+
+#### 전체 실행 흐름
+
+```text
+Executor가 Task들을 실행
+        ↓
+각 Task가 readyLatch 감소
+        ↓
+각 Task가 startLatch 앞에서 대기
+        ↓
+모든 Task가 준비되면 startLatch 개방
+        ↓
+모든 Task가 거의 동시에 Claim 시도
+        ↓
+DB의 FOR UPDATE SKIP LOCKED가 소유권 경쟁 제어
+        ↓
+한 Job에는 한 Worker만 Claim 성공
+```
+
+예를 들어 Worker 100개가 하나의 Job을 동시에 Claim하면 정상적인 구현에서는 한 Worker만 Claim에
+성공해야 한다. 나머지 99개 Worker는 오류가 아니라 현재 Claim할 수 있는 Job이 없다는 빈 결과를 받는다.
+
+```text
+Task       = 실행할 작업
+Executor   = Task를 실행하는 Thread 관리자
+readyLatch = 모두 준비됐는지 확인하는 카운터
+startLatch = 준비된 Task를 동시에 출발시키는 문
+Claim      = Job 처리 권한과 소유권을 가져오는 동작
 ```
 
 ## 5. 내부 동작 원리
@@ -375,7 +522,7 @@ git status -sb
 git branch --show-current
 ```
 
-PR 5-A 브랜치에서 실행할 때 기대값:
+이 테스트 작업 브랜치에서 실행할 때 기대값:
 
 ```text
 test/52
@@ -582,7 +729,7 @@ LOCKED 이벤트 = 1
 LOCKED 이벤트 = 1,000
 ```
 
-## 13. 전체 PR 5-A 테스트 실행
+## 13. 전체 Claim 동시성 테스트 실행
 
 ```bash
 ./gradlew claimConcurrencyTest --rerun-tasks
@@ -1077,7 +1224,7 @@ OpenSQL이 정상 실행 중인가?
 Docker에 할당된 CPU와 Memory가 지나치게 낮은가?
 ```
 
-PR 5-A 테스트는 한 번에 하나만 실행한다. Timeout을 무작정 늘리기 전에 DB와 중복 테스트 실행을 먼저
+Claim 동시성 테스트는 한 번에 하나만 실행한다. Timeout을 무작정 늘리기 전에 DB와 중복 테스트 실행을 먼저
 확인한다.
 
 ### 20.9 성공 수가 1보다 큼

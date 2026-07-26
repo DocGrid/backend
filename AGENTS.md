@@ -25,6 +25,13 @@ Don't assume. Don't hide confusion. Surface tradeoffs.
 - For sequential execution flows, add numbered comments such as `1.`, `2.`, `3.`, `4.` at the relevant steps.
 - Keep comments accurate and maintainable; remove or revise stale comments whenever behavior changes.
 
+**Documentation Rules**
+- Numbered PR sequence labels shared privately by the user and Codex are internal planning shorthand.
+- Never expose those private PR labels in GitHub issues, pull request titles or bodies, committed documents, code, or comments.
+- Replace private PR labels with the actual issue number or a descriptive feature/test name in every external artifact.
+- Store design-only documents under `docs/design/`.
+- Store executed test plans, reproduction guides, measurements, and test results under `docs/test-results/`, not `docs/design/`.
+
 **Goal-Driven Execution**
 - Define success criteria before starting.
 - For multi-step tasks, state a brief plan and verify each step.

@@ -75,10 +75,11 @@ public class SearchFacade {
         );
 
         try {
-            // 4. 권한 pre-filter
+            // 4. 이 사용자가 볼 수 있는 문서 ID만 미리 추림
             List<Long> permittedIds = accessibleDocumentQueryService
                 .findReadableDocumentIds(userId, request.collectionId());
 
+            // 볼 수 있는 문서가 하나도 없으면 벡터 검색 자체를 생략
             if (permittedIds.isEmpty()) {
                 log.info("[SEARCH] no accessible documents userId={}", userId);
                 int latency = latencyMs(start);

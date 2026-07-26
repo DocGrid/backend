@@ -46,10 +46,9 @@ public class QueryEmbeddingService {
 
         if (response == null
                 || response.vector() == null
-                || response.vector().length != activeModel.getDimension()
-                || response.dimension() != activeModel.getDimension()) {
-            log.error("임베딩 차원 불일치: expected={}, actual={}",
-                activeModel.getDimension(), response == null ? "null" : response.dimension());
+                || response.vector().length != activeModel.getDimension()) {
+            int actual = (response == null || response.vector() == null) ? -1 : response.vector().length;
+            log.error("임베딩 차원 불일치: expected={}, actual={}", activeModel.getDimension(), actual);
             throw new DocGridException(ErrorCode.EMBEDDING_DIMENSION_MISMATCH);
         }
 

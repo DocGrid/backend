@@ -48,7 +48,7 @@ class QueryEmbeddingServiceTest {
     void embed_success() {
         EmbeddingModel model = EmbeddingModelFixture.createDefaultModel();
         float[] vector = new float[EmbeddingModelFixture.DIMENSION];
-        EmbedServerResponse serverResponse = new EmbedServerResponse(vector, EmbeddingModelFixture.DIMENSION);
+        EmbedServerResponse serverResponse = new EmbedServerResponse(vector);
 
         given(embeddingModelQueryService.getActiveModel()).willReturn(model);
         given(responseSpec.body(EmbedServerResponse.class)).willReturn(serverResponse);
@@ -63,7 +63,7 @@ class QueryEmbeddingServiceTest {
     @DisplayName("차원 불일치: 응답 차원이 모델 차원과 다르면 EMBEDDING_DIMENSION_MISMATCH 예외가 발생한다")
     void embed_dimensionMismatch_throwsException() {
         EmbeddingModel model = EmbeddingModelFixture.createDefaultModel();
-        EmbedServerResponse serverResponse = new EmbedServerResponse(new float[768], 768);
+        EmbedServerResponse serverResponse = new EmbedServerResponse(new float[768]);
 
         given(embeddingModelQueryService.getActiveModel()).willReturn(model);
         given(responseSpec.body(EmbedServerResponse.class)).willReturn(serverResponse);

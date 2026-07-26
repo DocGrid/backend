@@ -17,11 +17,11 @@
 - 검색 결과가 `search_results` 테이블에 rank 순서대로 저장된다.
 
 설계 문서:
-- [`docs/design/kangcheolung-#35-embedding-server.md`](../design/kangcheolung-#35-embedding-server.md)
-- [`docs/design/kangcheolung-#41-vector-search-db-infrastructure.md`](../design/kangcheolung-#41-vector-search-db-infrastructure.md)
-- [`docs/design/kangcheolung-#44-search-embedding-query-logging.md`](../design/kangcheolung-#44-search-embedding-query-logging.md)
-- [`docs/design/kangcheolung-#54-search-permission-pre-filter.md`](../design/kangcheolung-#54-search-permission-pre-filter.md)
-- [`docs/design/kangcheolung-#56-vector-search-live-check-api.md`](../design/kangcheolung-#56-vector-search-live-check-api.md)
+- [`docs/design/kangcheolung-#35-embedding-server.md`](../design/kangcheolung-%2335-embedding-server.md)
+- [`docs/design/kangcheolung-#41-vector-search-db-infrastructure.md`](../design/kangcheolung-%2341-vector-search-db-infrastructure.md)
+- [`docs/design/kangcheolung-#44-search-embedding-query-logging.md`](../design/kangcheolung-%2344-search-embedding-query-logging.md)
+- [`docs/design/kangcheolung-#54-search-permission-pre-filter.md`](../design/kangcheolung-%2354-search-permission-pre-filter.md)
+- [`docs/design/kangcheolung-#56-vector-search-live-check-api.md`](../design/kangcheolung-%2356-vector-search-live-check-api.md)
 
 ---
 
@@ -504,8 +504,8 @@ BUILD SUCCESSFUL in 14s
 | topK > 실제 데이터 수 → 있는 만큼만 반환 | ✅ |
 | search_results rank 순서 저장 | ✅ |
 | search_queries latency_ms 저장 | ✅ |
-| live check 탈락 케이스 | ✅ (단위 테스트로 검증) |
-| dimension 불일치 케이스 | ✅ (단위 테스트로 검증) |
+| live check 탈락 케이스 | 수동 미수행 — 단위 테스트 통과 |
+| dimension 불일치 케이스 | 수동 미수행 — 단위 테스트 통과 |
 | 자동 테스트 전체 통과 | ✅ |
 
 closes #56

@@ -52,7 +52,7 @@ closes #35
 
 ### 1.3 파일 구조
 
-```
+```text
 embedding-server/
 ├── main.py           # FastAPI 앱: POST /embed, GET /health
 ├── requirements.txt  # 버전 고정 의존성
@@ -112,7 +112,7 @@ def embed(req: EmbedRequest):
 
 ### 1.6 requirements.txt
 
-```
+```text
 fastapi==0.115.0
 uvicorn==0.30.6
 FlagEmbedding==1.2.11
@@ -204,7 +204,7 @@ curl -s -X POST http://localhost:8000/embed \
 
 대회 지정 DB인 `tmaxopensql/postgres:14.6` 이미지에 pgvector 확장이 없었음.
 
-```
+```text
 ERROR: could not open extension control file
 "/usr/pgsql-14/share/extension/vector.control": No such file or directory
 ```
@@ -314,5 +314,6 @@ docker compose build embedding-server
 docker compose up -d embedding-server
 # 첫 실행 시 bge-m3 다운로드로 약 10~15분 소요 (약 3GB)
 # docker logs -f docgrid-embedding 으로 진행 상태 확인
-# "Uvicorn running on http://0.0.0.0:8000" 로그가 뜨면 준비 완료
+# Uvicorn 시작 로그는 서버 프로세스만 뜬 것 — 모델 로딩 전까지 /health가 503 반환
+# GET /health 응답이 200이 될 때까지 대기 후 사용
 ```

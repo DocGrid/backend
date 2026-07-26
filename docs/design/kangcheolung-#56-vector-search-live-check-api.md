@@ -458,7 +458,7 @@ public class SearchController {
 | 180도 (반대 방향) | 2 | -1 | 정반대 의미 |
 
 코드에서:
-```
+```text
 similarityScore = max(0, 1 - distance)
 ```
 
@@ -473,8 +473,8 @@ similarityScore = max(0, 1 - distance)
 
 | 상황 | 처리 |
 |---|---|
-| 임베딩 서버 장애 | `EMBEDDING_SERVER_UNAVAILABLE(503)` + `markFailed` |
-| 활성 임베딩 모델 없음 | `EMBEDDING_MODEL_NOT_CONFIGURED(500)` + `markFailed` |
+| 임베딩 서버 장애 | `EMBEDDING_SERVER_UNAVAILABLE(503)` — createProcessing 이전 실패라 markFailed 미호출 |
+| 활성 임베딩 모델 없음 | `EMBEDDING_MODEL_NOT_CONFIGURED(500)` — createProcessing 이전 실패라 markFailed 미호출 |
 | 접근 가능 문서 0건 | 빈 results 배열 정상 응답(200), `markSuccess` |
 | Top-K 결과 0건 | 빈 results 배열 정상 응답(200), `markSuccess` |
 | live check로 전체 탈락 | 빈 results 배열 정상 응답(200), `markSuccess` |

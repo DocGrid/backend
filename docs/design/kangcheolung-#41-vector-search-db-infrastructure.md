@@ -150,22 +150,22 @@ MOCK 모델을 먼저 비활성화하는 이유: `embedding_models`에 "active+s
 
 ## 6. 트러블슈팅
 
-#### V33 duplicate key 오류
+### V33 duplicate key 오류
 
 원인: MOCK 모델이 active+searchable로 남아있어서 bge-m3 INSERT가 unique 제약에 막힘.  
 해결: INSERT 전 UPDATE로 기존 모델 비활성화.
 
-#### Hibernate 스키마 검증 실패
+### Hibernate 스키마 검증 실패
 
 원인: DB는 `vector(1024)`인데 엔티티가 `TEXT`로 남아있어 타입 불일치.  
 해결: VectorType 구현 + 엔티티 수정으로 해결.
 
-#### PGobject 컴파일 에러
+### PGobject 컴파일 에러
 
 원인: `runtimeOnly` 스코프라 컴파일 타임에 `PGobject` 접근 불가.  
 해결: `implementation`으로 변경.
 
-#### flyway_schema_history 잔여 오류
+### flyway_schema_history 잔여 오류
 
 원인: 삭제한 seed 파일의 기록이 히스토리 테이블에 남아 "applied migration not resolved locally" 오류 발생.  
 해결: `DELETE FROM flyway_schema_history WHERE script = '...'`로 정리. 팀원도 로컬에 구 seed가 적용된 상태였다면 동일 문제 발생 가능 → 온보딩 안내 필요.

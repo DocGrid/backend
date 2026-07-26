@@ -123,7 +123,7 @@ public class AccessibleDocumentQueryService {
 
 **UNION 방식 선택 이유**
 
-단건 boolean 체크(`existsRoleReadPermission` 등)를 반복 호출하는 방식은 검색 대상 문서 수가 증가할수록 N번의 쿼리가 발생한다. UNION 방식은 접근 경로별로 DB가 병렬 처리할 수 있고, 결과는 Set의 합집합으로 중복 없이 반환된다.
+단건 boolean 체크(`existsRoleReadPermission` 등)를 반복 호출하는 방식은 검색 대상 문서 수가 증가할수록 N번의 쿼리가 발생한다. UNION 방식은 접근 경로별 조건을 단일 SQL로 합쳐 한 번의 쿼리로 처리하며, UNION의 중복 제거로 동일 문서 ID가 여러 경로에서 매칭돼도 한 번만 반환된다.
 
 **`collectionId` nullable 처리**
 

@@ -93,6 +93,33 @@ public enum ErrorCode {
     // 저장 상태 또는 Heartbeat 기준 실질 상태가 Job을 받을 수 없는 경우 사용한다.
     WORKER_NOT_AVAILABLE(HttpStatus.CONFLICT, "WORKER-002", "Worker가 Job을 처리할 수 없는 상태입니다."),
 
+    // EMBEDDING JOB
+    EMBEDDING_JOB_NOT_FOUND(
+        HttpStatus.NOT_FOUND,
+        "EMBEDDING-JOB-001",
+        "Embedding Job을 찾을 수 없습니다."
+    ),
+    EMBEDDING_JOB_NOT_PROCESSING(
+        HttpStatus.CONFLICT,
+        "EMBEDDING-JOB-002",
+        "현재 상태에서는 Embedding Job Attempt를 시작할 수 없습니다."
+    ),
+    EMBEDDING_JOB_OWNERSHIP_INVALID(
+        HttpStatus.CONFLICT,
+        "EMBEDDING-JOB-003",
+        "현재 Embedding Job 소유권과 요청이 일치하지 않습니다."
+    ),
+    EMBEDDING_JOB_LEASE_EXPIRED(
+        HttpStatus.CONFLICT,
+        "EMBEDDING-JOB-004",
+        "Embedding Job Lease가 만료되었습니다."
+    ),
+    EMBEDDING_JOB_OWNERSHIP_INCONSISTENT(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "EMBEDDING-JOB-005",
+        "Embedding Job 소유권 데이터를 확인할 수 없습니다."
+    ),
+
     // EMBEDDING MODEL
     EMBEDDING_MODEL_NOT_CONFIGURED(
         HttpStatus.INTERNAL_SERVER_ERROR,

@@ -79,3 +79,17 @@ tasks.register('claimConcurrencyTest', Test) {
 	}
 	outputs.upToDateWhen { false }
 }
+
+tasks.register('claimPerformanceTest', Test) {
+	group = 'verification'
+	description = '실제 OpenSQL에서 Embedding Job Claim 처리량과 경합 benchmark를 실행합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'claim-performance'
+	}
+	systemProperties System.properties.findAll { key, value ->
+		key.toString().startsWith('claim.performance.')
+	}
+	outputs.upToDateWhen { false }
+}

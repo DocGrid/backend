@@ -32,3 +32,7 @@ jwt:
 embedding:
   server:
     base-url: ${EMBEDDING_SERVER_URL:http://localhost:8000}
+
+ollama:
+  server:
+    base-url: ${OLLAMA_SERVER_URL:http://localhost:11434}

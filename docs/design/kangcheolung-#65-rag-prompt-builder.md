@@ -31,7 +31,7 @@ RAG 블록은 명세상 아래 5개 기능(F-RAG-01~05)으로 구성되고, 개�
 
 ### 1) 인프라(로컬 개발 환경) 트랙 — docker-compose
 
-```
+```text
 docker compose up -d ollama
         │
         ▼
@@ -48,7 +48,7 @@ docker compose exec ollama ollama run qwen2.5:3b "..."  로 응답 확인
 
 ### 2) 코드 트랙 — PromptBuilder (아직 어디에도 연결되지 않은 독립 컴포넌트)
 
-```
+```text
 (향후 Issue 5에서 연결될 흐름 — 이번 이슈에는 미포함)
 SearchFacade.search() 내부의 List<VectorSearchCandidate>
         │
@@ -75,7 +75,7 @@ PromptBuilder.build(queryText, candidates)
     image: ollama/ollama
     container_name: docgrid-ollama
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama-data:/root/.ollama
     healthcheck:
@@ -93,6 +93,7 @@ PromptBuilder.build(queryText, candidates)
 - `ollama/ollama`: 공식 이미지를 그대로 사용 — `embedding-server`처럼 별도 Dockerfile 빌드가 필요 없다.
 - `ollama-data:/root/.ollama`: pull한 모델이 이 볼륨에 저장된다. 컨테이너를 지웠다 다시 띄워도 볼륨이 남아있으면 모델을 다시 받지 않는다.
 - `healthcheck`: `ollama list`(로컬에 받은 모델 목록 조회)가 성공하면 서버가 정상 응답 중이라는 뜻이라 헬스체크로 사용했다.
+- `"127.0.0.1:11434:11434"`: 호스트의 모든 인터페이스가 아니라 로컬(127.0.0.1)에만 바인딩했다. Ollama HTTP API는 인증이 없는 로컬 개발용 엔드포인트라, `postgres`/`minio`(각각 비밀번호/액세스키로 보호됨)와 달리 외부 인터페이스에 그대로 열어두면 같은 네트워크의 다른 기기가 인증 없이 접근할 수 있다. 다른 서비스의 포트 바인딩은 이번 이슈 범위가 아니라 손대지 않았다.
 
 ### 2. `src/main/resources/application.yml` — Ollama 서버 주소 설정값 추가
 
@@ -244,9 +245,14 @@ $ docker compose exec ollama ollama run qwen2.5:3b "안녕"
 
 **관찰된 현상**: "안녕"이라는 한국어 인사에 대해 한국어("안녕하세요!")와 중국어("如何可以帮助您？")가 섞인 응답이 나왔다.
 
-**원인 분석**: qwen2.5:3b는 중국 Alibaba에서 만든 다국어 모델이라, 짧고 문맥이 거의 없는 프롬프트("안녕" 한 단어)에서는 출력 언어가 안정적으로 고정되지 않는 경향이 있다. 에러나 설정 문제가 아니라 이 규모(3b)의 다국어 모델이 갖는 특성이다.
+**원인 분석 (미확정 — 추가 검증 필요)**: `ollama run "안녕"`은 언어 지시문도, generation 옵션(temperature 등) 조정도 없는 최소 호출이라, 아래 여러 원인이 섞여 있을 수 있고 이번 관찰만으로는 어느 쪽인지 확정할 수 없다.
+- 프롬프트에 언어를 한국어로 고정하라는 지시가 없었음 (이번 호출은 `PromptBuilder`를 거치지 않은 임의 문자열이라 애초에 지시문 자체가 없었음)
+- "안녕" 한 단어처럼 문맥이 거의 없는 입력에서는 다국어 모델의 출력 언어가 덜 안정적일 수 있음 (qwen2.5:3b는 다국어 학습 모델)
+- Ollama 기본 generation 설정(temperature 등)의 영향일 가능성도 배제할 수 없음
 
-**판단 및 대응 방향**: 이번 이슈의 완료 기준은 "로컬 Ollama 서버가 정상 응답을 생성한다"는 것이고(마일스톤 표 1번), 이 기준은 충족했다. 다만 실제 RAG 답변 품질을 위해서는 언어를 한국어로 고정하는 지시문이 필요할 수 있다. 지금 `PromptBuilder.INSTRUCTION`에는 언어 지시가 없는데, 이 시점에 미리 추가하기보다 **Issue 2(OllamaClient 연동)에서 실제 검색 문서 기반 프롬프트로 재현 여부를 확인한 뒤 필요 시 `INSTRUCTION`에 "한국어로 답변하세요" 한 줄을 추가하기로 결정**했다. 지금은 이 컴포넌트가 실제 LLM 호출과 연결되어 있지 않아 검증할 방법이 없기 때문이다(검증 안 된 변경을 미리 넣지 않는다는 원칙).
+이 중 어느 것이 실제 원인인지는 실제 RAG 프롬프트(한국어 문서 chunk + 지시문 포함)로 재현해봐야 확인 가능하다.
+
+**판단 및 대응 방향**: 이번 이슈의 완료 기준은 "로컬 Ollama 서버가 정상 응답을 생성한다"는 것이고(마일스톤 표 1번), 이 기준은 충족했다. 원인이 확정되지 않은 상태에서 `PromptBuilder.INSTRUCTION`에 "한국어로 답변하세요"를 미리 추가하는 건 검증되지 않은 변경이라고 판단해, **Issue 2(OllamaClient 연동)에서 실제 검색 문서 기반 프롬프트로 재현 여부를 확인한 뒤 필요 시 추가하기로 결정**했다. 지금은 이 컴포넌트가 실제 LLM 호출과 연결되어 있지 않아 검증할 방법이 없기 때문이다.
 
 ### 5. 단위 테스트 / 빌드
 

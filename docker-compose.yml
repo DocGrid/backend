@@ -65,7 +65,7 @@ services:
     image: ollama/ollama
     container_name: docgrid-ollama
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama-data:/root/.ollama
     healthcheck:

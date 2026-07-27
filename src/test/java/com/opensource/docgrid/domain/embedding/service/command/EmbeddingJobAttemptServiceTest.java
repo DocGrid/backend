@@ -24,8 +24,10 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
 import org.mockito.InOrder;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -48,7 +50,8 @@ import com.opensource.docgrid.global.exception.ErrorCode;
  * Embedding Job Attempt 시작의 소유권·Lease 검증, 멱등 재생과 번호 할당을 검증하는 단위 테스트.
  *
  * <p>고정 Clock과 Mock Repository로 Job 잠금 이후의 결정적 시각 경계 및 오류 경로의 무저장을
- * 확인한다.
+ * 확인한다. 실제 공통 소유권 Validator를 Spy로 준비해 Service가 공통 정책에 위임한 뒤에도 같은
+ * 회귀 시나리오를 유지한다.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("EmbeddingJobAttemptService 테스트")
@@ -66,18 +69,15 @@ class EmbeddingJobAttemptServiceTest {
     @Mock private EmbeddingJobRepository embeddingJobRepository;
     @Mock private EmbeddingJobAttemptRepository embeddingJobAttemptRepository;
     @Mock private EmbeddingJobAttemptConverter embeddingJobAttemptConverter;
+    @Spy private Clock clock = Clock.fixed(NOW_INSTANT, ZONE_ID);
+    @Spy private EmbeddingJobOwnershipValidator ownershipValidator =
+        new EmbeddingJobOwnershipValidator();
 
-    private EmbeddingJobAttemptService service;
+    @InjectMocks private EmbeddingJobAttemptService service;
     private StartEmbeddingJobAttemptRequest request;
 
     @BeforeEach
     void setUp() {
-        service = new EmbeddingJobAttemptService(
-            embeddingJobRepository,
-            embeddingJobAttemptRepository,
-            embeddingJobAttemptConverter,
-            Clock.fixed(NOW_INSTANT, ZONE_ID)
-        );
         request = new StartEmbeddingJobAttemptRequest(WORKER_ID, CLAIM_TOKEN);
     }
 

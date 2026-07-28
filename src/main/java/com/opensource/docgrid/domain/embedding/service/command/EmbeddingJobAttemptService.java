@@ -5,13 +5,11 @@ import java.time.LocalDateTime;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 import com.opensource.docgrid.domain.embedding.converter.EmbeddingJobAttemptConverter;
 import com.opensource.docgrid.domain.embedding.dto.request.StartEmbeddingJobAttemptRequest;
 import com.opensource.docgrid.domain.embedding.dto.response.StartedEmbeddingJobAttemptResponse;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
-import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.worker.entity.EmbeddingJobAttempt;
 import com.opensource.docgrid.domain.worker.repository.EmbeddingJobAttemptRepository;
@@ -24,8 +22,8 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 현재 Embedding Job Claim 소유권을 검증하고 실행 Attempt 시작을 기록하는 Command Service.
  *
- * <p>Job 행 잠금, Worker·Token·Lease 검증, Claim Token 멱등 조회, Job별 다음 번호 할당과 Insert를
- * 하나의 짧은 Transaction으로 묶는다. Job 상태나 이벤트는 변경하지 않는다.
+ * <p>Job 행 잠금 뒤 공통 Validator에 Worker·Token·Lease 검증을 위임하고, Claim Token 멱등 조회,
+ * Job별 다음 번호 할당과 Insert를 하나의 짧은 Transaction으로 묶는다. Job 상태나 이벤트는 변경하지 않는다.
  */
 @Slf4j
 @Service
@@ -38,6 +36,7 @@ public class EmbeddingJobAttemptService {
     private final EmbeddingJobRepository embeddingJobRepository;
     private final EmbeddingJobAttemptRepository embeddingJobAttemptRepository;
     private final EmbeddingJobAttemptConverter embeddingJobAttemptConverter;
+    private final EmbeddingJobOwnershipValidator embeddingJobOwnershipValidator;
     private final Clock clock;
 
     /**
@@ -54,7 +53,12 @@ public class EmbeddingJobAttemptService {
 
         // 2. Lock 대기 중 경과한 시간까지 반영하도록 잠금 획득 뒤 현재 시각과 소유권을 검증한다.
         LocalDateTime startedAt = LocalDateTime.now(clock);
-        validateOwnership(embeddingJob, request, startedAt);
+        embeddingJobOwnershipValidator.validate(
+            embeddingJob,
+            request.workerId(),
+            request.claimToken(),
+            startedAt
+        );
 
         // 3. 같은 현재 Claim의 재전송은 새 번호를 소비하지 않고 기존 Attempt를 그대로 반환한다.
         return embeddingJobAttemptRepository
@@ -103,38 +107,6 @@ public class EmbeddingJobAttemptService {
             embeddingJobAttemptConverter.toStartedResponse(embeddingJobAttempt),
             false
         );
-    }
-
-    private void validateOwnership(
-        EmbeddingJob embeddingJob,
-        StartEmbeddingJobAttemptRequest request,
-        LocalDateTime startedAt
-    ) {
-        if (embeddingJob.getStatus() != EmbeddingJobStatus.PROCESSING) {
-            throw new DocGridException(ErrorCode.EMBEDDING_JOB_NOT_PROCESSING);
-        }
-
-        if (embeddingJob.getLockedByWorker() == null
-            || !StringUtils.hasText(embeddingJob.getClaimToken())
-            || embeddingJob.getLockedAt() == null
-            || embeddingJob.getLockExpiresAt() == null) {
-            log.error(
-                "PROCESSING Embedding Job의 소유권 데이터가 불완전합니다. jobId={}, requestWorkerId={}",
-                embeddingJob.getId(),
-                request.workerId()
-            );
-            throw new DocGridException(ErrorCode.EMBEDDING_JOB_OWNERSHIP_INCONSISTENT);
-        }
-
-        if (!request.workerId().equals(embeddingJob.getLockedByWorker().getId())
-            || !request.claimToken().equals(embeddingJob.getClaimToken())) {
-            throw new DocGridException(ErrorCode.EMBEDDING_JOB_OWNERSHIP_INVALID);
-        }
-
-        // Lease 만료 시각과 정확히 같은 순간부터는 현재 소유권을 만료로 처리한다.
-        if (!embeddingJob.getLockExpiresAt().isAfter(startedAt)) {
-            throw new DocGridException(ErrorCode.EMBEDDING_JOB_LEASE_EXPIRED);
-        }
     }
 
     /**

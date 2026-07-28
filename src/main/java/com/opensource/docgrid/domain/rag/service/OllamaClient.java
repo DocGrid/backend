@@ -57,7 +57,7 @@ public class OllamaClient {
 
         int latencyMs = (int) (System.currentTimeMillis() - start);
         return new OllamaGenerateResult(
-            response.response(), response.promptEvalCount(), response.evalCount(), latencyMs
+            response.model(), response.response(), response.promptEvalCount(), response.evalCount(), latencyMs
         );
     }
 }

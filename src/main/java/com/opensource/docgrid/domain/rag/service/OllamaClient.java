@@ -50,6 +50,11 @@ public class OllamaClient {
             throw new DocGridException(ErrorCode.RAG_SERVICE_UNAVAILABLE);
         }
 
+        if (response == null || response.response() == null) {
+            log.error("Ollama 응답이 비어있음: response={}", response);
+            throw new DocGridException(ErrorCode.RAG_SERVICE_UNAVAILABLE);
+        }
+
         int latencyMs = (int) (System.currentTimeMillis() - start);
         return new OllamaGenerateResult(
             response.response(), response.promptEvalCount(), response.evalCount(), latencyMs

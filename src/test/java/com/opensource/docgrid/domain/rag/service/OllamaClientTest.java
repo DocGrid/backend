@@ -66,4 +66,25 @@ class OllamaClientTest {
             .isInstanceOf(DocGridException.class)
             .hasFieldOrPropertyWithValue("errorCode", ErrorCode.RAG_SERVICE_UNAVAILABLE);
     }
+
+    @Test
+    @DisplayName("빈 응답: 응답 body가 null이면 RAG_SERVICE_UNAVAILABLE 예외가 발생한다")
+    void generate_nullResponse_throwsException() {
+        given(responseSpec.body(OllamaGenerateResponse.class)).willReturn(null);
+
+        assertThatThrownBy(() -> ollamaClient.generate("질문"))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.RAG_SERVICE_UNAVAILABLE);
+    }
+
+    @Test
+    @DisplayName("빈 응답: response 필드가 null이면 RAG_SERVICE_UNAVAILABLE 예외가 발생한다")
+    void generate_nullAnswerText_throwsException() {
+        OllamaGenerateResponse serverResponse = new OllamaGenerateResponse(null, true, 10, 0);
+        given(responseSpec.body(OllamaGenerateResponse.class)).willReturn(serverResponse);
+
+        assertThatThrownBy(() -> ollamaClient.generate("질문"))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.RAG_SERVICE_UNAVAILABLE);
+    }
 }

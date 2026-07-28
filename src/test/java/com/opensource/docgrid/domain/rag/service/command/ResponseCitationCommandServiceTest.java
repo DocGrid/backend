@@ -2,9 +2,9 @@ package com.opensource.docgrid.domain.rag.service.command;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 
 import java.math.BigDecimal;
@@ -49,8 +49,11 @@ class ResponseCitationCommandServiceTest {
             .build();
         VectorSearchCandidate c1 = candidate(10L, "인사규정 내용", 12, new BigDecimal("0.9"));
         VectorSearchCandidate c2 = candidate(20L, "복지정책 내용", 3, new BigDecimal("0.8"));
+        DocumentChunk chunk1 = mock(DocumentChunk.class);
+        DocumentChunk chunk2 = mock(DocumentChunk.class);
 
-        given(entityManager.getReference(eq(DocumentChunk.class), any())).willReturn(null);
+        given(entityManager.getReference(DocumentChunk.class, c1.chunkId())).willReturn(chunk1);
+        given(entityManager.getReference(DocumentChunk.class, c2.chunkId())).willReturn(chunk2);
         given(responseCitationRepository.saveAll(any())).willAnswer(i -> i.getArgument(0));
 
         responseCitationCommandService.saveAll(response, List.of(c1, c2));
@@ -66,8 +69,10 @@ class ResponseCitationCommandServiceTest {
         assertThat(saved.get(0).getPageNo()).isEqualTo(12);
         assertThat(saved.get(0).getRelevanceScore()).isEqualByComparingTo(new BigDecimal("0.9"));
         assertThat(saved.get(0).getSearchResult()).isNull();
+        assertThat(saved.get(0).getChunk()).isSameAs(chunk1);
         assertThat(saved.get(1).getCitationOrder()).isEqualTo(2);
         assertThat(saved.get(1).getCitationLabel()).isEqualTo("[2]");
+        assertThat(saved.get(1).getChunk()).isSameAs(chunk2);
     }
 
     @Test

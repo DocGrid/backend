@@ -44,12 +44,13 @@ class OllamaClientTest {
     @DisplayName("정상 케이스: 프롬프트를 전달하면 답변 텍스트와 토큰 수를 반환한다")
     void generate_success() {
         OllamaGenerateResponse serverResponse = new OllamaGenerateResponse(
-            "연차는 입사 1년 기준 15일 부여됩니다.", true, 120, 45
+            "qwen2.5:3b", "연차는 입사 1년 기준 15일 부여됩니다.", true, 120, 45
         );
         given(responseSpec.body(OllamaGenerateResponse.class)).willReturn(serverResponse);
 
         OllamaGenerateResult result = ollamaClient.generate("질문: 연차 규정 알려줘");
 
+        assertThat(result.model()).isEqualTo("qwen2.5:3b");
         assertThat(result.answerText()).isEqualTo("연차는 입사 1년 기준 15일 부여됩니다.");
         assertThat(result.inputTokenCount()).isEqualTo(120);
         assertThat(result.outputTokenCount()).isEqualTo(45);
@@ -80,7 +81,7 @@ class OllamaClientTest {
     @Test
     @DisplayName("빈 응답: response 필드가 null이면 RAG_SERVICE_UNAVAILABLE 예외가 발생한다")
     void generate_nullAnswerText_throwsException() {
-        OllamaGenerateResponse serverResponse = new OllamaGenerateResponse(null, true, 10, 0);
+        OllamaGenerateResponse serverResponse = new OllamaGenerateResponse("qwen2.5:3b", null, true, 10, 0);
         given(responseSpec.body(OllamaGenerateResponse.class)).willReturn(serverResponse);
 
         assertThatThrownBy(() -> ollamaClient.generate("질문"))

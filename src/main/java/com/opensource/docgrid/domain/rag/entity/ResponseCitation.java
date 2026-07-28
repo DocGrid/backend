@@ -70,19 +70,23 @@ public class ResponseCitation extends BaseEntity {
     @JoinColumn(name = "search_result_id")
     private SearchResult searchResult;
 
+    // 노출 순서(정렬용 숫자). 1, 2, 3...
     @Column(name = "citation_order", nullable = false)
     private int citationOrder;
 
-    // 사용자에게 노출되는 표시용 라벨. 예: "[1]", "[2]"
+    // 사용자에게 노출되는 표시용 라벨(문자열). 예: "[1]", "[2]" — citationOrder와 별도로 둬서 표기 스타일만 바뀌어도(예: "(주1)") 정렬 로직에 영향 없게 한다
     @Column(name = "citation_label", length = 20)
     private String citationLabel;
 
+    // 실제로 인용된 원문 텍스트. 원본 chunk가 나중에 수정/삭제돼도 답변 당시 근거는 그대로 남긴다
     @Column(name = "quoted_text", columnDefinition = "TEXT")
     private String quotedText;
 
+    // 원본 문서에서 몇 페이지였는지. 페이지 개념이 없는 포맷은 null
     @Column(name = "page_no")
     private Integer pageNo;
 
+    // 검색 시점의 관련도 점수(코사인 유사도). "왜 이 chunk가 뽑혔는지"를 정량적으로 같이 남긴다
     @Column(name = "relevance_score")
     private BigDecimal relevanceScore;
 

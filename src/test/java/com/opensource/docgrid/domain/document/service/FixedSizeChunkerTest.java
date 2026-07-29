@@ -1,19 +1,24 @@
 package com.opensource.docgrid.domain.document.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import com.opensource.docgrid.domain.document.config.DocumentChunkingProperties;
 
 /**
  * Unicode Code Point 기반 고정 크기 Chunk 경계와 계산 값의 결정성을 검증한다.
  *
- * <p>Overlap, 마지막 Chunk 종료, Emoji 경계, Token 추정치와 SHA-256 Hash 계약을 확인한다.
+ * <p>Overlap 불변식, 마지막 Chunk 종료, Emoji 경계, Token 추정치와 SHA-256 Hash 계약을 확인한다.
  */
 @DisplayName("FixedSizeChunker 테스트")
 class FixedSizeChunkerTest {
@@ -119,5 +124,23 @@ class FixedSizeChunkerTest {
                 org.assertj.core.groups.Tuple.tuple(0, 4),
                 org.assertj.core.groups.Tuple.tuple(3, 7)
             );
+    }
+
+    @ParameterizedTest(name = "[{index}] overlap={0}")
+    @MethodSource("invalidOverlaps")
+    @DisplayName("Overlap이 유효 범위를 벗어나면 Chunk 계산을 시작하지 않는다")
+    void chunk_rejectsInvalidOverlap(int overlap) {
+        properties.setOverlap(overlap);
+
+        assertThatIllegalArgumentException()
+            .isThrownBy(() -> chunker.chunk("abcdef"));
+    }
+
+    private static Stream<Arguments> invalidOverlaps() {
+        return Stream.of(
+            Arguments.of(-1),
+            Arguments.of(4),
+            Arguments.of(5)
+        );
     }
 }

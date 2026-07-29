@@ -32,23 +32,31 @@ public class FixedSizeChunker {
      *
      * @param canonicalText 파싱과 정규화가 끝난 Text
      * @return 0부터 연속된 Index를 가진 Chunk Draft 목록
+     * @throws IllegalArgumentException Chunk 크기와 Overlap 조합이 유효하지 않은 경우
      */
     public List<DocumentChunkDraft> chunk(String canonicalText) {
+        int chunkSize = properties.getChunkSize();
+        int overlap = properties.getOverlap();
+        // 1. 설정 객체가 생성 후 변경되더라도 시작 위치가 반드시 앞으로 이동하게 불변식을 재검증한다.
+        if (chunkSize <= 0 || overlap < 0 || overlap >= chunkSize) {
+            throw new IllegalArgumentException("Chunk 크기는 양수이고 Overlap은 0 이상 Chunk 크기 미만이어야 합니다.");
+        }
+
         int[] codePoints = canonicalText.codePoints().toArray();
+        // 2. 비어 있는 원문은 저장할 Chunk가 없으므로 즉시 빈 결과로 종료한다.
         if (codePoints.length == 0) {
             return List.of();
         }
 
-        int chunkSize = properties.getChunkSize();
-        int step = chunkSize - properties.getOverlap();
+        int step = chunkSize - overlap;
         List<DocumentChunkDraft> drafts = new ArrayList<>();
 
-        // 1. 시작 위치를 Code Point 단위로 이동해 Surrogate Pair 중간 분할을 방지한다.
+        // 3. 시작 위치를 Code Point 단위로 이동해 Surrogate Pair 중간 분할을 방지한다.
         for (int start = 0, chunkIndex = 0; start < codePoints.length; start += step, chunkIndex++) {
             int end = Math.min(start + chunkSize, codePoints.length);
             String chunkText = new String(codePoints, start, end - start);
 
-            // 2. Entity에 필요한 계산 값만 Draft에 담고 페이지·섹션·Metadata는 이번 범위에서 비워 둔다.
+            // 4. Entity에 필요한 계산 값만 Draft에 담고 페이지·섹션·Metadata는 이번 범위에서 비워 둔다.
             drafts.add(new DocumentChunkDraft(
                 chunkIndex,
                 chunkText,
@@ -61,7 +69,7 @@ public class FixedSizeChunker {
                 null
             ));
 
-            // 3. 마지막 Chunk가 원문 끝에 도달하면 Overlap만 남은 추가 Chunk를 만들지 않는다.
+            // 5. 마지막 Chunk가 원문 끝에 도달하면 Overlap만 남은 추가 Chunk를 만들지 않는다.
             if (end == codePoints.length) {
                 break;
             }

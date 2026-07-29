@@ -479,6 +479,11 @@ class MinioUploadConcurrencyIntegrationTest {
         }
 
         @Override
+        public byte[] read(StoredFile storedFile) {
+            return delegate.read(storedFile);
+        }
+
+        @Override
         public void delete(StoredFile storedFile) {
             delegate.delete(storedFile);
             deletedFiles.add(storedFile);

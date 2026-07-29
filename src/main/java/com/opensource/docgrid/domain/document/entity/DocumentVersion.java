@@ -119,10 +119,18 @@ public class DocumentVersion extends BaseEntity {
     }
 
     public void markParsing() {
+        // UPLOADED에서 시작한 최초 파싱만 허용하고 재개 여부 판단은 Command Service가 담당한다.
+        if (status != DocumentVersionStatus.UPLOADED) {
+            throw new IllegalStateException("UPLOADED 상태의 문서 버전만 PARSING으로 전환할 수 있습니다.");
+        }
         this.status = DocumentVersionStatus.PARSING;
     }
 
     public void markChunked() {
+        // Chunk Set 저장과 같은 Transaction에서 PARSING Version만 완료 상태로 전환한다.
+        if (status != DocumentVersionStatus.PARSING) {
+            throw new IllegalStateException("PARSING 상태의 문서 버전만 CHUNKED로 전환할 수 있습니다.");
+        }
         this.status = DocumentVersionStatus.CHUNKED;
     }
 

@@ -58,6 +58,9 @@ public enum ErrorCode {
     DOCUMENT_VERSION_TYPE_MISMATCH(
         HttpStatus.BAD_REQUEST, "DOCUMENT-VERSION-004", "기존 문서와 다른 파일 형식은 업로드할 수 없습니다."
     ),
+    DOCUMENT_VERSION_CHUNKING_NOT_ALLOWED(
+        HttpStatus.CONFLICT, "DOCUMENT-VERSION-005", "현재 문서 버전 상태에서는 Chunk를 생성할 수 없습니다."
+    ),
     INDEXING_STATUS_INCONSISTENT(
         HttpStatus.INTERNAL_SERVER_ERROR, "DOCUMENT-STATUS-001", "문서 인덱싱 상태를 조회할 수 없습니다."
     ),
@@ -76,10 +79,40 @@ public enum ErrorCode {
         "DOCUMENT-STORAGE-001",
         "파일 저장소를 사용할 수 없습니다."
     ),
+    FILE_OBJECT_NOT_FOUND(
+        HttpStatus.NOT_FOUND,
+        "DOCUMENT-STORAGE-002",
+        "저장된 파일을 찾을 수 없습니다."
+    ),
     FILE_OBJECT_RESOLUTION_FAILED(
         HttpStatus.INTERNAL_SERVER_ERROR,
         "DOCUMENT-UPLOAD-001",
         "파일 정보를 저장하지 못했습니다."
+    ),
+    UNSUPPORTED_DOCUMENT_TYPE(
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        "DOCUMENT-PARSING-001",
+        "지원하지 않는 문서 형식입니다."
+    ),
+    DOCUMENT_CONTENT_EMPTY(
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        "DOCUMENT-PARSING-002",
+        "문서에서 처리할 텍스트를 찾을 수 없습니다."
+    ),
+    DOCUMENT_TEXT_DECODING_FAILED(
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        "DOCUMENT-PARSING-003",
+        "문서 텍스트를 UTF-8로 해석할 수 없습니다."
+    ),
+    DOCUMENT_FILE_REFERENCE_MISSING(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "DOCUMENT-PARSING-004",
+        "문서 원본 파일 정보를 확인할 수 없습니다."
+    ),
+    DOCUMENT_CHUNKS_INCONSISTENT(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "DOCUMENT-CHUNK-001",
+        "문서 버전과 Chunk 데이터가 일치하지 않습니다."
     ),
 
     // PERMISSION
@@ -118,6 +151,11 @@ public enum ErrorCode {
         HttpStatus.INTERNAL_SERVER_ERROR,
         "EMBEDDING-JOB-005",
         "Embedding Job 소유권 데이터를 확인할 수 없습니다."
+    ),
+    EMBEDDING_JOB_ATTEMPT_INVALID(
+        HttpStatus.CONFLICT,
+        "EMBEDDING-JOB-006",
+        "현재 Claim 실행 Context와 Attempt가 일치하지 않습니다."
     ),
 
     // EMBEDDING MODEL

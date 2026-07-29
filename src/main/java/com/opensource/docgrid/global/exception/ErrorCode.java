@@ -76,6 +76,11 @@ public enum ErrorCode {
         "DOCUMENT-STORAGE-001",
         "파일 저장소를 사용할 수 없습니다."
     ),
+    FILE_OBJECT_NOT_FOUND(
+        HttpStatus.NOT_FOUND,
+        "DOCUMENT-STORAGE-002",
+        "저장된 파일을 찾을 수 없습니다."
+    ),
     FILE_OBJECT_RESOLUTION_FAILED(
         HttpStatus.INTERNAL_SERVER_ERROR,
         "DOCUMENT-UPLOAD-001",

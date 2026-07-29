@@ -9,10 +9,12 @@ import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
 import io.minio.BucketExistsArgs;
+import io.minio.GetObjectArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
+import io.minio.errors.ErrorResponseException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -41,6 +43,28 @@ public class MinioStorageService implements FileStorageService {
             log.error("MinIO 파일 저장에 실패했습니다. bucket={}, objectKey={}",
                 minioProperties.getBucket(), objectKey, e);
             throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED, e);
+        }
+    }
+
+    @Override
+    public byte[] read(StoredFile storedFile) {
+        try (InputStream inputStream = minioClient.getObject(
+            GetObjectArgs.builder()
+                .bucket(storedFile.bucketName())
+                .object(storedFile.objectKey())
+                .build()
+        )) {
+            // Service 안에서 Stream을 모두 읽고 닫아 호출자가 MinIO 연결 Resource를 소유하지 않게 한다.
+            return inputStream.readAllBytes();
+        } catch (ErrorResponseException exception) {
+            if (isObjectNotFound(exception)) {
+                throw new DocGridException(ErrorCode.FILE_OBJECT_NOT_FOUND, exception);
+            }
+            logStorageReadFailure(storedFile, exception);
+            throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED, exception);
+        } catch (Exception exception) {
+            logStorageReadFailure(storedFile, exception);
+            throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED, exception);
         }
     }
 
@@ -80,5 +104,19 @@ public class MinioStorageService implements FileStorageService {
                 throw e;
             }
         }
+    }
+
+    private boolean isObjectNotFound(ErrorResponseException exception) {
+        String errorCode = exception.errorResponse().code();
+        return "NoSuchKey".equals(errorCode) || "NoSuchObject".equals(errorCode);
+    }
+
+    private void logStorageReadFailure(StoredFile storedFile, Exception exception) {
+        log.error(
+            "MinIO 파일 읽기에 실패했습니다. bucket={}, objectKey={}",
+            storedFile.bucketName(),
+            storedFile.objectKey(),
+            exception
+        );
     }
 }

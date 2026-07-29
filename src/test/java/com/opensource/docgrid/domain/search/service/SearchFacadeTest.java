@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 
@@ -28,10 +29,11 @@ import com.opensource.docgrid.domain.embedding.dto.EmbedResult;
 import com.opensource.docgrid.domain.embedding.fixture.EmbeddingModelFixture;
 import com.opensource.docgrid.domain.embedding.service.query.QueryEmbeddingService;
 import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
+import com.opensource.docgrid.domain.search.dto.SearchOutcome;
 import com.opensource.docgrid.domain.search.dto.VectorSearchCandidate;
 import com.opensource.docgrid.domain.search.dto.request.SearchRequest;
-import com.opensource.docgrid.domain.search.dto.response.SearchResponse;
 import com.opensource.docgrid.domain.search.entity.SearchQuery;
+import com.opensource.docgrid.domain.search.entity.SearchResult;
 import com.opensource.docgrid.domain.search.fixture.SearchQueryFixture;
 import com.opensource.docgrid.domain.search.service.command.SearchQueryCommandService;
 import com.opensource.docgrid.domain.search.service.command.SearchResultCommandService;
@@ -73,11 +75,15 @@ class SearchFacadeTest {
         given(accessibleDocumentQueryService.findReadableDocumentIds(USER_ID, null)).willReturn(List.of(3L));
         given(vectorSearchQueryService.search(any(), any(), any(), anyInt())).willReturn(List.of(candidate));
         given(permissionQueryService.canReadDocument(USER_ID, 3L)).willReturn(true);
+        SearchResult savedResult = mock(SearchResult.class);
+        given(searchResultCommandService.saveAll(any(), any())).willReturn(List.of(savedResult));
 
-        SearchResponse response = searchFacade.search(USER_ID, REQUEST);
+        SearchOutcome outcome = searchFacade.search(USER_ID, REQUEST);
 
-        assertThat(response.results()).hasSize(1);
-        assertThat(response.results().get(0).rank()).isEqualTo(1);
+        assertThat(outcome.response().results()).hasSize(1);
+        assertThat(outcome.response().results().get(0).rank()).isEqualTo(1);
+        assertThat(outcome.candidates()).hasSize(1);
+        assertThat(outcome.savedResults()).containsExactly(savedResult);
         then(searchResultCommandService).should(times(1)).saveAll(any(), any());
         then(searchQueryCommandService).should(times(1)).markSuccess(any(), anyInt());
     }
@@ -95,9 +101,10 @@ class SearchFacadeTest {
             .willReturn(searchQuery);
         given(accessibleDocumentQueryService.findReadableDocumentIds(USER_ID, null)).willReturn(List.of());
 
-        SearchResponse response = searchFacade.search(USER_ID, REQUEST);
+        SearchOutcome outcome = searchFacade.search(USER_ID, REQUEST);
 
-        assertThat(response.results()).isEmpty();
+        assertThat(outcome.response().results()).isEmpty();
+        assertThat(outcome.candidates()).isEmpty();
         then(vectorSearchQueryService).should(never()).search(any(), anyLong(), any(), anyInt());
         then(searchQueryCommandService).should(times(1)).markSuccess(any(), anyInt());
     }
@@ -117,10 +124,12 @@ class SearchFacadeTest {
         given(accessibleDocumentQueryService.findReadableDocumentIds(USER_ID, null)).willReturn(List.of(3L));
         given(vectorSearchQueryService.search(any(), any(), any(), anyInt())).willReturn(List.of(candidate));
         given(permissionQueryService.canReadDocument(USER_ID, 3L)).willReturn(false);
+        given(searchResultCommandService.saveAll(any(), any())).willReturn(List.of());
 
-        SearchResponse response = searchFacade.search(USER_ID, REQUEST);
+        SearchOutcome outcome = searchFacade.search(USER_ID, REQUEST);
 
-        assertThat(response.results()).isEmpty();
+        assertThat(outcome.response().results()).isEmpty();
+        assertThat(outcome.candidates()).isEmpty();
         then(searchResultCommandService).should(times(1)).saveAll(any(), any());
         then(searchQueryCommandService).should(times(1)).markSuccess(any(), anyInt());
     }

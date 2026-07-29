@@ -23,6 +23,7 @@ import com.opensource.docgrid.domain.rag.entity.RagResponse;
 import com.opensource.docgrid.domain.rag.entity.ResponseCitation;
 import com.opensource.docgrid.domain.rag.repository.ResponseCitationRepository;
 import com.opensource.docgrid.domain.search.dto.VectorSearchCandidate;
+import com.opensource.docgrid.domain.search.entity.SearchResult;
 import com.opensource.docgrid.domain.search.enums.ResultStatus;
 
 import jakarta.persistence.EntityManager;
@@ -51,12 +52,21 @@ class ResponseCitationCommandServiceTest {
         VectorSearchCandidate c2 = candidate(20L, "복지정책 내용", 3, new BigDecimal("0.8"));
         DocumentChunk chunk1 = mock(DocumentChunk.class);
         DocumentChunk chunk2 = mock(DocumentChunk.class);
+        // searchResult1/2는 SearchFacade 트랜잭션에서 이미 저장되어 detached된 엔티티를 흉내낸다 — id만 의미가 있다.
+        SearchResult searchResult1 = mock(SearchResult.class);
+        SearchResult searchResult2 = mock(SearchResult.class);
+        given(searchResult1.getId()).willReturn(501L);
+        given(searchResult2.getId()).willReturn(502L);
+        SearchResult searchResultRef1 = mock(SearchResult.class);
+        SearchResult searchResultRef2 = mock(SearchResult.class);
 
         given(entityManager.getReference(DocumentChunk.class, c1.chunkId())).willReturn(chunk1);
         given(entityManager.getReference(DocumentChunk.class, c2.chunkId())).willReturn(chunk2);
+        given(entityManager.getReference(SearchResult.class, 501L)).willReturn(searchResultRef1);
+        given(entityManager.getReference(SearchResult.class, 502L)).willReturn(searchResultRef2);
         given(responseCitationRepository.saveAll(any())).willAnswer(i -> i.getArgument(0));
 
-        responseCitationCommandService.saveAll(response, List.of(c1, c2));
+        responseCitationCommandService.saveAll(response, List.of(c1, c2), List.of(searchResult1, searchResult2));
 
         ArgumentCaptor<List<ResponseCitation>> captor = ArgumentCaptor.forClass(List.class);
         then(responseCitationRepository).should(times(1)).saveAll(captor.capture());
@@ -68,11 +78,12 @@ class ResponseCitationCommandServiceTest {
         assertThat(saved.get(0).getQuotedText()).isEqualTo("인사규정 내용");
         assertThat(saved.get(0).getPageNo()).isEqualTo(12);
         assertThat(saved.get(0).getRelevanceScore()).isEqualByComparingTo(new BigDecimal("0.9"));
-        assertThat(saved.get(0).getSearchResult()).isNull();
+        assertThat(saved.get(0).getSearchResult()).isSameAs(searchResultRef1);
         assertThat(saved.get(0).getChunk()).isSameAs(chunk1);
         assertThat(saved.get(1).getCitationOrder()).isEqualTo(2);
         assertThat(saved.get(1).getCitationLabel()).isEqualTo("[2]");
         assertThat(saved.get(1).getChunk()).isSameAs(chunk2);
+        assertThat(saved.get(1).getSearchResult()).isSameAs(searchResultRef2);
     }
 
     @Test
@@ -84,7 +95,7 @@ class ResponseCitationCommandServiceTest {
             .build();
         given(responseCitationRepository.saveAll(any())).willAnswer(i -> i.getArgument(0));
 
-        responseCitationCommandService.saveAll(response, List.of());
+        responseCitationCommandService.saveAll(response, List.of(), List.of());
 
         ArgumentCaptor<List<ResponseCitation>> captor = ArgumentCaptor.forClass(List.class);
         then(responseCitationRepository).should(times(1)).saveAll(captor.capture());

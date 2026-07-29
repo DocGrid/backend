@@ -73,4 +73,20 @@ class RagResponseCommandServiceTest {
         assertThat(saved.getErrorMessage()).isEqualTo("Ollama 서버 연결 실패");
         assertThat(saved.getLlmProvider()).isEqualTo("Ollama");
     }
+
+    @Test
+    @DisplayName("createNoContext: SUCCESS 상태로 고정 안내 문구를 저장한다")
+    void createNoContext_savesWithFixedAnswer() {
+        SearchQuery query = SearchQueryFixture.createProcessing();
+        given(ragResponseRepository.save(any(RagResponse.class))).willAnswer(i -> i.getArgument(0));
+
+        ragResponseCommandService.createNoContext(query);
+
+        ArgumentCaptor<RagResponse> captor = ArgumentCaptor.forClass(RagResponse.class);
+        then(ragResponseRepository).should(times(1)).save(captor.capture());
+
+        RagResponse saved = captor.getValue();
+        assertThat(saved.getStatus()).isEqualTo(ResultStatus.SUCCESS);
+        assertThat(saved.getAnswerText()).isEqualTo("관련 문서를 찾지 못했습니다.");
+    }
 }

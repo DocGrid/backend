@@ -26,6 +26,8 @@ public class RagResponseCommandService {
     private static final String LLM_PROVIDER = "Ollama";
     // answer_text는 NOT NULL 제약이라 실패 시에도 고정 문구를 저장한다. 실제 사유는 errorMessage에 담긴다.
     private static final String FAILED_ANSWER_TEXT = "답변 생성에 실패했습니다.";
+    // 검색 결과가 0건이라 LLM을 호출하지 않은 경우의 고정 응답 문구
+    private static final String NO_CONTEXT_ANSWER_TEXT = "관련 문서를 찾지 못했습니다.";
 
     private final RagResponseRepository ragResponseRepository;
 
@@ -39,6 +41,16 @@ public class RagResponseCommandService {
             .inputTokenCount(result.inputTokenCount())
             .outputTokenCount(result.outputTokenCount())
             .latencyMs(result.latencyMs())
+            .status(ResultStatus.SUCCESS)
+            .build();
+        return ragResponseRepository.save(ragResponse);
+    }
+
+    // 검색 결과가 0건이라 LLM 호출 자체를 생략한 경우. citation 없이 고정 문구로 SUCCESS 기록한다.
+    public RagResponse createNoContext(SearchQuery query) {
+        RagResponse ragResponse = RagResponse.builder()
+            .query(query)
+            .answerText(NO_CONTEXT_ANSWER_TEXT)
             .status(ResultStatus.SUCCESS)
             .build();
         return ragResponseRepository.save(ragResponse);

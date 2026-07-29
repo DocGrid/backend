@@ -52,7 +52,7 @@ class SearchResultCommandServiceTest {
         given(entityManager.getReference(eq(Embedding.class), any())).willReturn(null);
         given(searchResultRepository.saveAll(any())).willAnswer(i -> i.getArgument(0));
 
-        searchResultCommandService.saveAll(query, List.of(c1, c2));
+        List<SearchResult> returned = searchResultCommandService.saveAll(query, List.of(c1, c2));
 
         ArgumentCaptor<List<SearchResult>> captor = ArgumentCaptor.forClass(List.class);
         then(searchResultRepository).should(times(1)).saveAll(captor.capture());
@@ -62,6 +62,7 @@ class SearchResultCommandServiceTest {
         assertThat(saved.get(0).getRankNo()).isEqualTo(1);
         assertThat(saved.get(1).getRankNo()).isEqualTo(2);
         assertThat(saved.get(0).getSimilarityScore()).isEqualByComparingTo(new BigDecimal("0.9"));
+        assertThat(returned).isEqualTo(saved);
     }
 
     @Test

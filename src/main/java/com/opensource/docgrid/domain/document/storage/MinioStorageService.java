@@ -60,10 +60,10 @@ public class MinioStorageService implements FileStorageService {
             if (isObjectNotFound(exception)) {
                 throw new DocGridException(ErrorCode.FILE_OBJECT_NOT_FOUND, exception);
             }
-            logStorageReadFailure(storedFile, exception);
+            logStorageReadFailure(exception);
             throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED, exception);
         } catch (Exception exception) {
-            logStorageReadFailure(storedFile, exception);
+            logStorageReadFailure(exception);
             throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED, exception);
         }
     }
@@ -111,12 +111,8 @@ public class MinioStorageService implements FileStorageService {
         return "NoSuchKey".equals(errorCode) || "NoSuchObject".equals(errorCode);
     }
 
-    private void logStorageReadFailure(StoredFile storedFile, Exception exception) {
-        log.error(
-            "MinIO 파일 읽기에 실패했습니다. bucket={}, objectKey={}",
-            storedFile.bucketName(),
-            storedFile.objectKey(),
-            exception
-        );
+    private void logStorageReadFailure(Exception exception) {
+        // 원본 저장 위치는 내부 식별 정보이므로 장애 로그에는 예외 원인만 남긴다.
+        log.error("MinIO 파일 읽기에 실패했습니다.", exception);
     }
 }

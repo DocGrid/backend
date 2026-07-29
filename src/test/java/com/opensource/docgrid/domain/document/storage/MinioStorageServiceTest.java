@@ -1,0 +1,122 @@
+package com.opensource.docgrid.domain.document.storage;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import com.opensource.docgrid.global.config.MinioProperties;
+import com.opensource.docgrid.global.exception.DocGridException;
+import com.opensource.docgrid.global.exception.ErrorCode;
+
+import io.minio.GetObjectArgs;
+import io.minio.GetObjectResponse;
+import io.minio.MinioClient;
+import io.minio.errors.ErrorResponseException;
+import io.minio.messages.ErrorResponse;
+import okhttp3.Headers;
+
+/**
+ * MinIO Object 전체 읽기의 위치 선택, Stream 종료와 오류 변환 계약을 검증한다.
+ *
+ * <p>FileObject Snapshot의 Bucket과 Object Key를 사용하고 Object 없음과 일반 저장소 장애를
+ * 서로 다른 외부 오류로 구분하는지 확인한다.
+ */
+@DisplayName("MinioStorageService 테스트")
+class MinioStorageServiceTest {
+
+    private static final StoredFile STORED_FILE = new StoredFile("source-bucket", "documents/source.txt");
+
+    private MinioClient minioClient;
+    private MinioStorageService storageService;
+
+    @BeforeEach
+    void setUp() {
+        minioClient = mock(MinioClient.class);
+        storageService = new MinioStorageService(minioClient, mock(MinioProperties.class));
+    }
+
+    @Test
+    @DisplayName("전달된 Bucket과 Object Key로 모든 Byte를 읽고 Stream을 닫는다")
+    void read_returnsAllBytesAndClosesStream() throws Exception {
+        byte[] content = "DocGrid 원본".getBytes(StandardCharsets.UTF_8);
+        CloseTrackingInputStream source = new CloseTrackingInputStream(content);
+        GetObjectResponse response = new GetObjectResponse(
+            new Headers.Builder().build(),
+            STORED_FILE.bucketName(),
+            null,
+            STORED_FILE.objectKey(),
+            source
+        );
+        ArgumentCaptor<GetObjectArgs> argsCaptor = ArgumentCaptor.forClass(GetObjectArgs.class);
+        given(minioClient.getObject(argsCaptor.capture())).willReturn(response);
+
+        byte[] result = storageService.read(STORED_FILE);
+
+        assertThat(result).isEqualTo(content);
+        assertThat(source.closed).isTrue();
+        assertThat(argsCaptor.getValue().bucket()).isEqualTo(STORED_FILE.bucketName());
+        assertThat(argsCaptor.getValue().object()).isEqualTo(STORED_FILE.objectKey());
+    }
+
+    @Test
+    @DisplayName("MinIO Object가 없으면 파일 없음 오류로 변환한다")
+    void read_throwsNotFound_when_objectDoesNotExist() throws Exception {
+        ErrorResponse errorResponse = new ErrorResponse(
+            "NoSuchKey",
+            "Object does not exist",
+            STORED_FILE.bucketName(),
+            STORED_FILE.objectKey(),
+            null,
+            "request-id",
+            "host-id"
+        );
+        given(minioClient.getObject(any(GetObjectArgs.class)))
+            .willThrow(new ErrorResponseException(errorResponse, null, "request"));
+
+        assertReadError(ErrorCode.FILE_OBJECT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("MinIO 일반 읽기 장애는 저장소 사용 불가 오류로 변환한다")
+    void read_throwsStorageFailure_when_sdkFails() throws Exception {
+        given(minioClient.getObject(any(GetObjectArgs.class)))
+            .willThrow(new IOException("connection closed"));
+
+        assertReadError(ErrorCode.FILE_STORAGE_FAILED);
+    }
+
+    private void assertReadError(ErrorCode errorCode) {
+        assertThatThrownBy(() -> storageService.read(STORED_FILE))
+            .isInstanceOfSatisfying(DocGridException.class,
+                exception -> assertThat(exception.getErrorCode()).isEqualTo(errorCode));
+    }
+
+    /**
+     * MinIO 응답이 닫힐 때 원본 Stream까지 닫히는지 관찰하는 테스트용 Stream.
+     */
+    private static class CloseTrackingInputStream extends ByteArrayInputStream {
+
+        private boolean closed;
+
+        CloseTrackingInputStream(byte[] content) {
+            super(content);
+        }
+
+        @Override
+        public void close() throws IOException {
+            closed = true;
+            super.close();
+        }
+    }
+}

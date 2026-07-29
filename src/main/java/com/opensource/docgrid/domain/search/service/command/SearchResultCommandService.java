@@ -30,7 +30,7 @@ public class SearchResultCommandService {
     private final SearchResultRepository searchResultRepository;
     private final EntityManager entityManager;
 
-    public void saveAll(SearchQuery searchQuery, List<VectorSearchCandidate> candidates) {
+    public List<SearchResult> saveAll(SearchQuery searchQuery, List<VectorSearchCandidate> candidates) {
         List<SearchResult> results = new ArrayList<>();
         for (int i = 0; i < candidates.size(); i++) {
             VectorSearchCandidate c = candidates.get(i);
@@ -44,6 +44,6 @@ public class SearchResultCommandService {
                 .matchedText(c.chunkText())
                 .build());
         }
-        searchResultRepository.saveAll(results);
+        return searchResultRepository.saveAll(results);
     }
 }

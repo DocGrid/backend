@@ -299,6 +299,39 @@ BUILD SUCCESSFUL
 
 ---
 
+## 코드리뷰 반영 (CodeRabbit)
+
+PR에 자동 코드리뷰 코멘트 5건이 달렸고, 각각 다음과 같이 처리했다.
+
+| # | 코멘트 요지 | 처리 | 근거 |
+|---|---|---|---|
+| 1 | `RagResponse.llmProvider`/`llmModelName` 필드 주석에 `(Ollama)`, `(qwen2.5:3b)`처럼 특정 값을 박아뒀다 | **반영함** | `llmModelName`은 하드코딩이 아니라 `OllamaGenerateResult.model()`에서 매 호출마다 동적으로 채워지는 값이다(모델을 3b→7b로 바꿔도 코드 수정 없이 대응하기 위한 설계, `#67` 문서 참고). 주석에 특정 모델명을 박아두면 그 설계 의도와 모순되고, NO_CONTEXT 응답에서는 두 필드 다 비어있기도 해서 필드 역할만 남기는 쪽으로 단순화했다 |
+| 2 | `RagFacade` Javadoc의 `(F-RAG-05)` 표기를 "내부 PR 순번 라벨"이라며 제거 요청 | **반영 안 함** | 이건 PR 순번이 아니라 RAG 명세서의 기능 코드다. `SearchFacade`(F-SEARCH-05/06/07), `RagResponseCommandService`(F-RAG-03), `ResponseCitationCommandService`(F-RAG-04) 등 이 코드베이스 전체가 일관되게 이 표기를 쓰고 있어서, 여기만 빼면 형제 클래스들과 일관성이 깨진다 |
+| 3 | 신규 `CitationResponse` record에 class-level Javadoc이 없다 | **반영 안 함** | 구조가 가장 비슷한 `SearchResultItem`(rank 기반 응답 DTO + `of()` 팩토리)도 class-level 주석이 없어, 기존 관례와의 일관성을 우선했다 |
+| 4 | `ResponseCitationCommandService.saveAll()`이 `SearchFacade`의(이미 detached된) `SearchResult` 엔티티를 그대로 `.searchResult(...)`에 대입하고 있어 위험하다 | **반영함** | 실제로 안전하지 않은 패턴이었다. 아래 별도 문단에서 상세 설명 |
+| 5 | `SearchFacadeTest`의 정상 흐름 테스트가 `saveAll()`을 빈 리스트로 stub해둬서, `SearchOutcome.savedResults()` 전달 여부를 실질적으로 검증하지 못하고 있다 | **반영함** | `saveAll()`이 mock `SearchResult` 하나를 반환하도록 바꾸고, `outcome.savedResults()`가 그 값을 그대로 담고 있는지 검증을 추가했다 |
+
+### 4번 상세 — `entityManager.getReference()`를 쓰는 두 가지 서로 다른 이유
+
+이 코드베이스에는 `entityManager.getReference(Class, id)` 패턴이 여러 곳에 나오는데, 사실 이유가 두 가지로 갈린다.
+
+| 위치 | 이유 |
+|---|---|
+| `SearchResultCommandService.saveAll()`의 `chunk`/`embedding`, `ResponseCitationCommandService.saveAll()`의 `chunk` (기존부터 있던 코드) | **성능** — 존재가 이미 확실한 엔티티(검색으로 찾아온 chunk 등)의 FK만 연결하면 되는데, `findById()`를 쓰면 불필요한 SELECT가 추가로 나간다. `getReference()`는 실제 쿼리 없이 ID값만 가진 프록시를 만들어 FK 컬럼에 연결한다 |
+| `RagFacade.generate()`의 `SearchQuery`, `ResponseCitationCommandService.saveAll()`의 `searchResult` (이번에 수정) | **안전성** — `SearchFacade`(다른 트랜잭션)에서 넘어온 엔티티는 이미 detached 상태다. 그 객체를 새 엔티티의 FK로 그대로 재사용하는 대신, `id`만 꺼내서(`getId()`) 지금 이 트랜잭션 안에서 `getReference()`로 새 프록시를 만든다 |
+
+`searchResult` 필드는 원래(수정 전) `searchResults.get(i)`를 그대로 대입하고 있었는데, `cascade` 설정이 없어서 당장 예외가 나지는 않지만 트랜잭션 경계를 넘어온 엔티티를 그대로 재사용하는 건 이 코드베이스의 다른 모든 FK 연결 지점(`chunk`, `embedding`, `SearchQuery`)과 방식이 달라 일관성이 깨지고, 더 안전한 방법이 이미 옆 줄(`chunk`)에 있는데 안 쓴 셈이었다. `entityManager.getReference(SearchResult.class, searchResults.get(i).getId())`로 바꿔서 나머지 FK 연결과 동일한 방식으로 통일했다.
+
+```java
+// 수정 전 — detached 엔티티를 그대로 FK에 대입
+.searchResult(searchResults.get(i))
+
+// 수정 후 — id만 꺼내 이번 트랜잭션의 프록시로 새로 참조
+.searchResult(entityManager.getReference(SearchResult.class, searchResults.get(i).getId()))
+```
+
+---
+
 ## 설계 결정 요약
 
 **`SearchFacade`/`RagFacade` 트랜잭션 분리**: `SearchController`가 두 Facade를 순차 호출하는 구조 자체로 트랜잭션이 물리적으로 나뉜다. LLM HTTP 호출(최대 30초)이 검색 DB 작업과 같은 커넥션을 오래 물고 있지 않도록 하기 위함.

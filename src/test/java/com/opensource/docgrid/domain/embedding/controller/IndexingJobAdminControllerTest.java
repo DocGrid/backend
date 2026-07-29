@@ -366,6 +366,9 @@ class IndexingJobAdminControllerTest {
             Arguments.of("Claim Token 누락", CHUNKS_URL, """
                 {"workerId": 1}
                 """),
+            Arguments.of("Claim Token 공백", CHUNKS_URL, """
+                {"workerId": 1, "claimToken": " "}
+                """),
             Arguments.of("Claim Token UUID 형식 오류", CHUNKS_URL, """
                 {"workerId": 1, "claimToken": "not-a-uuid"}
                 """)

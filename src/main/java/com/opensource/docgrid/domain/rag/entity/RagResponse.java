@@ -57,9 +57,11 @@ public class RagResponse extends BaseEntity {
     @Column(name = "answer_text", nullable = false, columnDefinition = "TEXT")
     private String answerText;
 
+    // LLM 제공자 이름 (Ollama)
     @Column(name = "llm_provider", length = 50)
     private String llmProvider;
 
+    // LLM 모델 이름 (qwen2.5:3b)
     @Column(name = "llm_model_name", length = 100)
     private String llmModelName;
 

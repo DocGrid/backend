@@ -27,7 +27,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import com.opensource.docgrid.domain.auth.jwt.JwtProvider;
+import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
+import com.opensource.docgrid.domain.document.service.DocumentParsingService;
+import com.opensource.docgrid.domain.document.service.command.DocumentChunkTransactionService.ChunkResult;
 import com.opensource.docgrid.domain.embedding.dto.response.ClaimedEmbeddingJobResponse;
+import com.opensource.docgrid.domain.embedding.dto.response.DocumentChunksResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.StartedEmbeddingJobAttemptResponse;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttemptService;
@@ -39,10 +43,10 @@ import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
 /**
- * 관리자용 Embedding Job Claim 및 Attempt 시작 API의 HTTP 계약과 접근 권한을 검증하는 Web MVC 테스트.
+ * 관리자용 Embedding Job Claim, Attempt 시작과 Document Chunk 생성 API 계약을 검증하는 Web MVC 테스트.
  *
- * <p>Claim 응답과 Attempt 최초 생성·멱등 재생·Validation·비즈니스 오류 및 ADMIN Security 동작을
- * Service 실행 없이 Controller 경계에서 확인한다.
+ * <p>각 API의 최초 생성·멱등 재생·Validation·비즈니스 오류 및 ADMIN Security 동작을
+ * 실제 Service 실행 없이 Controller 경계에서 확인한다.
  */
 @WebMvcTest(IndexingJobAdminController.class)
 @Import(SecurityConfig.class)
@@ -51,7 +55,9 @@ class IndexingJobAdminControllerTest {
 
     private static final String CLAIM_URL = "/admin/indexing-jobs/claim";
     private static final String ATTEMPT_URL = "/admin/indexing-jobs/10/attempts";
+    private static final String CHUNKS_URL = "/admin/indexing-jobs/10/attempts/100/chunks";
     private static final Long JOB_ID = 10L;
+    private static final Long ATTEMPT_ID = 100L;
     private static final Long WORKER_ID = 1L;
     private static final String CLAIM_TOKEN = "34c19d16-6ae1-4f6a-a35d-0123456789ab";
     private static final String VALID_ATTEMPT_BODY = """
@@ -65,6 +71,7 @@ class IndexingJobAdminControllerTest {
 
     @MockitoBean private EmbeddingJobClaimService embeddingJobClaimService;
     @MockitoBean private EmbeddingJobAttemptService embeddingJobAttemptService;
+    @MockitoBean private DocumentParsingService documentParsingService;
     @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
     @MockitoBean private JwtProvider jwtProvider;
     @MockitoBean private CorsConfigurationSource corsConfigurationSource;
@@ -238,6 +245,89 @@ class IndexingJobAdminControllerTest {
             .andExpect(status().isForbidden());
     }
 
+    @Test
+    @DisplayName("ADMIN 사용자의 최초 Chunk 저장은 201을 반환한다")
+    void createChunks_returnsCreated_when_chunksAreCreated() throws Exception {
+        DocumentChunksResponse response = createChunksResponse();
+        given(documentParsingService.createChunks(eq(JOB_ID), eq(ATTEMPT_ID), any()))
+            .willReturn(new ChunkResult(response, true));
+
+        mockMvc.perform(post(CHUNKS_URL)
+                .contentType("application/json")
+                .content(VALID_ATTEMPT_BODY)
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.jobId").value(JOB_ID))
+            .andExpect(jsonPath("$.data.attemptId").value(ATTEMPT_ID))
+            .andExpect(jsonPath("$.data.documentVersionId").value(5))
+            .andExpect(jsonPath("$.data.chunkCount").value(3))
+            .andExpect(jsonPath("$.data.versionStatus").value("CHUNKED"))
+            .andExpect(jsonPath("$.data.claimToken").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("ADMIN 사용자의 완료된 Chunk 재호출은 200을 반환한다")
+    void createChunks_returnsOk_when_chunksAreReplayed() throws Exception {
+        DocumentChunksResponse response = createChunksResponse();
+        given(documentParsingService.createChunks(eq(JOB_ID), eq(ATTEMPT_ID), any()))
+            .willReturn(new ChunkResult(response, false));
+
+        mockMvc.perform(post(CHUNKS_URL)
+                .contentType("application/json")
+                .content(VALID_ATTEMPT_BODY)
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.chunkCount").value(3));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidChunkRequests")
+    @DisplayName("Chunk 생성 입력 형식이 올바르지 않으면 400을 반환한다")
+    void createChunks_returnsBadRequest_when_requestIsInvalid(String description, String url, String body)
+        throws Exception {
+        mockMvc.perform(post(url)
+                .contentType("application/json")
+                .content(body)
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("COMMON-002"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("chunkBusinessErrors")
+    @DisplayName("Chunk 생성 비즈니스 오류를 정의된 HTTP 상태와 코드로 반환한다")
+    void createChunks_returnsDefinedError(
+        ErrorCode errorCode,
+        int expectedStatus,
+        String expectedCode
+    ) throws Exception {
+        given(documentParsingService.createChunks(eq(JOB_ID), eq(ATTEMPT_ID), any()))
+            .willThrow(new DocGridException(errorCode));
+
+        mockMvc.perform(post(CHUNKS_URL)
+                .contentType("application/json")
+                .content(VALID_ATTEMPT_BODY)
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().is(expectedStatus))
+            .andExpect(jsonPath("$.code").value(expectedCode));
+    }
+
+    @Test
+    @DisplayName("일반 사용자와 미인증 사용자는 Chunk를 생성할 수 없다")
+    void createChunks_returnsForbidden_withoutAdminRole() throws Exception {
+        mockMvc.perform(post(CHUNKS_URL)
+                .contentType("application/json")
+                .content(VALID_ATTEMPT_BODY)
+                .with(user("user").roles("USER")))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post(CHUNKS_URL)
+                .contentType("application/json")
+                .content(VALID_ATTEMPT_BODY))
+            .andExpect(status().isForbidden());
+    }
+
     private static Stream<Arguments> invalidAttemptRequests() {
         return Stream.of(
             Arguments.of("Job ID가 양수가 아님", "/admin/indexing-jobs/0/attempts", VALID_ATTEMPT_BODY),
@@ -266,6 +356,36 @@ class IndexingJobAdminControllerTest {
         );
     }
 
+    private static Stream<Arguments> invalidChunkRequests() {
+        return Stream.of(
+            Arguments.of("Job ID가 양수가 아님", "/admin/indexing-jobs/0/attempts/100/chunks", VALID_ATTEMPT_BODY),
+            Arguments.of("Attempt ID가 양수가 아님", "/admin/indexing-jobs/10/attempts/0/chunks", VALID_ATTEMPT_BODY),
+            Arguments.of("Worker ID가 양수가 아님", CHUNKS_URL, """
+                {"workerId": 0, "claimToken": "%s"}
+                """.formatted(CLAIM_TOKEN)),
+            Arguments.of("Claim Token 누락", CHUNKS_URL, """
+                {"workerId": 1}
+                """),
+            Arguments.of("Claim Token UUID 형식 오류", CHUNKS_URL, """
+                {"workerId": 1, "claimToken": "not-a-uuid"}
+                """)
+        );
+    }
+
+    private static Stream<Arguments> chunkBusinessErrors() {
+        return Stream.of(
+            Arguments.of(ErrorCode.FILE_OBJECT_NOT_FOUND, 404, "DOCUMENT-STORAGE-002"),
+            Arguments.of(ErrorCode.EMBEDDING_JOB_ATTEMPT_INVALID, 409, "EMBEDDING-JOB-006"),
+            Arguments.of(ErrorCode.DOCUMENT_VERSION_CHUNKING_NOT_ALLOWED, 409, "DOCUMENT-VERSION-005"),
+            Arguments.of(ErrorCode.UNSUPPORTED_DOCUMENT_TYPE, 422, "DOCUMENT-PARSING-001"),
+            Arguments.of(ErrorCode.DOCUMENT_CONTENT_EMPTY, 422, "DOCUMENT-PARSING-002"),
+            Arguments.of(ErrorCode.DOCUMENT_TEXT_DECODING_FAILED, 422, "DOCUMENT-PARSING-003"),
+            Arguments.of(ErrorCode.DOCUMENT_FILE_REFERENCE_MISSING, 500, "DOCUMENT-PARSING-004"),
+            Arguments.of(ErrorCode.DOCUMENT_CHUNKS_INCONSISTENT, 500, "DOCUMENT-CHUNK-001"),
+            Arguments.of(ErrorCode.FILE_STORAGE_FAILED, 503, "DOCUMENT-STORAGE-001")
+        );
+    }
+
     private StartedEmbeddingJobAttemptResponse createAttemptResponse() {
         return new StartedEmbeddingJobAttemptResponse(
             100L,
@@ -274,6 +394,16 @@ class IndexingJobAdminControllerTest {
             WORKER_ID,
             AttemptStatus.STARTED,
             LocalDateTime.of(2026, 7, 26, 21, 40)
+        );
+    }
+
+    private DocumentChunksResponse createChunksResponse() {
+        return new DocumentChunksResponse(
+            JOB_ID,
+            ATTEMPT_ID,
+            5L,
+            3,
+            DocumentVersionStatus.CHUNKED
         );
     }
 }

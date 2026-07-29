@@ -611,7 +611,7 @@ Configuration 클래스는 양수 Chunk 크기와 유효한 Overlap 조합을 �
 
 | 구분 | 경로 | 책임과 변경 이유 |
 | --- | --- | --- |
-| CREATE | `docs/design/text-parsing-chunk-storage.md` | 구현 기준, 계약, 테스트, 인계 보존 |
+| CREATE | `docs/design/Gimini-3-#68-text-parsing-chunk-storage.md` | 구현 기준, 계약, 테스트, 인계 보존 |
 | CREATE | `src/main/java/com/opensource/docgrid/domain/document/config/DocumentChunkingProperties.java` | Chunk 크기·Overlap 바인딩과 조합 검증 |
 | CREATE | `src/main/java/com/opensource/docgrid/domain/document/repository/DocumentChunkRepository.java` | Version별 존재·수 조회와 Chunk 전체 저장 |
 | CREATE | `src/main/java/com/opensource/docgrid/domain/document/service/DocumentChunkDraft.java` | DB 저장 전 결정적인 Chunk 계산 결과 |
@@ -1291,7 +1291,7 @@ Markdown AST, PDF, DOCX, HTML을 지원할 때는 Parser별 Canonical Text와 Of
 
 ## 구현 기록
 
-- 설계 산출물: `docs/design/text-parsing-chunk-storage.md`
+- 설계 산출물: `docs/design/Gimini-3-#68-text-parsing-chunk-storage.md`
 - GitHub 기능명: `텍스트 파싱 및 Chunk 저장`
 - GitHub Issue: `#68`
 - 구현 Branch: `feature/68`

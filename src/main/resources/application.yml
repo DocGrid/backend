@@ -36,3 +36,4 @@ embedding:
 ollama:
   server:
     base-url: ${OLLAMA_SERVER_URL:http://localhost:11434}
+  model: ${OLLAMA_MODEL:qwen2.5:3b}

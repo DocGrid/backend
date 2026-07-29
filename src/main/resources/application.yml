@@ -13,6 +13,9 @@ spring:
 document:
   upload:
     max-file-size: 10MB
+  chunking:
+    chunk-size: ${DOCUMENT_CHUNK_SIZE:1000}
+    overlap: ${DOCUMENT_CHUNK_OVERLAP:200}
 
 indexing:
   worker:

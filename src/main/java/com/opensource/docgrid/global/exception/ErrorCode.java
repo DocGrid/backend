@@ -81,6 +81,21 @@ public enum ErrorCode {
         "DOCUMENT-UPLOAD-001",
         "파일 정보를 저장하지 못했습니다."
     ),
+    UNSUPPORTED_DOCUMENT_TYPE(
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        "DOCUMENT-PARSING-001",
+        "지원하지 않는 문서 형식입니다."
+    ),
+    DOCUMENT_CONTENT_EMPTY(
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        "DOCUMENT-PARSING-002",
+        "문서에서 처리할 텍스트를 찾을 수 없습니다."
+    ),
+    DOCUMENT_TEXT_DECODING_FAILED(
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        "DOCUMENT-PARSING-003",
+        "문서 텍스트를 UTF-8로 해석할 수 없습니다."
+    ),
 
     // PERMISSION
     INVALID_TARGET_TYPE(HttpStatus.BAD_REQUEST, "PERMISSION-001", "target_type과 ID 필드 조합이 올바르지 않습니다."),

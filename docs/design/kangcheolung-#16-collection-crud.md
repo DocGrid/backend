@@ -1,245 +1,313 @@
-# Issue #16 컬렉션 기본 CRUD 설계
+# #16 컬렉션 기본 CRUD — 생성/조회/문서 추가
 
-## 1. 목적
+closes #16
 
-문서를 그룹으로 묶어 관리하는 컬렉션(폴더/워크스페이스) 단위를 도입한다.
+---
+
+## 배경
+
+문서를 하나하나 권한 관리하면 관리 비용이 너무 커진다. 그래서 문서를 그룹으로 묶는 **컬렉션(폴더/워크스페이스)** 단위를 도입하고, 권한도 원칙적으로 컬렉션 단위(`collection_permissions`)로 부여한다. 문서 단위 예외 권한(`document_permissions`)은 최소한으로만 쓴다(`#18` 참고).
+
+이번 이슈는 컬렉션의 가장 기본적인 CRUD 3개를 만든다: 생성, 단건 조회, 컬렉션에 문서 추가. 목록 조회/삭제/문서 제거는 `#29`에서 이어서 만든다.
+
+**클래스명이 `DocumentCollection`인 이유**: `java.util.Collection`과 이름이 충돌해서 그대로 `Collection`을 쓸 수 없다. 테이블명은 `collections`이지만 엔티티 클래스명만 `DocumentCollection`으로 바꿨다.
+
+---
+
+## 전체 흐름
 
 ```text
-컬렉션 생성
-컬렉션 단건 조회
-컬렉션에 문서 추가
-```
+POST /collections (컬렉션 생성)
+    │
+    ▼
+CollectionController.createCollection()
+    │
+    ▼
+CollectionCommandService.createCollection()
+    ├─ parentCollectionId 있으면 상위 컬렉션 존재 확인
+    ├─ visibility 미입력 시 PRIVATE 기본값 적용
+    └─ DocumentCollection 저장 (status=ACTIVE, owner=요청자)
+    │
+    ▼
+201 Created + CollectionResponse
 
-기본 권한 단위는 컬렉션 단위(`collection_permissions`)로 부여한다. 문서 단위 권한(`document_permissions`)은 예외 케이스에만 최소한으로 사용한다.
-
-```text
-브랜치명: feature/16
+POST /collections/{collectionId}/documents (문서 추가)
+    │
+    ▼
+CollectionCommandService.addDocument()
+    ├─ 컬렉션 존재 확인
+    ├─ permissionQueryService.canWriteCollection() 확인  ← #21에서 만든 서비스 재사용
+    ├─ 문서 존재 확인
+    ├─ 중복 추가 확인 → 있으면 409
+    └─ CollectionDocument 저장
+    │
+    ▼
+201 Created + CollectionDocumentResponse
 ```
 
 ---
 
-## 2. 핵심 용어
+## 신규 파일
 
-### DocumentCollection
+### 1. `domain/collection/entity/DocumentCollection.java`
 
-문서를 그룹화하는 논리 단위다. 폴더, 워크스페이스, 프로젝트 등 다양한 맥락에서 사용할 수 있다.
+```java
+@Getter
+@Entity
+@Table(name = "collections", indexes = { ... })
+public class DocumentCollection extends BaseEntity {
 
-```text
-java.util.Collection과의 이름 충돌을 피하기 위해 클래스명은 DocumentCollection으로 명명
-테이블명은 collections
-```
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
-### CollectionDocument
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_user_id", nullable = false)
+    private User owner;
 
-컬렉션과 문서의 N:M 관계를 해소하는 중간 엔티티다.
+    // 상위 컬렉션 self-FK, 최상위 컬렉션은 null
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_collection_id")
+    private DocumentCollection parentCollection;
 
-```text
-같은 문서가 여러 컬렉션에 속할 수 있다.
-하나의 컬렉션에 여러 문서가 속할 수 있다.
-```
+    @Column(nullable = false, length = 255)
+    private String name;
 
----
+    @Column(columnDefinition = "TEXT")
+    private String description;
 
-## 3. 컬렉션 구조
+    @Enumerated(EnumType.STRING)
+    private VisibilityType visibility;
 
-### 계층 구조 (선택)
+    @Enumerated(EnumType.STRING)
+    private CollectionStatus status;
 
-컬렉션은 다른 컬렉션을 상위로 가질 수 있다. 최상위 컬렉션은 `parent_collection_id`가 null이다.
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
-```text
-워크스페이스 (최상위, parent = null)
-├─ 설계 문서 컬렉션
-│   ├─ 시스템 아키텍처.md
-│   └─ DB 설계.md
-└─ 회의록 컬렉션
-    └─ 주간 회의록.md
-```
+    @Builder
+    public DocumentCollection(User owner, DocumentCollection parentCollection, String name, String description,
+                               VisibilityType visibility, CollectionStatus status) {
+        ...
+        this.status = status != null ? status : CollectionStatus.ACTIVE;
+    }
 
-### Visibility
-
-```text
-PUBLIC  — 인증된 모든 사용자가 읽기 가능
-PRIVATE — 권한이 있는 사용자만 접근 가능 (기본값)
-```
-
-`visibility` 미입력 시 `PRIVATE`으로 생성된다.
-
-### Status
-
-```text
-ACTIVE  — 정상 사용 중
-DELETED — soft delete 상태 (deleted_at 설정)
-```
-
----
-
-## 4. API 계약
-
-### 컬렉션 생성
-
-```http
-POST /collections
-Authorization: Bearer {token}
-Content-Type: application/json
-```
-
-요청 필드:
-
-| 필드 | 필수 | 설명 |
-|---|---|---|
-| `name` | 필수 | 컬렉션 이름 |
-| `description` | 선택 | 컬렉션 설명 |
-| `visibility` | 선택 | `PUBLIC` / `PRIVATE` (기본값: `PRIVATE`) |
-| `parentCollectionId` | 선택 | 상위 컬렉션 ID (없으면 최상위) |
-
-성공 응답 `201 Created`:
-
-```json
-{
-  "id": 3,
-  "name": "설계 문서",
-  "description": "설계 관련 문서 모음",
-  "visibility": "PRIVATE",
-  "status": "ACTIVE",
-  "ownerId": 1
+    public void markDeleted(LocalDateTime deletedAt) {
+        this.status = CollectionStatus.DELETED;
+        this.deletedAt = deletedAt;
+    }
 }
 ```
 
-### 컬렉션 단건 조회
+- `visibility`는 `document` 도메인의 `VisibilityType`(`PRIVATE`/`COLLECTION`/`DEPARTMENT`/`PUBLIC`)을 그대로 재사용한다 — 문서와 컬렉션이 같은 공개범위 개념을 공유하므로 별도 enum을 새로 만들지 않았다.
+- `parentCollection`이 self-FK라 컬렉션 트리(폴더 계층) 구조를 표현할 수 있지만, 이번 이슈에서는 "생성 시 상위 컬렉션 존재 확인" 정도만 쓰고 트리 순회 API는 만들지 않았다.
+- 삭제는 `markDeleted()`로 `status`/`deletedAt`만 바꾸는 soft delete다 (`#29`에서 실제로 호출).
 
-```http
-GET /collections/{collectionId}
-Authorization: Bearer {token}
-```
+### 2. `domain/collection/entity/CollectionDocument.java`
 
-성공 응답 `200 OK`:
-
-```json
-{
-  "id": 3,
-  "name": "설계 문서",
-  "description": "설계 관련 문서 모음",
-  "visibility": "PRIVATE",
-  "status": "ACTIVE",
-  "ownerId": 1
+```java
+@Table(
+    name = "collection_documents",
+    uniqueConstraints = { @UniqueConstraint(columnNames = {"collection_id", "document_id"}) }
+)
+public class CollectionDocument extends BaseEntity {
+    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "collection_id", nullable = false)
+    private DocumentCollection collection;
+    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "document_id", nullable = false)
+    private Document document;
+    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "added_by")
+    private User addedBy;
+    @Column(name = "added_at", nullable = false)
+    private LocalDateTime addedAt;
 }
 ```
 
-### 컬렉션에 문서 추가
+컬렉션-문서 N:M을 해소하는 중간 엔티티. `(collection_id, document_id)` 유니크 제약이 DB 레벨의 최종 중복 방어선이고, 애플리케이션에서는 `existsByCollectionIdAndDocumentId()`로 먼저 걸러 409를 반환한다.
 
-```http
-POST /collections/{collectionId}/documents
-Authorization: Bearer {token}
-Content-Type: application/json
+### 3. `domain/collection/enums/CollectionStatus.java`
+
+```java
+public enum CollectionStatus {
+    ACTIVE,
+    ARCHIVED,
+    DELETED
+}
 ```
+`ACTIVE`/`DELETED` 두 개만 실제로 코드에서 분기 처리된다(`markDeleted()`, `findAllByOwnerIdAndStatus(..., ACTIVE)`). `ARCHIVED`는 enum 값만 정의되어 있고 이번 이슈 범위에서는 전환 로직이 없다 — 향후 "보관함" 기능 확장을 대비해 미리 값만 잡아둔 것으로 보인다.
 
-요청 필드:
+### 4. `domain/collection/service/command/CollectionCommandService.java` — `createCollection`, `addDocument`
 
-| 필드 | 필수 | 설명 |
-|---|---|---|
-| `documentId` | 필수 | 추가할 문서 ID |
+```java
+public CollectionResponse createCollection(Long userId, CreateCollectionRequest request) {
+    User owner = userRepository.getReferenceById(userId);
 
-성공 응답 `201 Created`:
+    DocumentCollection parentCollection = null;
+    if (request.parentCollectionId() != null) {
+        parentCollection = collectionRepository.findById(request.parentCollectionId())
+                .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
+    }
 
-```json
-{
-  "id": 10,
-  "collectionId": 3,
-  "documentId": 5,
-  "addedAt": "2025-07-01T10:00:00"
+    VisibilityType visibility = request.visibility() != null ? request.visibility() : VisibilityType.PRIVATE;
+
+    DocumentCollection collection = DocumentCollection.builder()
+            .owner(owner).parentCollection(parentCollection).name(request.name())
+            .description(request.description()).visibility(visibility).status(CollectionStatus.ACTIVE)
+            .build();
+
+    collectionRepository.save(collection);
+    return collectionConverter.toResponse(collection);
+}
+
+public CollectionDocumentResponse addDocument(Long collectionId, Long userId, AddDocumentRequest request) {
+    DocumentCollection collection = collectionRepository.findById(collectionId)
+            .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
+
+    if (!permissionQueryService.canWriteCollection(userId, collectionId)) {
+        throw new DocGridException(ErrorCode.PERMISSION_DENIED);
+    }
+
+    Document document = documentRepository.findById(request.documentId())
+            .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
+
+    if (collectionDocumentRepository.existsByCollectionIdAndDocumentId(collectionId, request.documentId())) {
+        throw new DocGridException(ErrorCode.COLLECTION_DOCUMENT_ALREADY_EXISTS);
+    }
+
+    User addedBy = userRepository.getReferenceById(userId);
+    CollectionDocument collectionDocument = CollectionDocument.builder()
+            .collection(collection).document(document).addedBy(addedBy).addedAt(LocalDateTime.now())
+            .build();
+
+    collectionDocumentRepository.save(collectionDocument);
+    return collectionConverter.toDocumentResponse(collectionDocument);
 }
 ```
 
-같은 컬렉션에 같은 문서를 이미 추가한 경우 `409 Conflict`를 반환한다.
+- `userRepository.getReferenceById(userId)`: `JpaRepository`가 기본 제공하는 프록시 조회 메서드. `SearchResultCommandService`(RAG 블록) 등이 쓰는 `entityManager.getReference()`와 동일한 목적(불필요한 SELECT 생략)을, Spring Data가 표준으로 제공하는 방식으로 구현한 것이다.
+- `addDocument()`는 `#21`에서 만든 `PermissionQueryService.canWriteCollection()`을 그대로 재사용한다 — 이 이슈에서 권한 판단 로직을 새로 만들지 않는다.
+- 존재 확인(컬렉션) → 권한 확인 → 존재 확인(문서) → 중복 확인 순서다. 컬렉션이 없는데 권한부터 확인하면 404 대신 엉뚱한 에러가 날 수 있어 존재 확인이 항상 먼저 온다.
+
+### 5. `domain/collection/service/query/CollectionQueryService.java` — `getCollection`
+
+```java
+public CollectionResponse getCollection(Long collectionId) {
+    DocumentCollection collection = collectionRepository.findById(collectionId)
+            .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
+    return collectionConverter.toResponse(collection);
+}
+```
+
+**주의**: 컬렉션 단건 조회는 권한 체크를 하지 않는다. `visibility`/`status`와 무관하게 ID만 알면 누구나(인증된 사용자면) 조회 가능하다. 이건 명시적으로 의도된 설계인지, 이번 이슈 범위에서 권한 체크가 빠진 것인지 코드만으로는 확정하기 어렵다 — 컬렉션 메타데이터(이름/설명 정도)만 노출되고 소속 문서 내용은 노출되지 않아서 위험도가 낮다고 판단했을 가능성이 있다.
+
+### 6. `domain/collection/repository/CollectionRepository.java`, `CollectionDocumentRepository.java`
+
+```java
+public interface CollectionRepository extends JpaRepository<DocumentCollection, Long> {
+    List<DocumentCollection> findAllByOwnerIdAndStatus(Long ownerId, CollectionStatus status); // #29에서 사용
+}
+
+public interface CollectionDocumentRepository extends JpaRepository<CollectionDocument, Long> {
+    boolean existsByCollectionIdAndDocumentId(Long collectionId, Long documentId);
+    List<CollectionDocument> findAllByCollectionId(Long collectionId); // #18에서 사용
+    Optional<CollectionDocument> findByCollectionIdAndDocumentId(Long collectionId, Long documentId); // #29에서 사용
+}
+```
+둘 다 이번 이슈에서 실제로 쓰는 메서드보다 많은 메서드를 갖고 있다 — `#18`, `#29`가 같은 리포지토리를 이어서 쓰기 때문에 미리 같이 정의된 것으로 보인다.
+
+### 7. DTO / Converter
+
+```java
+public record CreateCollectionRequest(@NotBlank String name, String description, Long parentCollectionId, VisibilityType visibility) {}
+public record AddDocumentRequest(@NotNull Long documentId) {}
+public record CollectionResponse(Long collectionId, String name, String description, Long ownerUserId,
+                                  Long parentCollectionId, VisibilityType visibility, CollectionStatus status, LocalDateTime createdAt) {}
+public record CollectionDocumentResponse(Long collectionId, Long documentId, Long addedBy, LocalDateTime addedAt) {}
+```
+`CollectionConverter`는 엔티티 → 응답 DTO 변환만 담당하는 얇은 `@Component`다(다른 도메인의 Converter 패턴과 동일).
+
+### 8. `domain/collection/controller/CollectionController.java` — 이번 이슈 관련 3개 엔드포인트
+
+```java
+@PostMapping
+public ResponseEntity<ApiResponse<CollectionResponse>> createCollection(...) { ... }
+
+@GetMapping("/{collectionId}")
+public ResponseEntity<ApiResponse<CollectionResponse>> getCollection(@PathVariable Long collectionId) { ... }
+
+@PostMapping("/{collectionId}/documents")
+public ResponseEntity<ApiResponse<CollectionDocumentResponse>> addDocument(...) { ... }
+```
+같은 컨트롤러 클래스에 `#29`의 `GET /collections`, `DELETE /{collectionId}`, `DELETE /{collectionId}/documents/{documentId}`도 함께 있다 — 컬렉션 리소스를 다루는 엔드포인트는 전부 `CollectionController` 하나에 모여 있다.
 
 ---
 
-## 5. 구현 구조
+## 로컬 검증 (Swagger 수동 테스트 — 실제 수행 기록)
 
-```text
-Controller
-- CollectionController
-  - POST /collections
-  - GET /collections/{collectionId}
-  - POST /collections/{collectionId}/documents
+`docs/test-results/kangcheolung-#21-permission-query-service.md`에 `#16`~`#29` 통합 Swagger 테스트 기록이 있다. 이번 이슈와 직접 관련된 부분만 발췌한다.
 
-Service
-- CollectionCommandService
-  - createCollection(userId, request)
-  - addDocument(collectionId, userId, request)
-- CollectionQueryService
-  - getCollection(collectionId)
-
-Repository
-- CollectionRepository
-- CollectionDocumentRepository
-  - existsByCollectionIdAndDocumentId(collectionId, documentId)
-
-Entity
-- DocumentCollection
-- CollectionDocument
-
-DTO
-- CreateCollectionRequest
-- AddDocumentRequest
-- CollectionResponse
-- CollectionDocumentResponse
-
-Converter
-- CollectionConverter
+**컬렉션 중복 문서 추가 방어 (4.4절)**
+```http
+POST /collections/1/documents
+{ "documentId": 1 }
 ```
+```json
+{
+  "status": 409,
+  "code": "COLLECTION-002",
+  "message": "이미 컬렉션에 추가된 문서입니다.",
+  ...
+}
+```
+이미 추가된 문서를 다시 추가하면 409가 정확히 반환됨을 확인.
+
+**컬렉션에 문서 추가 정상 케이스 (4.8절)**
+```http
+POST /collections/1/documents
+```
+```json
+{
+  "status": 201,
+  "data": { "collectionId": 1, "documentId": 1, "addedBy": 2, "addedAt": "2026-07-17T17:24:25.353756" }
+}
+```
+
+### 자동 테스트
+
+```bash
+$ ./gradlew test --tests "*CollectionCommandServiceTest*" --tests "*CollectionQueryServiceTest*"
+BUILD SUCCESSFUL
+```
+`CollectionCommandServiceTest` 15개, `CollectionQueryServiceTest` 2개, 총 17개 모두 통과(현재 기준 재검증).
 
 ---
 
-## 6. 처리 흐름
+## 에러 케이스 정리
 
-### 컬렉션 생성
-
-```text
-요청 사용자 인증
-        ↓
-parentCollectionId가 있으면 상위 컬렉션 존재 확인
-        ↓
-visibility 미입력이면 PRIVATE 설정
-        ↓
-DocumentCollection 생성 (status = ACTIVE)
-        ↓
-201 Created 반환
-```
-
-### 문서 추가
-
-```text
-컬렉션 존재 확인
-        ↓
-컬렉션 쓰기 권한 확인 (canWriteCollection)
-        ↓
-문서 존재 확인
-        ↓
-이미 추가된 문서인지 확인 → 409
-        ↓
-CollectionDocument 생성
-        ↓
-201 Created 반환
-```
-
----
-
-## 7. 오류 응답
-
-| 상황 | HTTP | 오류 코드 |
+| 상황 | HTTP | 코드 |
 |---|---:|---|
-| 컬렉션 없음 | 404 | `COLLECTION_NOT_FOUND` |
-| 문서 없음 | 404 | `DOCUMENT_NOT_FOUND` |
-| 쓰기 권한 없음 | 403 | `PERMISSION_DENIED` |
-| 이미 추가된 문서 | 409 | `COLLECTION_DOCUMENT_ALREADY_EXISTS` |
+| 상위 컬렉션 없음(`parentCollectionId` 지정 시) | 404 | `COLLECTION-001` |
+| 컬렉션 없음(`addDocument`) | 404 | `COLLECTION-001` |
+| 문서 없음 | 404 | `DOCUMENT-001` |
+| 컬렉션 쓰기 권한 없음(`canWriteCollection=false`) | 403 | `ROLE-002`(`PERMISSION_DENIED`) |
+| 이미 추가된 문서 | 409 | `COLLECTION-002` |
 
 ---
 
-## 8. 완료 기준
+## 설계 결정 요약
 
-- 컬렉션을 생성하면 요청 사용자가 소유자(owner)로 설정된다.
-- `visibility` 미입력 시 `PRIVATE`으로 생성된다.
-- `parentCollectionId` 입력 시 존재하지 않는 컬렉션이면 404를 반환한다.
-- 컬렉션에 같은 문서를 중복 추가하면 409를 반환한다.
-- 컬렉션 쓰기 권한이 없는 사용자가 문서를 추가하면 403을 반환한다.
+**기본 권한 단위는 컬렉션, 문서 단위는 예외로만**: 문서 하나하나에 권한을 주면 관리 비용이 사용자 수 × 문서 수로 커진다. 컬렉션 단위로 묶어서 권한을 부여하면 "컬렉션에 권한 1번 부여 → 소속 문서 전체에 적용"이 되므로 관리 포인트가 줄어든다. `document_permissions`(`#18`)은 이 기본 원칙의 예외 통로로만 남겨뒀다.
+
+**`visibility`를 문서 도메인과 공유**: 컬렉션도 문서와 동일한 4단계 공개범위(`PRIVATE`/`COLLECTION`/`DEPARTMENT`/`PUBLIC`) 개념이 필요해서, 별도 enum을 만들지 않고 `document.enums.VisibilityType`을 그대로 재사용했다.
+
+**컬렉션 트리(`parentCollection`)는 자기참조 FK만 준비하고 순회 API는 만들지 않음**: 나중에 "하위 컬렉션 전체 조회" 같은 기능이 필요해질 걸 대비해 스키마는 미리 잡아뒀지만, 지금 당장 필요하지 않은 API까지 만들지 않았다(Simplicity First).
+
+---
+
+## 남은 이슈 / TODO
+
+- `getCollection()`(단건 조회)에 권한 체크가 없다 — 컬렉션 메타데이터만 노출되어 위험도가 낮다고 판단했을 수 있으나, 명시적으로 재검토가 필요하다.
+- `CollectionStatus.ARCHIVED`는 정의만 되어 있고 전환 로직이 없다.
+- `CollectionPermission`/`DocumentPermission` 엔티티의 Javadoc에 이미 명시된 TODO: `target_type`별로 단일 FK만 채워져야 한다는 규칙이 DB CHECK 제약으로 강제되지 않고 애플리케이션 검증(`validateTargetType()`, `#18`)에만 의존한다.
+
+## 다음 단계
+
+`#18`(권한 부여/회수), `#21`(PermissionQueryService), `#24`(문서 권한 확인 API), `#29`(컬렉션 관리 API — 목록/삭제/문서 제거)로 이어진다.

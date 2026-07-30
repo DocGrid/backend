@@ -92,7 +92,7 @@ Authorization: Bearer {JWT}
 ### 확인된 것
 - `results` + `answer` + `citations` 세 필드가 설계대로 하나의 응답에 모두 포함됨
 - `citations`의 `documentId`/`chunkId`가 실제 DB row와 정확히 일치함 (`SearchResultCommandService` → `ResponseCitationCommandService`로 이어지는 FK 연결이 정상 동작)
-- **환각 방지 프롬프트가 실제로 동작함**: `results`/`citations`에는 무관한 Python 내용이 섞여 들어왔지만(더미 임베딩 때문 — 아래 참고), `answer`는 Python 내용을 전혀 언급하지 않고 Spring Boot 관련 내용만으로 답변을 구성함
+- **이번 실행에서는 환각 방지 프롬프트가 의도대로 반영된 결과가 관찰됨**: `results`/`citations`에는 무관한 Python 내용이 섞여 들어왔지만(더미 임베딩 때문 — 아래 참고), `answer`는 Python 내용을 전혀 언급하지 않고 Spring Boot 관련 내용만으로 답변을 구성함. 다만 이는 질의 1건에 대한 단일 관찰이며, 여러 질문/여러 실행에 걸쳐 일반적으로 보장되는 성질임을 확인한 것은 아니다.
 
 ---
 
@@ -156,7 +156,7 @@ DB에서 `embeddings.vector` 값을 직접 확인한 결과, 실제 `bge-m3` 계
 | 정상 케이스 B (다른 문서 관련 질문) | 보류 | 실제 임베딩 없이는 결과 신뢰 불가 |
 | NO_CONTEXT (무관한 질문) | 보류 | 위와 동일 |
 | 권한 케이스 (`test@gmail.com`으로 동일 질문) | 보류 | 위와 동일 |
-| 입력 검증 (`queryText` 빈 값, `topK` 21 이상) | 보류 | RAG 블록과 무관, 독립적으로 진행 가능하나 이번 세션에서 미실시 |
+| 입력 검증 (`queryText` 빈 값, `topK` 21 이상) | **확인됨** | RAG 통합 과정에서 `SearchRequest`의 `@NotBlank`/`@Min`/`@Max` 검증 코드는 변경되지 않았고, 검색 블록 설계 문서(`kangcheolung-#56-vector-search-live-check-api.md`)의 에러 케이스 표에 `queryText` 빈 문자열 → 400, `topK` 범위 초과 → 400으로 이미 검증 완료 기록이 있음. 이번 PR에서 별도 재검증 불필요 |
 | Ollama 장애 케이스 (의도적 재현) | **완료** (우연히 재현됨) | 위 "에러 케이스" 참고 |
 
 ---
@@ -177,8 +177,9 @@ BUILD SUCCESSFUL in 25s
 
 ## 결론
 
-- **RAG 블록(F-RAG-01~05)의 코드 로직은 정상 동작을 확인했다**: 검색 결과 → 프롬프트 조립 → LLM 호출 → 답변/출처 저장 → 최종 응답 조합까지 e2e로 실제 인프라(Postgres/embedding-server/Ollama) 연동 하에 검증됨. 환각 방지 지시문도 실제로 유효함을 확인.
+- **RAG 블록(F-RAG-01~05)의 코드 로직은 정상 동작을 확인했다**: 검색 결과 → 프롬프트 조립 → LLM 호출 → 답변/출처 저장 → 최종 응답 조합까지 e2e로 실제 인프라(Postgres/embedding-server/Ollama) 연동 하에 검증됨. 환각 방지 지시문도 이번 실행에서는 의도대로 반영된 결과가 관찰됨(단일 질의 기준, 일반화된 보장 아님).
 - **LLM 장애 처리(503)도 실제 장애 상황에서 의도대로 동작함**을 우연히 재현하여 확인.
 - **`similarityScore` 이상치는 테스트 데이터(더미 임베딩) 문제**로 원인을 특정했다 — RAG/검색 코드 수정 불필요, 실제 임베딩 파이프라인 완성 후 재검증 필요.
 - **citations 필터링 미비**는 설계상 알려진 MVP 한계로 별도 개선 백로그로 기록한다.
-- 나머지 시나리오(NO_CONTEXT, 권한, 입력 검증, 다른 문서 케이스)는 인덱싱 파이프라인(A 담당자 담당, 임베딩 계산 + INDEXED 전환)이 완성된 뒤 재시도한다.
+- **입력 검증(`queryText` 빈 값, `topK` 범위 초과)은 검색 블록(`#56`)에서 이미 검증된 로직이고 RAG 통합으로 변경되지 않아 재검증 불필요**로 확인.
+- 나머지 시나리오(정상 케이스 B, NO_CONTEXT, 권한, 다른 문서 케이스)는 인덱싱 파이프라인(A 담당자 담당, 임베딩 계산 + INDEXED 전환)이 완성된 뒤 재시도한다.

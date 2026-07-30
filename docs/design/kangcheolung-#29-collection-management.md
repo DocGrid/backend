@@ -116,11 +116,27 @@ public void removeDocument(Long collectionId, Long documentId, Long userId) {
     collectionDocumentRepository.delete(collectionDocument);
 }
 ```
-`deleteCollection()`과 결정적으로 다른 지점: 여기서는 **컬렉션 권한 자체는 그대로 둔다.** 컬렉션에서 문서 하나만 빠지는 거지 컬렉션이 없어지는 게 아니므로, 그 컬렉션에 남아있는 다른 문서들에 대한 권한/캐시는 건드리면 안 된다. 그래서 `bulkRevokeBySource`(컬렉션 전체 무효화)가 아니라 `bulkRevokeBySourcesForDocument`(그 문서 하나로 범위를 좁힌 무효화)를 쓴다. `userPermissionIds`가 빈 리스트여도 그대로 호출하는데, JPQL `IN ()`이 빈 컬렉션이면 하이버네이트가 항상 거짓으로 처리해 0건 매칭으로 안전하게 끝난다.
+`deleteCollection()`과 결정적으로 다른 지점: 여기서는 **컬렉션 권한 자체는 그대로 둔다.** 컬렉션에서 문서 하나만 빠지는 거지 컬렉션이 없어지는 게 아니므로, 그 컬렉션에 남아있는 다른 문서들에 대한 권한/캐시는 건드리면 안 된다. 그래서 `bulkRevokeBySource`(컬렉션 전체 무효화)가 아니라 `bulkRevokeBySourcesForDocument`(그 문서 하나로 범위를 좁힌 무효화)를 쓴다. `removeDocument()`는 `userPermissionIds`가 비어있어도 그대로 호출하는데, 빈 리스트로 인한 불필요한 쿼리 실행은 `UserDocumentAccessCacheService.bulkRevokeBySourcesForDocument()` 내부의 `if (!sourceIds.isEmpty())` 가드가 서비스 레이어에서 막아준다(JPQL의 `IN` 절 자체가 빈 컬렉션을 안전하게 처리해주는 게 아니라, 호출 전에 명시적으로 걸러주는 것).
+
+### `domain/permission/service/command/UserDocumentAccessCacheService.java` — 재사용
+
+`#18`에서 이미 정의한 두 벌크 무효화 메서드를 그대로 재사용한다(이 이슈에서 신규 추가 없음):
+```java
+public void bulkRevokeBySource(AccessSourceType sourceType, Long sourceId) {
+    cacheRepository.bulkInvalidateBySource(sourceType, sourceId);
+}
+
+public void bulkRevokeBySourcesForDocument(AccessSourceType sourceType, List<Long> sourceIds, Long documentId) {
+    if (!sourceIds.isEmpty()) {
+        cacheRepository.bulkInvalidateBySourceIdsAndDocument(sourceType, sourceIds, documentId);
+    }
+}
+```
+빈 리스트 가드(`if (!sourceIds.isEmpty())`)가 이 서비스 메서드 안에 있다는 게 핵심이다 — `removeDocument()`(커맨드 서비스)는 이 가드를 신경 쓰지 않고 그냥 호출하면 되고, 안전성은 이 서비스가 책임진다.
 
 ### `domain/permission/repository/UserDocumentAccessCacheRepository.java` — 재사용
 
-`#18`에서 이미 정의한 두 벌크 쿼리를 그대로 재사용한다(이 이슈에서 신규 추가 없음):
+두 벌크 쿼리 자체는 `#18`에서 정의됐다:
 ```java
 @Modifying(clearAutomatically = true)
 @Query("UPDATE UserDocumentAccessCache c SET c.invalidatedAt = CURRENT_TIMESTAMP " +
@@ -221,8 +237,8 @@ BUILD SUCCESSFUL
 
 ## 남은 이슈 / TODO
 
-- `removeDocument()`가 `userPermissionIds`가 비어있어도 `bulkRevokeBySourcesForDocument()`를 그대로 호출한다 — JPQL `IN ()`이 항상 0건 매칭으로 안전하게 끝나긴 하지만, 빈 리스트일 때 호출 자체를 건너뛰는 조기 반환은 없다(성능 미세 최적화 여지로만 존재, 정확성에는 영향 없음).
 - `getMyCollections()`가 페이지네이션 없이 전체 목록을 반환한다 — 컬렉션 수가 많아지는 시나리오는 아직 없어 이슈로 등록하지 않음.
+- `deleteCollection()`/`removeDocument()` 둘 다 `collectionRepository.findById()`로만 컬렉션을 조회한다 — `#16`에서 이미 지적된 것과 같은 이유로, 이미 `status=DELETED`인 컬렉션에 대해서도 (멱등하게) 재호출이 가능하다. 실질적 위험은 낮지만(이미 지워진 걸 또 지우는 정도), `#16`의 TODO와 함께 ID+ACTIVE 조합 조회로 정리할 필요가 있다.
 
 ## 다음 단계
 

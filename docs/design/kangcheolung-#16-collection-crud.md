@@ -185,6 +185,7 @@ public CollectionDocumentResponse addDocument(Long collectionId, Long userId, Ad
 - `userRepository.getReferenceById(userId)`: `JpaRepository`가 기본 제공하는 프록시 조회 메서드. `SearchResultCommandService`(RAG 블록) 등이 쓰는 `entityManager.getReference()`와 동일한 목적(불필요한 SELECT 생략)을, Spring Data가 표준으로 제공하는 방식으로 구현한 것이다.
 - `addDocument()`는 `#21`에서 만든 `PermissionQueryService.canWriteCollection()`을 그대로 재사용한다 — 이 이슈에서 권한 판단 로직을 새로 만들지 않는다.
 - 존재 확인(컬렉션) → 권한 확인 → 존재 확인(문서) → 중복 확인 순서다. 컬렉션이 없는데 권한부터 확인하면 404 대신 엉뚱한 에러가 날 수 있어 존재 확인이 항상 먼저 온다.
+- **확인된 갭**: `collectionRepository.findById(collectionId)`는 `status`를 전혀 필터링하지 않는다(`CollectionRepository`에는 `findAllByOwnerIdAndStatus`만 있고, ID 단건 조회에 상태 조건을 건 메서드가 없다). 즉 `status=DELETED`(소프트 삭제된) 컬렉션에도 `addDocument()`로 문서를 계속 추가할 수 있다 — 아래 "남은 이슈/TODO"에 기록.
 
 ### 5. `domain/collection/service/query/CollectionQueryService.java` — `getCollection`
 
@@ -305,6 +306,7 @@ BUILD SUCCESSFUL
 ## 남은 이슈 / TODO
 
 - `getCollection()`(단건 조회)에 권한 체크가 없다 — 컬렉션 메타데이터만 노출되어 위험도가 낮다고 판단했을 수 있으나, 명시적으로 재검토가 필요하다.
+- `getCollection()`과 `addDocument()` 둘 다 `collectionRepository.findById()`만 쓰고 `status`를 확인하지 않는다 — `#29`에서 소프트 삭제(`status=DELETED`)를 도입한 이후에도 이 두 경로는 여전히 삭제된 컬렉션에 접근/문서 추가가 가능하다(코드리뷰 지적사항, `CollectionRepository`에 ID+ACTIVE 조합 조회 메서드 추가가 필요).
 - `CollectionStatus.ARCHIVED`는 정의만 되어 있고 전환 로직이 없다.
 - `CollectionPermission`/`DocumentPermission` 엔티티의 Javadoc에 이미 명시된 TODO: `target_type`별로 단일 FK만 채워져야 한다는 규칙이 DB CHECK 제약으로 강제되지 않고 애플리케이션 검증(`validateTargetType()`, `#18`)에만 의존한다.
 

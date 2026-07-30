@@ -55,6 +55,8 @@ private boolean[] resolvePermissions(PermissionType type) {
 
 이 원칙이 검색 블록(F-SEARCH)의 "권한 pre-filter(캐시 기반) → live check(정확성 보장)" 2단계 구조로 그대로 이어진다.
 
+**확인된 불일치**: 위 Javadoc은 "소유권(OWNER)도 캐시에 저장된다"고 적고 있고 `AccessSourceType`에도 `OWNER` 값이 정의되어 있지만, 실제로 `AccessSourceType.OWNER`로 캐시 row를 생성하는 코드는 어디에도 없다(`UserDocumentAccessCacheService.grantUserPermission()`/`bulkGrantUserPermission()`의 호출부는 `CollectionPermissionCommandService`/`DocumentPermissionCommandService` 두 곳뿐이고, 둘 다 `DIRECT_COLLECTION_PERMISSION`/`DIRECT_DOCUMENT_PERMISSION`만 넘긴다). `#21`의 `canReadDocument()` 1단계(OWNER)는 캐시를 거치지 않고 `document.getOwner()`를 직접 비교한다 — 즉 `AccessSourceType.OWNER`는 정의만 되어 있고 실제로는 죽은 값(dead value)이다. Javadoc이 실제 동작보다 앞서 있는 상태로 보이며, 코드 정리가 필요하다(아래 TODO 참고).
+
 ---
 
 ## 신규 파일
@@ -333,6 +335,8 @@ BUILD SUCCESSFUL
 
 - `target_type`별 단일 FK 제약이 DB 레벨(CHECK)이 아니라 애플리케이션 검증에만 있다(엔티티 Javadoc에 이미 기록됨).
 - `expiresAt`이 지난 권한을 정리(삭제 또는 자동 무효화)하는 배치가 없다 — live 조회 시 `expiresAt > CURRENT_TIMESTAMP` 조건으로 걸러지긴 하지만, 만료된 레코드 자체는 DB에 계속 쌓인다.
+- `AccessSourceType.OWNER`가 정의만 되어 있고 실제로 생성되지 않는다(위 "확인된 불일치" 참고) — enum에서 제거하거나, 실제로 OWNER 캐시를 생성하도록 코드를 맞추거나 둘 중 하나로 정리가 필요하다.
+- `PermissionController`의 컬렉션/문서 권한 부여·회수 4개 엔드포인트(`grantCollectionPermission`, `revokeCollectionPermission`, `grantDocumentPermission`, `revokeDocumentPermission`) `@Operation` description이 전부 "소유자(owner)만 가능합니다"라고 적혀 있지만, 실제 서비스 코드(`CollectionPermissionCommandService`/`DocumentPermissionCommandService`)는 `canAdminCollection()`/`canAdminDocument()`로 판단해서 ADMIN 위임자도 통과시킨다 — Swagger 설명이 실제 인가 규칙과 다르다. API 소비자에게 오해를 줄 수 있어 Swagger description 수정이 필요하다.
 
 ## 다음 단계
 

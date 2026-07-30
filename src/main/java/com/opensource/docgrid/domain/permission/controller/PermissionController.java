@@ -51,7 +51,7 @@ public class PermissionController {
 
     @Operation(
             summary = "컬렉션 권한 부여",
-            description = "컬렉션에 USER/ROLE/DEPARTMENT 단위로 권한을 부여합니다. 컬렉션 소유자(owner)만 가능합니다. " +
+            description = "컬렉션에 USER/ROLE/DEPARTMENT 단위로 권한을 부여합니다. 컬렉션 ADMIN 권한 보유자(소유자 포함)만 가능합니다. " +
                     "targetType에 맞는 ID 필드(userId/roleId/departmentId) 하나만 입력해야 합니다. " +
                     "USER 대상인 경우 컬렉션 내 문서에 대한 접근 캐시가 즉시 갱신됩니다."
     )
@@ -66,7 +66,7 @@ public class PermissionController {
 
     @Operation(
             summary = "컬렉션 권한 회수",
-            description = "부여된 컬렉션 권한을 회수합니다. 컬렉션 소유자(owner)만 가능합니다. " +
+            description = "부여된 컬렉션 권한을 회수합니다. 컬렉션 ADMIN 권한 보유자(소유자 포함)만 가능합니다. " +
                     "USER 대상 권한이었다면 접근 캐시도 즉시 무효화됩니다."
     )
     @DeleteMapping("/collections/{collectionId}/{permissionId}")
@@ -80,7 +80,7 @@ public class PermissionController {
 
     @Operation(
             summary = "문서 예외 권한 부여",
-            description = "특정 문서 하나에만 적용되는 예외 권한을 부여합니다. 문서 소유자(owner)만 가능합니다. " +
+            description = "특정 문서 하나에만 적용되는 예외 권한을 부여합니다. 문서 ADMIN 권한 보유자(소유자 포함)만 가능합니다. " +
                     "기본 권한은 collection_permissions로 관리하고, 이 API는 예외 케이스에만 최소한으로 사용하세요. " +
                     "USER 대상인 경우 해당 문서의 접근 캐시가 즉시 갱신됩니다."
     )
@@ -95,7 +95,7 @@ public class PermissionController {
 
     @Operation(
             summary = "문서 예외 권한 회수",
-            description = "부여된 문서 예외 권한을 회수합니다. 문서 소유자(owner)만 가능합니다. " +
+            description = "부여된 문서 예외 권한을 회수합니다. 문서 ADMIN 권한 보유자(소유자 포함)만 가능합니다. " +
                     "USER 대상 권한이었다면 해당 문서의 접근 캐시도 즉시 무효화됩니다."
     )
     @DeleteMapping("/documents/{documentId}/{permissionId}")

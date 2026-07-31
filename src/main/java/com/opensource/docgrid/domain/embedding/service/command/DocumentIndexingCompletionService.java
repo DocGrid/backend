@@ -9,6 +9,7 @@ import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.entity.DocumentVersion;
@@ -83,7 +84,10 @@ public class DocumentIndexingCompletionService {
         EmbeddingJob embeddingJob = findLockedJob(jobId);
         LocalDateTime completedAt = LocalDateTime.now(clock);
 
-        // 2. 최초 완료는 아직 처리 중인 Job만 허용한다.
+        // 2. 이미 완료된 같은 실행은 저장된 최초 결과를 재생하고 Lease와 가변 검색 상태는 다시 검증하지 않는다.
+        if (embeddingJob.getStatus() == EmbeddingJobStatus.INDEXED) {
+            return replayIndexedJob(embeddingJob, attemptId, request);
+        }
         if (embeddingJob.getStatus() != EmbeddingJobStatus.PROCESSING) {
             throw new DocGridException(ErrorCode.DOCUMENT_INDEXING_COMPLETION_NOT_ALLOWED);
         }
@@ -150,6 +154,49 @@ public class DocumentIndexingCompletionService {
         );
     }
 
+    private DocumentIndexingCompletionResponse replayIndexedJob(
+        EmbeddingJob embeddingJob,
+        Long attemptId,
+        CompleteDocumentIndexingRequest request
+    ) {
+        // 1. 완료 시 보존한 Worker와 Token이 같은 실행의 재요청인지 확인한다.
+        validateCompletedIdentity(embeddingJob, request.workerId(), request.claimToken());
+        EmbeddingJobAttempt attempt = resolveCompletedAttempt(
+            embeddingJob,
+            attemptId,
+            request.workerId(),
+            request.claimToken()
+        );
+
+        // 2. 최초 완료와 같은 Job → Version → Document 잠금 순서를 유지하되 최신 Version 여부는 요구하지 않는다.
+        DocumentVersion documentVersion = findLockedVersion(embeddingJob);
+        Document document = findLockedDocument(documentVersion);
+        EmbeddingModel embeddingModel = findCompletedModel(embeddingJob);
+
+        // 3. 최초 완료의 저장 시각·상태·단일 이벤트가 온전한지 검증하고 어떠한 값도 다시 계산하지 않는다.
+        validateCompletedState(
+            embeddingJob,
+            attempt,
+            documentVersion,
+            document
+        );
+        log.info(
+            "문서 인덱싱 완료 재생: jobId={}, attemptId={}, completedAt={}, replay=true",
+            embeddingJob.getId(),
+            attempt.getId(),
+            embeddingJob.getCompletedAt()
+        );
+        return response(
+            embeddingJob,
+            attempt,
+            documentVersion,
+            document,
+            embeddingModel,
+            embeddingJob.getCompletedAt(),
+            attempt.getDurationMs()
+        );
+    }
+
     private EmbeddingJob findLockedJob(Long jobId) {
         return embeddingJobRepository.findByIdForUpdate(jobId)
             .orElseThrow(() -> new DocGridException(ErrorCode.EMBEDDING_JOB_NOT_FOUND));
@@ -211,6 +258,78 @@ public class DocumentIndexingCompletionService {
             throw new DocGridException(ErrorCode.EMBEDDING_MODEL_NOT_CONFIGURED);
         }
         return embeddingModel;
+    }
+
+    private EmbeddingModel findCompletedModel(EmbeddingJob embeddingJob) {
+        EmbeddingModel embeddingModel = embeddingJob.getEmbeddingModel();
+        if (embeddingModel == null || embeddingModel.getId() == null) {
+            throw new DocGridException(ErrorCode.DOCUMENT_INDEXING_COMPLETION_INCONSISTENT);
+        }
+        return embeddingModel;
+    }
+
+    private void validateCompletedIdentity(
+        EmbeddingJob embeddingJob,
+        Long workerId,
+        String claimToken
+    ) {
+        if (embeddingJob.getLockedByWorker() == null
+            || embeddingJob.getLockedByWorker().getId() == null
+            || !StringUtils.hasText(embeddingJob.getClaimToken())) {
+            throw new DocGridException(ErrorCode.DOCUMENT_INDEXING_COMPLETION_INCONSISTENT);
+        }
+        if (!Objects.equals(embeddingJob.getLockedByWorker().getId(), workerId)
+            || !Objects.equals(embeddingJob.getClaimToken(), claimToken)) {
+            throw new DocGridException(ErrorCode.EMBEDDING_JOB_OWNERSHIP_INVALID);
+        }
+    }
+
+    private EmbeddingJobAttempt resolveCompletedAttempt(
+        EmbeddingJob embeddingJob,
+        Long attemptId,
+        Long workerId,
+        String claimToken
+    ) {
+        EmbeddingJobAttempt attempt = embeddingJobAttemptRepository
+            .findByEmbeddingJobIdAndClaimToken(embeddingJob.getId(), claimToken)
+            .orElseThrow(() -> new DocGridException(ErrorCode.EMBEDDING_JOB_ATTEMPT_INVALID));
+        if (!Objects.equals(attempt.getId(), attemptId)
+            || attempt.getEmbeddingJob() == null
+            || !Objects.equals(attempt.getEmbeddingJob().getId(), embeddingJob.getId())
+            || attempt.getWorkerNode() == null
+            || !Objects.equals(attempt.getWorkerNode().getId(), workerId)
+            || !Objects.equals(attempt.getClaimToken(), claimToken)
+            || attempt.getStatus() != AttemptStatus.SUCCESS) {
+            throw new DocGridException(ErrorCode.EMBEDDING_JOB_ATTEMPT_INVALID);
+        }
+        return attempt;
+    }
+
+    private void validateCompletedState(
+        EmbeddingJob embeddingJob,
+        EmbeddingJobAttempt attempt,
+        DocumentVersion documentVersion,
+        Document document
+    ) {
+        if (embeddingJob.getCompletedAt() == null
+            || attempt.getStartedAt() == null
+            || attempt.getEndedAt() == null
+            || attempt.getDurationMs() == null
+            || attempt.getDurationMs() < 0
+            || documentVersion.getStatus() != DocumentVersionStatus.INDEXED
+            || documentVersion.getIndexedAt() == null
+            || documentVersion.getDocument() == null
+            || !Objects.equals(documentVersion.getDocument().getId(), document.getId())
+            || !Objects.equals(embeddingJob.getCompletedAt(), attempt.getEndedAt())
+            || !Objects.equals(embeddingJob.getCompletedAt(), documentVersion.getIndexedAt())
+            || Duration.between(attempt.getStartedAt(), attempt.getEndedAt()).toMillis()
+                != attempt.getDurationMs()
+            || indexingEventRepository.countByEmbeddingJobIdAndEventType(
+                embeddingJob.getId(),
+                IndexingEventType.INDEXED
+            ) != 1) {
+            throw new DocGridException(ErrorCode.DOCUMENT_INDEXING_COMPLETION_INCONSISTENT);
+        }
     }
 
     private void validateCompletionTarget(

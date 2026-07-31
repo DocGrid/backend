@@ -2,6 +2,7 @@ package com.opensource.docgrid.domain.embedding.service.command;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -14,10 +15,14 @@ import com.opensource.docgrid.domain.document.entity.DocumentVersion;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 import com.opensource.docgrid.domain.document.repository.DocumentChunkRepository;
 import com.opensource.docgrid.domain.document.repository.DocumentVersionRepository;
+import com.opensource.docgrid.domain.embedding.entity.Embedding;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingModel;
+import com.opensource.docgrid.domain.embedding.enums.EmbeddingStatus;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingRepository;
+import com.opensource.docgrid.domain.embedding.service.DocumentEmbeddingDraft;
+import com.opensource.docgrid.domain.embedding.service.EmbeddingVectorSupport;
 import com.opensource.docgrid.domain.worker.entity.EmbeddingJobAttempt;
 import com.opensource.docgrid.domain.worker.entity.IndexingEvent;
 import com.opensource.docgrid.domain.worker.enums.AttemptStatus;
@@ -116,6 +121,55 @@ public class DocumentEmbeddingTransactionService {
         ));
     }
 
+    /**
+     * 외부 호출 결과를 현재 실행 소유권과 준비 Snapshot으로 재검증한 뒤 한 번에 저장한다.
+     */
+    public CompletionResult complete(
+        Long jobId,
+        Long attemptId,
+        Long workerId,
+        String claimToken,
+        EmbeddingWork preparedWork,
+        List<DocumentEmbeddingDraft> drafts
+    ) {
+        // 1. 외부 호출 중 Claim 교체나 Lease 만료를 차단하도록 Job과 Attempt를 다시 검증한다.
+        EmbeddingJob embeddingJob = findLockedJob(jobId);
+        LocalDateTime completedAt = LocalDateTime.now(clock);
+        ownershipValidator.validate(embeddingJob, workerId, claimToken, completedAt);
+        validateAttempt(embeddingJob, attemptId, workerId, claimToken);
+
+        // 2. Job 고정 Model과 Version을 다시 확인하고 준비 단계와 같은 대상인지 검증한다.
+        EmbeddingModel embeddingModel = findJobModel(embeddingJob);
+        DocumentVersion documentVersion = findLockedJobVersion(embeddingJob);
+        validatePreparedTarget(preparedWork, documentVersion, embeddingModel);
+
+        // 3. 현재 Chunk Set을 다시 읽어 외부 호출 중 원본이 바뀌거나 누락되지 않았는지 확인한다.
+        List<DocumentChunk> chunks = documentChunkRepository
+            .findAllByDocumentVersionIdOrderByChunkIndexAsc(documentVersion.getId());
+        validateChunks(documentVersion, chunks);
+        validatePreparedChunks(preparedWork, chunks);
+
+        // 4. 동시 요청이 먼저 전체 저장했으면 기존 결과를 재생하고 부분 저장은 내부 모순으로 거부한다.
+        EmbeddingState state = resolveState(documentVersion, embeddingModel, chunks.size());
+        if (state == EmbeddingState.REPLAY) {
+            return result(jobId, attemptId, documentVersion, embeddingModel, chunks.size(), false);
+        }
+        if (documentVersion.getStatus() != DocumentVersionStatus.EMBEDDING) {
+            throw new DocGridException(ErrorCode.DOCUMENT_VERSION_EMBEDDING_NOT_ALLOWED);
+        }
+
+        // 5. 모든 Draft를 다시 검증하고 같은 Version·Model의 ACTIVE Embedding Set으로 원자 저장한다.
+        List<Embedding> embeddings = toEntities(
+            documentVersion,
+            embeddingModel,
+            chunks,
+            drafts
+        );
+        embeddingRepository.saveAllAndFlush(embeddings);
+
+        return result(jobId, attemptId, documentVersion, embeddingModel, embeddings.size(), true);
+    }
+
     private EmbeddingJob findLockedJob(Long jobId) {
         return embeddingJobRepository.findByIdForUpdate(jobId)
             .orElseThrow(() -> new DocGridException(ErrorCode.EMBEDDING_JOB_NOT_FOUND));
@@ -181,6 +235,40 @@ public class DocumentEmbeddingTransactionService {
         }
     }
 
+    private void validatePreparedTarget(
+        EmbeddingWork preparedWork,
+        DocumentVersion documentVersion,
+        EmbeddingModel embeddingModel
+    ) {
+        if (preparedWork == null
+            || !Objects.equals(preparedWork.documentVersionId(), documentVersion.getId())
+            || !Objects.equals(preparedWork.embeddingModelId(), embeddingModel.getId())
+            || preparedWork.dimension() != embeddingModel.getDimension()) {
+            throw new DocGridException(ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT);
+        }
+    }
+
+    private void validatePreparedChunks(
+        EmbeddingWork preparedWork,
+        List<DocumentChunk> chunks
+    ) {
+        if (preparedWork.chunks().size() != chunks.size()) {
+            throw new DocGridException(ErrorCode.DOCUMENT_CHUNKS_INCONSISTENT);
+        }
+
+        for (int index = 0; index < chunks.size(); index++) {
+            ChunkSnapshot snapshot = preparedWork.chunks().get(index);
+            DocumentChunk chunk = chunks.get(index);
+            if (snapshot == null
+                || !Objects.equals(snapshot.chunkId(), chunk.getId())
+                || snapshot.chunkIndex() != chunk.getChunkIndex()
+                || !Objects.equals(snapshot.chunkText(), chunk.getChunkText())
+                || !Objects.equals(snapshot.contentHash(), chunk.getContentHash())) {
+                throw new DocGridException(ErrorCode.DOCUMENT_CHUNKS_INCONSISTENT);
+            }
+        }
+    }
+
     private EmbeddingState resolveState(
         DocumentVersion documentVersion,
         EmbeddingModel embeddingModel,
@@ -210,6 +298,60 @@ public class DocumentEmbeddingTransactionService {
             throw new DocGridException(ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT);
         }
         throw new DocGridException(ErrorCode.DOCUMENT_VERSION_EMBEDDING_NOT_ALLOWED);
+    }
+
+    private List<Embedding> toEntities(
+        DocumentVersion documentVersion,
+        EmbeddingModel embeddingModel,
+        List<DocumentChunk> chunks,
+        List<DocumentEmbeddingDraft> drafts
+    ) {
+        if (documentVersion.getDocument() == null
+            || documentVersion.getDocument().getId() == null
+            || drafts == null
+            || drafts.size() != chunks.size()) {
+            throw new DocGridException(ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT);
+        }
+
+        List<Embedding> embeddings = new ArrayList<>(drafts.size());
+        for (int index = 0; index < drafts.size(); index++) {
+            DocumentChunk chunk = chunks.get(index);
+            DocumentEmbeddingDraft draft = drafts.get(index);
+            float[] vector = validateDraft(draft, chunk, embeddingModel.getDimension());
+            embeddings.add(Embedding.builder()
+                .chunk(chunk)
+                .document(documentVersion.getDocument())
+                .documentVersion(documentVersion)
+                .embeddingModel(embeddingModel)
+                .vector(vector)
+                .dimension(embeddingModel.getDimension())
+                .vectorHash(draft.vectorHash())
+                .status(EmbeddingStatus.ACTIVE)
+                .build());
+        }
+        return embeddings;
+    }
+
+    private float[] validateDraft(
+        DocumentEmbeddingDraft draft,
+        DocumentChunk chunk,
+        int expectedDimension
+    ) {
+        if (draft == null
+            || !Objects.equals(draft.chunkId(), chunk.getId())
+            || draft.chunkIndex() != chunk.getChunkIndex()
+            || !Objects.equals(draft.contentHash(), chunk.getContentHash())
+            || !StringUtils.hasText(draft.vectorHash())
+            || !draft.vectorHash().matches("[0-9a-f]{64}")) {
+            throw new DocGridException(ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT);
+        }
+
+        float[] vector = draft.vector();
+        EmbeddingVectorSupport.validate(vector, expectedDimension);
+        if (!draft.vectorHash().equals(EmbeddingVectorSupport.calculateHash(vector))) {
+            throw new DocGridException(ErrorCode.EMBEDDING_VECTOR_INVALID);
+        }
+        return vector;
     }
 
     private CompletionResult result(

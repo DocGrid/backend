@@ -1,11 +1,6 @@
 package com.opensource.docgrid.domain.embedding.service;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -42,7 +37,7 @@ public class DocumentEmbeddingGenerator {
             float[] vector = embeddingClient.embed(chunk.chunkText());
 
             // 2. Job 고정 Model의 차원과 모든 원소의 유한성을 저장 전에 검증한다.
-            validateVector(vector, work.dimension());
+            EmbeddingVectorSupport.validate(vector, work.dimension());
 
             // 3. 검증된 Vector와 원본 Chunk Snapshot을 결합해 완료 Transaction용 Draft를 만든다.
             drafts.add(new DocumentEmbeddingDraft(
@@ -50,7 +45,7 @@ public class DocumentEmbeddingGenerator {
                 chunk.chunkIndex(),
                 chunk.contentHash(),
                 vector,
-                calculateVectorHash(vector)
+                EmbeddingVectorSupport.calculateHash(vector)
             ));
         }
         return List.copyOf(drafts);
@@ -67,29 +62,4 @@ public class DocumentEmbeddingGenerator {
         }
     }
 
-    private void validateVector(float[] vector, int expectedDimension) {
-        if (vector == null || vector.length != expectedDimension) {
-            throw new DocGridException(ErrorCode.EMBEDDING_DIMENSION_MISMATCH);
-        }
-        for (float value : vector) {
-            if (!Float.isFinite(value)) {
-                throw new DocGridException(ErrorCode.EMBEDDING_VECTOR_INVALID);
-            }
-        }
-    }
-
-    private String calculateVectorHash(float[] vector) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            ByteBuffer buffer = ByteBuffer
-                .allocate(vector.length * Float.BYTES)
-                .order(ByteOrder.BIG_ENDIAN);
-            for (float value : vector) {
-                buffer.putFloat(value);
-            }
-            return HexFormat.of().formatHex(digest.digest(buffer.array()));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new DocGridException(ErrorCode.EMBEDDING_VECTOR_INVALID, exception);
-        }
-    }
 }

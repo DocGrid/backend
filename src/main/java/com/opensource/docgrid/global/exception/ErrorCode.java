@@ -61,6 +61,9 @@ public enum ErrorCode {
     DOCUMENT_VERSION_CHUNKING_NOT_ALLOWED(
         HttpStatus.CONFLICT, "DOCUMENT-VERSION-005", "현재 문서 버전 상태에서는 Chunk를 생성할 수 없습니다."
     ),
+    DOCUMENT_VERSION_EMBEDDING_NOT_ALLOWED(
+        HttpStatus.CONFLICT, "DOCUMENT-VERSION-006", "현재 문서 버전 상태에서는 Embedding을 생성할 수 없습니다."
+    ),
     INDEXING_STATUS_INCONSISTENT(
         HttpStatus.INTERNAL_SERVER_ERROR, "DOCUMENT-STATUS-001", "문서 인덱싱 상태를 조회할 수 없습니다."
     ),
@@ -113,6 +116,16 @@ public enum ErrorCode {
         HttpStatus.INTERNAL_SERVER_ERROR,
         "DOCUMENT-CHUNK-001",
         "문서 버전과 Chunk 데이터가 일치하지 않습니다."
+    ),
+    DOCUMENT_EMBEDDINGS_INCONSISTENT(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "DOCUMENT-EMBEDDING-001",
+        "문서 버전과 Embedding 데이터가 일치하지 않습니다."
+    ),
+    EMBEDDING_VECTOR_INVALID(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "DOCUMENT-EMBEDDING-002",
+        "생성된 Embedding Vector가 올바르지 않습니다."
     ),
 
     // PERMISSION

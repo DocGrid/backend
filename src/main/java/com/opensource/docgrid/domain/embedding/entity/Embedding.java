@@ -1,5 +1,7 @@
 package com.opensource.docgrid.domain.embedding.entity;
 
+import java.util.Arrays;
+
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.entity.DocumentChunk;
 import com.opensource.docgrid.domain.document.entity.DocumentVersion;
@@ -108,9 +110,21 @@ public class Embedding extends BaseEntity {
         this.document = document;
         this.documentVersion = documentVersion;
         this.embeddingModel = embeddingModel;
-        this.vector = vector;
+        // 호출자가 보관한 배열 변경이 영속화 값에 전파되지 않도록 생성 시점에 복사한다.
+        this.vector = copyVector(vector);
         this.dimension = dimension;
         this.vectorHash = vectorHash;
         this.status = status != null ? status : EmbeddingStatus.ACTIVE;
+    }
+
+    /**
+     * 영속 Entity 내부 Vector가 호출자에 의해 변경되지 않도록 복사본을 반환한다.
+     */
+    public float[] getVector() {
+        return copyVector(vector);
+    }
+
+    private static float[] copyVector(float[] source) {
+        return source == null ? null : Arrays.copyOf(source, source.length);
     }
 }

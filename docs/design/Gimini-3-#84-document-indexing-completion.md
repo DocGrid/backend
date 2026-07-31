@@ -932,12 +932,19 @@ src/main/java/com/opensource/docgrid/domain/embedding/service/command/
 src/test/java/com/opensource/docgrid/domain/embedding/service/command/
 └── DocumentIndexingCompletionServiceTest.java
 
+src/test/java/com/opensource/docgrid/domain/document/entity/
+└── DocumentTest.java
+
+src/test/java/com/opensource/docgrid/domain/embedding/repository/
+└── IndexingCompletionRepositoryTest.java
+
 src/test/java/com/opensource/docgrid/domain/embedding/integration/
-├── DocumentIndexingCompletionIntegrationTest.java
-└── DocumentIndexingCompletionRollbackIntegrationTest.java
+└── DocumentIndexingCompletionIntegrationTest.java
 ```
 
 모든 신규 Class와 Record에는 역할·책임·경계를 설명하는 class-level comment를 작성한다.
+검색 전환·동시 완료·Rollback은 같은 OpenSQL Schema와 Fixture를 공유하므로 별도 Rollback Class로
+분리하지 않고 `DocumentIndexingCompletionIntegrationTest` 한 곳에 모은다.
 
 ### 17.2 수정 파일
 
@@ -1099,16 +1106,18 @@ Model·전체 Set:
 
 #### 시나리오 D: 완료 중 실패 Rollback
 
-별도 Test Context에서 `IndexingEventRepository`를 실패 Stub으로 교체한다.
+실제 OpenSQL의 `indexing_events`에 테스트용 Trigger를 설치해 `INDEXED` 이벤트 Insert만 실패시킨다.
 
 1. 실제 OpenSQL에 완료 직전 전체 데이터를 준비한다.
-2. 모든 Entity와 이전 Embedding 상태 변경 뒤 이벤트 저장에서 예외를 발생시킨다.
+2. 이전 Embedding bulk update와 Entity 상태 변경 뒤 이벤트 Insert에서 DB 예외를 발생시킨다.
 3. 새 Transaction으로 DB를 다시 조회한다.
 4. Attempt STARTED, Job PROCESSING, Version EMBEDDING을 확인한다.
 5. Document current Version과 이전 ACTIVE Embedding이 그대로인지 확인한다.
 6. INDEXED 이벤트가 0건인지 확인한다.
+7. `finally`에서 테스트용 Trigger와 Function을 제거한다.
 
-이 테스트는 Mockito만 사용하는 단위 테스트가 아니라 실제 Transaction Rollback을 DB 재조회로 검증한다.
+Repository Stub을 쓰면 실제 DB Transaction의 마지막 Flush 실패를 검증할 수 없으므로, 이 테스트는
+Mockito가 아니라 실제 OpenSQL Trigger와 DB 재조회로 전체 Rollback을 확인한다.
 
 ### 18.5 전체 회귀
 
@@ -1169,18 +1178,21 @@ Query는 current Version 조건으로 구버전을 이미 차단한다. 그럼�
 
 ## 21. 최종 완료 체크리스트
 
-- [ ] Job → Version → Document 잠금 순서가 코드와 주석에 명시돼 있다.
-- [ ] 최초 완료와 완료 재생이 Job 상태로 명확히 분리된다.
-- [ ] 최초 완료는 현재 소유권·Lease·STARTED Attempt를 검증한다.
-- [ ] 완료 재생은 같은 성공 실행만 허용하고 Lease를 요구하지 않는다.
-- [ ] 대상은 최신 Version이고 Job Model이 active·searchable이다.
-- [ ] Chunk와 ACTIVE Embedding 전체 Set이 정확히 일치한다.
-- [ ] 최초 Version은 자기 Embedding을 STALE로 바꾸지 않는다.
-- [ ] 새 Version은 이전 ACTIVE Embedding을 STALE로 바꾸고 current Version이 된다.
-- [ ] Attempt·Job·Version·Document·Embedding·이벤트가 한 Transaction으로 커밋된다.
-- [ ] 같은 완료 시각이 Attempt·Job·Version·이벤트에 사용된다.
-- [ ] INDEXED 이벤트는 한 건만 생성된다.
-- [ ] Claim Token, Chunk 본문과 Vector가 외부로 노출되지 않는다.
-- [ ] 최초·새 Version의 실제 검색 가시성이 OpenSQL에서 검증된다.
-- [ ] 동시 완료와 완료 중 실패 Rollback이 실제 DB에서 검증된다.
-- [ ] 전체 빌드와 회귀 테스트가 통과한다.
+- [x] Job → Version → Document 잠금 순서가 코드와 주석에 명시돼 있다.
+- [x] 최초 완료와 완료 재생이 Job 상태로 명확히 분리된다.
+- [x] 최초 완료는 현재 소유권·Lease·STARTED Attempt를 검증한다.
+- [x] 완료 재생은 같은 성공 실행만 허용하고 Lease를 요구하지 않는다.
+- [x] 대상은 최신 Version이고 Job Model이 active·searchable이다.
+- [x] Chunk와 ACTIVE Embedding 전체 Set이 정확히 일치한다.
+- [x] 최초 Version은 자기 Embedding을 STALE로 바꾸지 않는다.
+- [x] 새 Version은 이전 ACTIVE Embedding을 STALE로 바꾸고 current Version이 된다.
+- [x] Attempt·Job·Version·Document·Embedding·이벤트가 한 Transaction으로 커밋된다.
+- [x] 같은 완료 시각이 Attempt·Job·Version·이벤트에 사용된다.
+- [x] INDEXED 이벤트는 한 건만 생성된다.
+- [x] Claim Token, Chunk 본문과 Vector가 외부로 노출되지 않는다.
+- [x] 최초·새 Version의 실제 검색 가시성이 OpenSQL에서 검증된다.
+- [x] 동시 완료와 완료 중 실패 Rollback이 실제 DB에서 검증된다.
+- [x] 전체 빌드와 회귀 테스트가 통과한다.
+
+실행 환경, 명령, 검증 시나리오와 제외 범위는
+[문서 인덱싱 완료 구현 검증 결과](../test-results/Gimini-3-%2384-document-indexing-completion.md)에 기록한다.

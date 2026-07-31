@@ -35,7 +35,7 @@ public interface EmbeddingRepository extends JpaRepository<Embedding, Long> {
      *
      * @return 실제 STALE로 변경된 행 수
      */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query(value = """
         UPDATE embeddings
         SET status = 'STALE',

@@ -135,6 +135,10 @@ public class DocumentVersion extends BaseEntity {
     }
 
     public void markEmbedding() {
+        // Chunk Set이 확정된 Version만 Embedding 생성 단계에 진입할 수 있다.
+        if (status != DocumentVersionStatus.CHUNKED) {
+            throw new IllegalStateException("CHUNKED 상태의 문서 버전만 EMBEDDING으로 전환할 수 있습니다.");
+        }
         this.status = DocumentVersionStatus.EMBEDDING;
     }
 

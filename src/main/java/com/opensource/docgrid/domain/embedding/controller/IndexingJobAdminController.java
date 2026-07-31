@@ -14,11 +14,15 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.opensource.docgrid.domain.embedding.dto.request.StartEmbeddingJobAttemptRequest;
 import com.opensource.docgrid.domain.embedding.dto.request.CreateDocumentChunksRequest;
+import com.opensource.docgrid.domain.embedding.dto.request.CreateDocumentEmbeddingsRequest;
 import com.opensource.docgrid.domain.embedding.dto.response.ClaimedEmbeddingJobResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentChunksResponse;
+import com.opensource.docgrid.domain.embedding.dto.response.DocumentEmbeddingsResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.StartedEmbeddingJobAttemptResponse;
 import com.opensource.docgrid.domain.document.service.DocumentParsingService;
 import com.opensource.docgrid.domain.document.service.command.DocumentChunkTransactionService.ChunkResult;
+import com.opensource.docgrid.domain.embedding.service.DocumentEmbeddingService;
+import com.opensource.docgrid.domain.embedding.service.DocumentEmbeddingService.EmbeddingResult;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobClaimService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttemptService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttemptService.StartResult;
@@ -36,10 +40,10 @@ import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 관리자용 Embedding Job Claim과 Attempt 시작 요청을 HTTP API로 제공하는 Controller.
+ * 관리자용 Embedding Job Claim, Attempt 시작과 문서 Chunk·Embedding 실행을 HTTP API로 제공한다.
  *
- * <p>HTTP 입력 검증과 성공 상태 변환만 담당한다. Job Claim 및 현재 소유권 기반 Attempt 시작의
- * Transaction·동시성 규칙은 각 Command Service에 위임한다.
+ * <p>HTTP 입력 검증과 성공 상태 변환만 담당한다. Job Claim 및 현재 소유권 기반 파이프라인 단계의
+ * Transaction·외부 호출·동시성 규칙은 각 Service에 위임한다.
  */
 @Tag(name = "Admin - Indexing Job", description = "관리자 전용 인덱싱 Job 제어 API")
 @Validated
@@ -51,6 +55,7 @@ public class IndexingJobAdminController {
     private final EmbeddingJobClaimService embeddingJobClaimService;
     private final EmbeddingJobAttemptService embeddingJobAttemptService;
     private final DocumentParsingService documentParsingService;
+    private final DocumentEmbeddingService documentEmbeddingService;
 
     @Operation(
         summary = "PENDING Job Claim",
@@ -220,6 +225,72 @@ public class IndexingJobAdminController {
     ) {
         // 1. 비 Transaction Service가 준비·외부 작업·완료 Transaction의 순서를 조정한다.
         ChunkResult result = documentParsingService.createChunks(jobId, attemptId, request);
+
+        // 2. 같은 응답 Body를 사용하고 실제 최초 저장 여부로 HTTP 상태만 구분한다.
+        if (result.created()) {
+            return ResponseUtils.created(result.response());
+        }
+        return ResponseUtils.ok(result.response());
+    }
+
+    @Operation(
+        summary = "Document Chunk Embedding 생성",
+        description = "현재 PROCESSING Job의 유효한 Attempt 소유권과 Job 고정 Model을 검증하고 "
+            + "Chunk를 순서대로 외부 Embedding 서버에 전달한 뒤 Vector Set을 원자 저장합니다. "
+            + "최초 저장은 201, 기존 완료 결과의 멱등 재생은 200을 반환합니다."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "201",
+            description = "Document Embedding 최초 저장"
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "기존 Embedding 결과 재생"
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "Job ID, Attempt ID, Worker ID 또는 Claim Token 형식 오류",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "403",
+            description = "인증되지 않았거나 ADMIN 권한 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "Embedding Job 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409",
+            description = "현재 소유권, Attempt, Lease 또는 Version 상태 오류",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "500",
+            description = "Model, Chunk, Vector 또는 Embedding 저장 상태 불일치",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "503",
+            description = "외부 Embedding 서버 장애",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        )
+    })
+    @PostMapping(
+        value = "/{jobId}/attempts/{attemptId}/embeddings",
+        consumes = MediaType.APPLICATION_JSON_VALUE,
+        produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<ApiResponse<DocumentEmbeddingsResponse>> createEmbeddings(
+        @PathVariable @Positive Long jobId,
+        @PathVariable @Positive Long attemptId,
+        @Valid @RequestBody CreateDocumentEmbeddingsRequest request
+    ) {
+        // 1. 비 Transaction Service가 준비·외부 호출·완료 Transaction의 순서를 조정한다.
+        EmbeddingResult result = documentEmbeddingService.createEmbeddings(jobId, attemptId, request);
 
         // 2. 같은 응답 Body를 사용하고 실제 최초 저장 여부로 HTTP 상태만 구분한다.
         if (result.created()) {

@@ -13,7 +13,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 
 /**
- * Document Version 파이프라인의 PARSING·CHUNKED 상태 전이 Guard와 기존 전이를 검증한다.
+ * Document Version 파이프라인의 PARSING·CHUNKED·EMBEDDING 상태 전이 Guard를 검증한다.
  *
  * <p>Command Service를 우회한 잘못된 상태 변경은 즉시 실패하고 정상 순서만 허용되는지 확인한다.
  */
@@ -55,7 +55,28 @@ class DocumentVersionTest {
     }
 
     @Test
-    @DisplayName("기존 EMBEDDING·INDEXED·FAILED 전이는 유지된다")
+    @DisplayName("CHUNKED에서 EMBEDDING으로 전이한다")
+    void markEmbedding_transitionsFromChunked() {
+        DocumentVersion version = version(DocumentVersionStatus.CHUNKED);
+
+        version.markEmbedding();
+
+        assertThat(version.getStatus()).isEqualTo(DocumentVersionStatus.EMBEDDING);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DocumentVersionStatus.class, names = "CHUNKED", mode = EnumSource.Mode.EXCLUDE)
+    @DisplayName("CHUNKED가 아닌 상태에서는 EMBEDDING 전이를 거부한다")
+    void markEmbedding_rejectsUnexpectedStatus(DocumentVersionStatus status) {
+        DocumentVersion version = version(status);
+
+        assertThatThrownBy(version::markEmbedding)
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(version.getStatus()).isEqualTo(status);
+    }
+
+    @Test
+    @DisplayName("EMBEDDING 이후 INDEXED·FAILED 전이는 유지된다")
     void laterPipelineTransitions_arePreserved() {
         DocumentVersion version = version(DocumentVersionStatus.CHUNKED);
         LocalDateTime indexedAt = LocalDateTime.of(2026, 7, 29, 12, 0);

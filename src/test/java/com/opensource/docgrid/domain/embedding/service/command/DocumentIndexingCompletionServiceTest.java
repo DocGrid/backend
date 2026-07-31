@@ -229,6 +229,97 @@ class DocumentIndexingCompletionServiceTest {
         then(embeddingJobAttemptRepository).shouldHaveNoInteractions();
     }
 
+    @Test
+    @DisplayName("완료된 같은 실행은 Lease와 현재 Version이 바뀌어도 최초 완료 결과를 재생한다")
+    void complete_replaysStoredCompletionAfterLeaseExpiryAndNewerVersion() {
+        prepareCompletedExecution();
+        ReflectionTestUtils.setField(
+            embeddingJob,
+            "lockExpiresAt",
+            COMPLETED_AT.minusSeconds(1)
+        );
+        EmbeddingModel inactiveModel =
+            EmbeddingModelFixture.createModel("inactive-completed-model", false, false);
+        ReflectionTestUtils.setField(inactiveModel, "id", MODEL_ID);
+        ReflectionTestUtils.setField(embeddingJob, "embeddingModel", inactiveModel);
+        DocumentVersion newerVersion = version(23L, 2, DocumentVersionStatus.INDEXED);
+        document.updateCurrentVersion(newerVersion);
+        givenCompletedExecution();
+        given(indexingEventRepository.countByEmbeddingJobIdAndEventType(
+            JOB_ID,
+            IndexingEventType.INDEXED
+        )).willReturn(1L);
+
+        DocumentIndexingCompletionResponse response = service.complete(
+            JOB_ID,
+            ATTEMPT_ID,
+            request()
+        );
+
+        assertThat(response.completedAt()).isEqualTo(COMPLETED_AT);
+        assertThat(response.durationMs()).isEqualTo(8_000L);
+        assertThat(response.documentVersionId()).isEqualTo(VERSION_ID);
+        assertThat(document.getCurrentVersion()).isSameAs(newerVersion);
+        then(ownershipValidator).shouldHaveNoInteractions();
+        then(documentChunkRepository).shouldHaveNoInteractions();
+        then(embeddingRepository).shouldHaveNoInteractions();
+        then(indexingEventRepository).should(never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("완료 재생의 Worker나 Claim Token이 다르면 소유권 오류로 거부한다")
+    void complete_replayRejectsDifferentIdentity() {
+        prepareCompletedExecution();
+        given(embeddingJobRepository.findByIdForUpdate(JOB_ID))
+            .willReturn(Optional.of(embeddingJob));
+        CompleteDocumentIndexingRequest differentToken = new CompleteDocumentIndexingRequest(
+            WORKER_ID,
+            "8d242ac5-0916-4e1c-a781-1f7b932f989b"
+        );
+
+        assertThatThrownBy(() -> service.complete(JOB_ID, ATTEMPT_ID, differentToken))
+            .isInstanceOfSatisfying(DocGridException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(ErrorCode.EMBEDDING_JOB_OWNERSHIP_INVALID));
+
+        then(embeddingJobAttemptRepository).shouldHaveNoInteractions();
+        then(documentVersionRepository).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("완료 재생의 Attempt가 SUCCESS가 아니면 실행 Context 오류로 거부한다")
+    void complete_replayRejectsIncompleteAttempt() {
+        prepareCompletedExecution();
+        ReflectionTestUtils.setField(attempt, "status", AttemptStatus.FAILED);
+        given(embeddingJobRepository.findByIdForUpdate(JOB_ID))
+            .willReturn(Optional.of(embeddingJob));
+        given(embeddingJobAttemptRepository.findByEmbeddingJobIdAndClaimToken(JOB_ID, CLAIM_TOKEN))
+            .willReturn(Optional.of(attempt));
+
+        assertThatThrownBy(() -> service.complete(JOB_ID, ATTEMPT_ID, request()))
+            .isInstanceOfSatisfying(DocGridException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(ErrorCode.EMBEDDING_JOB_ATTEMPT_INVALID));
+
+        then(documentVersionRepository).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("완료 재생의 저장 시각이나 INDEXED 이벤트 수가 모순이면 결과를 반환하지 않는다")
+    void complete_replayRejectsInconsistentStoredState() {
+        prepareCompletedExecution();
+        ReflectionTestUtils.setField(attempt, "durationMs", null);
+        givenCompletedExecution();
+
+        assertThatThrownBy(() -> service.complete(JOB_ID, ATTEMPT_ID, request()))
+            .isInstanceOfSatisfying(DocGridException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(ErrorCode.DOCUMENT_INDEXING_COMPLETION_INCONSISTENT));
+
+        then(embeddingRepository).shouldHaveNoInteractions();
+        then(indexingEventRepository).should(never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
     private void prepareExecution() {
         document = Document.builder()
             .title("완료 대상 문서")
@@ -267,6 +358,13 @@ class DocumentIndexingCompletionServiceTest {
             .startedAt(COMPLETED_AT.minusSeconds(8))
             .build();
         ReflectionTestUtils.setField(attempt, "id", ATTEMPT_ID);
+    }
+
+    private void prepareCompletedExecution() {
+        documentVersion.markIndexed(COMPLETED_AT);
+        document.activateIndexedVersion(documentVersion);
+        attempt.markSuccess(COMPLETED_AT, 8_000L);
+        embeddingJob.markIndexed(COMPLETED_AT);
     }
 
     private DocumentVersion version(Long id, int versionNo, DocumentVersionStatus status) {
@@ -316,6 +414,17 @@ class DocumentIndexingCompletionServiceTest {
             JOB_ID,
             IndexingEventType.INDEXED
         )).willReturn(0L);
+    }
+
+    private void givenCompletedExecution() {
+        given(embeddingJobRepository.findByIdForUpdate(JOB_ID))
+            .willReturn(Optional.of(embeddingJob));
+        given(embeddingJobAttemptRepository.findByEmbeddingJobIdAndClaimToken(JOB_ID, CLAIM_TOKEN))
+            .willReturn(Optional.of(attempt));
+        given(documentVersionRepository.findByIdForUpdate(VERSION_ID))
+            .willReturn(Optional.of(documentVersion));
+        given(documentRepository.findByIdForUpdate(DOCUMENT_ID))
+            .willReturn(Optional.of(document));
     }
 
     private CompleteDocumentIndexingRequest request() {

@@ -13,7 +13,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 
 /**
- * Document Version 파이프라인의 PARSING·CHUNKED·EMBEDDING 상태 전이 Guard를 검증한다.
+ * Document Version 파이프라인의 PARSING·CHUNKED·EMBEDDING·INDEXED 상태 전이 Guard를 검증한다.
  *
  * <p>Command Service를 우회한 잘못된 상태 변경은 즉시 실패하고 정상 순서만 허용되는지 확인한다.
  */
@@ -76,20 +76,27 @@ class DocumentVersionTest {
     }
 
     @Test
-    @DisplayName("EMBEDDING 이후 INDEXED·FAILED 전이는 유지된다")
-    void laterPipelineTransitions_arePreserved() {
-        DocumentVersion version = version(DocumentVersionStatus.CHUNKED);
+    @DisplayName("EMBEDDING Version을 INDEXED로 전환하고 완료 시각을 기록한다")
+    void markIndexed_transitionsFromEmbedding() {
+        DocumentVersion version = version(DocumentVersionStatus.EMBEDDING);
         LocalDateTime indexedAt = LocalDateTime.of(2026, 7, 29, 12, 0);
 
-        version.markEmbedding();
-        assertThat(version.getStatus()).isEqualTo(DocumentVersionStatus.EMBEDDING);
-
         version.markIndexed(indexedAt);
+
         assertThat(version.getStatus()).isEqualTo(DocumentVersionStatus.INDEXED);
         assertThat(version.getIndexedAt()).isEqualTo(indexedAt);
+    }
 
-        version.markFailed();
-        assertThat(version.getStatus()).isEqualTo(DocumentVersionStatus.FAILED);
+    @ParameterizedTest
+    @EnumSource(value = DocumentVersionStatus.class, names = "EMBEDDING", mode = EnumSource.Mode.EXCLUDE)
+    @DisplayName("EMBEDDING이 아닌 상태에서는 INDEXED 전이를 거부한다")
+    void markIndexed_rejectsUnexpectedStatus(DocumentVersionStatus status) {
+        DocumentVersion version = version(status);
+
+        assertThatThrownBy(() -> version.markIndexed(LocalDateTime.of(2026, 7, 29, 12, 0)))
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(version.getStatus()).isEqualTo(status);
+        assertThat(version.getIndexedAt()).isNull();
     }
 
     private DocumentVersion version(DocumentVersionStatus status) {

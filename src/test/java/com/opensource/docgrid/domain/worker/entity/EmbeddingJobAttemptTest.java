@@ -1,6 +1,7 @@
 package com.opensource.docgrid.domain.worker.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalDateTime;
 
@@ -13,7 +14,7 @@ import com.opensource.docgrid.domain.worker.enums.AttemptStatus;
 import com.opensource.docgrid.domain.worker.enums.WorkerStatus;
 
 /**
- * Embedding Job Attempt의 시작 상태 생성 계약과 기존 성공·실패 상태 전이를 검증하는 Entity 단위 테스트.
+ * Embedding Job Attempt의 시작 상태 생성 계약과 성공·실패 상태 전이 Guard를 검증하는 Entity 단위 테스트.
  *
  * <p>신규 시작 경로가 Job, Worker, Claim Token, 번호와 시각을 함께 보존하며 종료 정보는 시작 시점에
  * 비어 있는지 확인한다.
@@ -60,6 +61,20 @@ class EmbeddingJobAttemptTest {
 
         assertThat(attempt.getStatus()).isEqualTo(AttemptStatus.SUCCESS);
         assertThat(attempt.getEndedAt()).isEqualTo(endedAt);
+        assertThat(attempt.getDurationMs()).isEqualTo(3_000L);
+    }
+
+    @Test
+    @DisplayName("종결된 Attempt는 다시 성공 처리할 수 없다")
+    void markSuccess_rejectsCompletedAttempt() {
+        EmbeddingJobAttempt attempt = createStartedAttempt();
+        LocalDateTime firstEndedAt = STARTED_AT.plusSeconds(3);
+        attempt.markSuccess(firstEndedAt, 3_000L);
+
+        assertThatThrownBy(() -> attempt.markSuccess(STARTED_AT.plusSeconds(5), 5_000L))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("STARTED 상태의 Attempt만 SUCCESS로 전환할 수 있습니다.");
+        assertThat(attempt.getEndedAt()).isEqualTo(firstEndedAt);
         assertThat(attempt.getDurationMs()).isEqualTo(3_000L);
     }
 

@@ -2,8 +2,10 @@ package com.opensource.docgrid.domain.embedding.service.command;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -33,10 +35,17 @@ import com.opensource.docgrid.domain.document.repository.DocumentChunkRepository
 import com.opensource.docgrid.domain.document.repository.DocumentVersionRepository;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingModel;
+import com.opensource.docgrid.domain.embedding.entity.Embedding;
+import com.opensource.docgrid.domain.embedding.enums.EmbeddingStatus;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.fixture.EmbeddingModelFixture;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingRepository;
+import com.opensource.docgrid.domain.embedding.service.DocumentEmbeddingDraft;
+import com.opensource.docgrid.domain.embedding.service.EmbeddingVectorSupport;
+import com.opensource.docgrid.domain.embedding.service.command.DocumentEmbeddingTransactionService.ChunkSnapshot;
+import com.opensource.docgrid.domain.embedding.service.command.DocumentEmbeddingTransactionService.CompletionResult;
+import com.opensource.docgrid.domain.embedding.service.command.DocumentEmbeddingTransactionService.EmbeddingWork;
 import com.opensource.docgrid.domain.embedding.service.command.DocumentEmbeddingTransactionService.PreparationResult;
 import com.opensource.docgrid.domain.worker.entity.EmbeddingJobAttempt;
 import com.opensource.docgrid.domain.worker.entity.IndexingEvent;
@@ -50,7 +59,7 @@ import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
 /**
- * Chunk Embedding 준비 Transaction의 잠금 이후 검증, 상태 전이, 재개와 완료 재생 계약을 검증한다.
+ * Chunk Embedding 준비·완료 Transaction의 상태 전이, 재개, 완료 재생과 원자 저장 계약을 검증한다.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("DocumentEmbeddingTransactionService 테스트")
@@ -206,6 +215,153 @@ class DocumentEmbeddingTransactionServiceTest {
                     .isEqualTo(ErrorCode.DOCUMENT_VERSION_EMBEDDING_NOT_ALLOWED));
     }
 
+    @Test
+    @DisplayName("검증된 Draft 전체를 ACTIVE Embedding Set으로 저장하고 EMBEDDING 상태를 유지한다")
+    @SuppressWarnings("unchecked")
+    void complete_savesEmbeddingSet() {
+        prepareEntities(DocumentVersionStatus.EMBEDDING);
+        List<DocumentChunk> chunks = List.of(chunk(0, "첫 번째"), chunk(1, "두 번째"));
+        givenValidContext(chunks);
+        EmbeddingWork work = work(chunks);
+        List<DocumentEmbeddingDraft> drafts = List.of(
+            draft(chunks.get(0), 0.1f),
+            draft(chunks.get(1), 0.2f)
+        );
+
+        CompletionResult result = service.complete(
+            JOB_ID,
+            ATTEMPT_ID,
+            WORKER_ID,
+            CLAIM_TOKEN,
+            work,
+            drafts
+        );
+
+        assertThat(result.created()).isTrue();
+        assertThat(result.embeddingCount()).isEqualTo(2);
+        assertThat(result.documentVersionStatus()).isEqualTo(DocumentVersionStatus.EMBEDDING);
+        assertThat(documentVersion.getStatus()).isEqualTo(DocumentVersionStatus.EMBEDDING);
+
+        ArgumentCaptor<List<Embedding>> embeddingsCaptor = ArgumentCaptor.forClass(List.class);
+        then(embeddingRepository).should().saveAllAndFlush(embeddingsCaptor.capture());
+        Embedding first = embeddingsCaptor.getValue().get(0);
+        assertThat(first.getChunk()).isSameAs(chunks.get(0));
+        assertThat(first.getDocumentVersion()).isSameAs(documentVersion);
+        assertThat(first.getEmbeddingModel()).isSameAs(embeddingModel);
+        assertThat(first.getDimension()).isEqualTo(EmbeddingModelFixture.DIMENSION);
+        assertThat(first.getVector()).hasSize(EmbeddingModelFixture.DIMENSION);
+        assertThat(first.getStatus()).isEqualTo(EmbeddingStatus.ACTIVE);
+        then(indexingEventRepository).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("완료 단계에서 선행 요청의 전체 저장을 발견하면 Insert 없이 재생한다")
+    void complete_replaysConcurrentWinner() {
+        prepareEntities(DocumentVersionStatus.EMBEDDING);
+        List<DocumentChunk> chunks = List.of(chunk(0, "첫 번째"), chunk(1, "두 번째"));
+        givenValidContext(chunks);
+        given(embeddingRepository.countByDocumentVersionIdAndEmbeddingModelId(VERSION_ID, MODEL_ID))
+            .willReturn(2L);
+
+        CompletionResult result = service.complete(
+            JOB_ID,
+            ATTEMPT_ID,
+            WORKER_ID,
+            CLAIM_TOKEN,
+            work(chunks),
+            List.of(draft(chunks.get(0), 0.1f), draft(chunks.get(1), 0.2f))
+        );
+
+        assertThat(result.created()).isFalse();
+        assertThat(result.embeddingCount()).isEqualTo(2);
+        then(embeddingRepository).should(never()).saveAllAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("외부 호출 중 Chunk Text가 바뀌면 Draft 저장을 거부한다")
+    void complete_rejectsChangedChunk() {
+        prepareEntities(DocumentVersionStatus.EMBEDDING);
+        List<DocumentChunk> originalChunks = List.of(chunk(0, "원본"));
+        EmbeddingWork work = work(originalChunks);
+        List<DocumentChunk> changedChunks = List.of(chunk(0, "변경"));
+        givenValidContext(changedChunks);
+
+        assertThatThrownBy(() -> service.complete(
+            JOB_ID,
+            ATTEMPT_ID,
+            WORKER_ID,
+            CLAIM_TOKEN,
+            work,
+            List.of(draft(originalChunks.get(0), 0.1f))
+        ))
+            .isInstanceOfSatisfying(DocGridException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(ErrorCode.DOCUMENT_CHUNKS_INCONSISTENT));
+
+        then(embeddingRepository).should(never()).saveAllAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Vector 내용과 Hash가 일치하지 않으면 Draft 저장을 거부한다")
+    void complete_rejectsTamperedVectorHash() {
+        prepareEntities(DocumentVersionStatus.EMBEDDING);
+        List<DocumentChunk> chunks = List.of(chunk(0, "본문"));
+        givenValidContext(chunks);
+        float[] vector = vector(0.1f);
+        DocumentEmbeddingDraft tampered = new DocumentEmbeddingDraft(
+            chunks.get(0).getId(),
+            0,
+            CONTENT_HASH,
+            vector,
+            "0".repeat(64)
+        );
+
+        assertThatThrownBy(() -> service.complete(
+            JOB_ID,
+            ATTEMPT_ID,
+            WORKER_ID,
+            CLAIM_TOKEN,
+            work(chunks),
+            List.of(tampered)
+        ))
+            .isInstanceOfSatisfying(DocGridException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(ErrorCode.EMBEDDING_VECTOR_INVALID));
+
+        then(embeddingRepository).should(never()).saveAllAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("준비 Snapshot의 Model이 현재 Job 고정 Model과 다르면 Chunk를 다시 읽지 않는다")
+    void complete_rejectsChangedModel() {
+        prepareEntities(DocumentVersionStatus.EMBEDDING);
+        List<DocumentChunk> chunks = List.of(chunk(0, "본문"));
+        given(embeddingJobRepository.findByIdForUpdate(JOB_ID)).willReturn(Optional.of(embeddingJob));
+        given(embeddingJobAttemptRepository.findByEmbeddingJobIdAndClaimToken(JOB_ID, CLAIM_TOKEN))
+            .willReturn(Optional.of(attempt));
+        given(documentVersionRepository.findByIdForUpdate(VERSION_ID)).willReturn(Optional.of(documentVersion));
+        EmbeddingWork changedModelWork = new EmbeddingWork(
+            VERSION_ID,
+            99L,
+            EmbeddingModelFixture.DIMENSION,
+            work(chunks).chunks()
+        );
+
+        assertThatThrownBy(() -> service.complete(
+            JOB_ID,
+            ATTEMPT_ID,
+            WORKER_ID,
+            CLAIM_TOKEN,
+            changedModelWork,
+            List.of(draft(chunks.get(0), 0.1f))
+        ))
+            .isInstanceOfSatisfying(DocGridException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT));
+
+        then(documentChunkRepository).shouldHaveNoInteractions();
+    }
+
     private void givenValidContext(List<DocumentChunk> chunks) {
         given(embeddingJobRepository.findByIdForUpdate(JOB_ID)).willReturn(Optional.of(embeddingJob));
         given(embeddingJobAttemptRepository.findByEmbeddingJobIdAndClaimToken(JOB_ID, CLAIM_TOKEN))
@@ -274,5 +430,38 @@ class DocumentEmbeddingTransactionServiceTest {
             .build();
         ReflectionTestUtils.setField(chunk, "id", 20L + index);
         return chunk;
+    }
+
+    private EmbeddingWork work(List<DocumentChunk> chunks) {
+        return new EmbeddingWork(
+            VERSION_ID,
+            MODEL_ID,
+            EmbeddingModelFixture.DIMENSION,
+            chunks.stream()
+                .map(chunk -> new ChunkSnapshot(
+                    chunk.getId(),
+                    chunk.getChunkIndex(),
+                    chunk.getChunkText(),
+                    chunk.getContentHash()
+                ))
+                .toList()
+        );
+    }
+
+    private DocumentEmbeddingDraft draft(DocumentChunk chunk, float firstValue) {
+        float[] vector = vector(firstValue);
+        return new DocumentEmbeddingDraft(
+            chunk.getId(),
+            chunk.getChunkIndex(),
+            chunk.getContentHash(),
+            vector,
+            EmbeddingVectorSupport.calculateHash(vector)
+        );
+    }
+
+    private float[] vector(float firstValue) {
+        float[] vector = new float[EmbeddingModelFixture.DIMENSION];
+        vector[0] = firstValue;
+        return vector;
     }
 }

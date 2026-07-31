@@ -1,5 +1,6 @@
 package com.opensource.docgrid.domain.embedding.repository;
 
+import java.util.Collection;
 import java.util.Optional;
 
 import jakarta.persistence.LockModeType;
@@ -10,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
+import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 
 /**
  * Embedding Job Queue의 영속성과 Claim 후보 행 잠금을 담당하는 Repository.
@@ -18,6 +20,14 @@ import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
  * 단일 Job의 후속 상태·Attempt 변경에는 표준 JPA 쓰기 행 잠금을 제공한다.
  */
 public interface EmbeddingJobRepository extends JpaRepository<EmbeddingJob, Long> {
+
+    /**
+     * 같은 Version에 동시에 살아 있는 Job이 하나뿐인지 완료 직전에 확인한다.
+     */
+    long countByDocumentVersionIdAndStatusIn(
+        Long documentVersionId,
+        Collection<EmbeddingJobStatus> statuses
+    );
 
     /**
      * 우선순위 Queue 정책에 따라 다음 PENDING Job 한 건을 잠금 상태로 조회한다.

@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import com.opensource.docgrid.domain.document.enums.DocumentSourceType;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
 import com.opensource.docgrid.domain.document.enums.DocumentType;
+import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.global.common.entity.BaseEntity;
@@ -75,8 +76,8 @@ public class Document extends BaseEntity {
     @JoinColumn(name = "owner_user_id", nullable = false)
     private User owner;
 
-    // 현재 활성 버전. documents <-> document_versions 순환 FK이므로 반드시 nullable.
-    // 최초 버전은 업로드 접수 시 설정하며, 후속 버전은 색인 완료 후 갱신한다.
+    // 현재 버전 포인터. 최초 업로드 중에는 처리 대상을, 완료 후에는 검색 가능한 최신 Version을 가리킨다.
+    // documents <-> document_versions 순환 FK이므로 반드시 nullable이다.
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "current_version_id")
     private DocumentVersion currentVersion;
@@ -123,6 +124,34 @@ public class Document extends BaseEntity {
 
     public void updateCurrentVersion(DocumentVersion currentVersion) {
         this.currentVersion = currentVersion;
+    }
+
+    /**
+     * 같은 문서에 속하고 인덱싱을 마친 Version을 현재 검색 대상으로 활성화한다.
+     *
+     * <p>업로드 접수 단계의 포인터 설정은 {@link #updateCurrentVersion(DocumentVersion)}이 담당하고,
+     * 이 메서드는 완료 Transaction 경계에서 Version 포인터와 문서 상태를 함께 변경한다.
+     *
+     * @param documentVersion 새 검색 대상이 될 완료 Version
+     */
+    public void activateIndexedVersion(DocumentVersion documentVersion) {
+        // 1. 영속 식별자를 기준으로 다른 문서의 Version이 연결되는 것을 차단한다.
+        if (id == null
+            || documentVersion == null
+            || documentVersion.getDocument() == null
+            || documentVersion.getDocument().getId() == null
+            || !id.equals(documentVersion.getDocument().getId())) {
+            throw new IllegalArgumentException("현재 문서에 속한 Version만 활성화할 수 있습니다.");
+        }
+
+        // 2. 검색 준비가 끝난 Version만 현재 포인터로 승격한다.
+        if (documentVersion.getStatus() != DocumentVersionStatus.INDEXED) {
+            throw new IllegalStateException("INDEXED 상태의 문서 버전만 활성화할 수 있습니다.");
+        }
+
+        // 3. 포인터와 문서 상태를 함께 변경해 검색 조건이 중간 상태를 관찰하지 않게 한다.
+        this.currentVersion = documentVersion;
+        this.status = DocumentStatus.INDEXED;
     }
 
     public void markIndexing() {

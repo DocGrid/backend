@@ -116,7 +116,14 @@ public class EmbeddingJobAttempt extends BaseEntity {
         this.errorMessage = errorMessage;
     }
 
+    /**
+     * 실행 중인 Attempt를 성공 상태로 종결한다.
+     */
     public void markSuccess(LocalDateTime endedAt, Long durationMs) {
+        // 한 Attempt가 두 번 종결되면 완료 재생의 기준 시각과 소요 시간이 변하므로 차단한다.
+        if (status != AttemptStatus.STARTED) {
+            throw new IllegalStateException("STARTED 상태의 Attempt만 SUCCESS로 전환할 수 있습니다.");
+        }
         this.status = AttemptStatus.SUCCESS;
         this.endedAt = endedAt;
         this.durationMs = durationMs;

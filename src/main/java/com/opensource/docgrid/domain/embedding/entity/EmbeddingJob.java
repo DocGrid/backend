@@ -157,7 +157,16 @@ public class EmbeddingJob extends BaseEntity {
         }
     }
 
+    /**
+     * 현재 처리 중인 Job을 최종 인덱싱 완료 상태로 전환한다.
+     *
+     * <p>Claim 소유권 정보는 완료 재생과 감사에 사용하므로 완료 후에도 보존한다.
+     */
     public void markIndexed(LocalDateTime completedAt) {
+        // 완료 Transaction만 PROCESSING Job을 종결할 수 있어야 늦은 요청이 결과를 덮어쓰지 않는다.
+        if (status != EmbeddingJobStatus.PROCESSING) {
+            throw new IllegalStateException("PROCESSING 상태의 Job만 INDEXED로 전환할 수 있습니다.");
+        }
         this.status = EmbeddingJobStatus.INDEXED;
         this.completedAt = completedAt;
     }

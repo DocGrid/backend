@@ -3,6 +3,7 @@ package com.opensource.docgrid.domain.embedding.service.command;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Set;
@@ -82,7 +83,8 @@ public class DocumentIndexingCompletionService {
     ) {
         // 1. Claim 교체와 같은 Job의 중복 완료를 직렬화하고 완료 기준 시각을 고정한다.
         EmbeddingJob embeddingJob = findLockedJob(jobId);
-        LocalDateTime completedAt = LocalDateTime.now(clock);
+        // PostgreSQL TIMESTAMP 정밀도와 맞춰 최초 응답과 DB에서 읽은 재생 응답의 시각을 동일하게 유지한다.
+        LocalDateTime completedAt = LocalDateTime.now(clock).truncatedTo(ChronoUnit.MICROS);
 
         // 2. 이미 완료된 같은 실행은 저장된 최초 결과를 재생하고 Lease와 가변 검색 상태는 다시 검증하지 않는다.
         if (embeddingJob.getStatus() == EmbeddingJobStatus.INDEXED) {

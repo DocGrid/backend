@@ -1,9 +1,15 @@
 package com.opensource.docgrid.domain.embedding.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,6 +48,8 @@ class DocumentIndexingCompletionIntegrationTest {
 
     private static final String TEST_SCHEMA = "docgrid_index_completion_integration_test";
     private static final int VECTOR_DIMENSION = 1024;
+    private static final int CONCURRENT_REQUESTS = 2;
+    private static final long TIMEOUT_SECONDS = 10;
     private static final String CLAIM_TOKEN = "34c19d16-6ae1-4f6a-a35d-0123456789ab";
     private static final String CONTENT_HASH =
         "26e4a23eec4241e034f1b4631f0222f1895847637c35e77687d5945f75edb42c";
@@ -148,6 +156,82 @@ class DocumentIndexingCompletionIntegrationTest {
             .extracting(VectorSearchCandidate::chunkText)
             .containsExactly("새 검색 본문");
         assertThat(indexedEventCount(context.jobId())).isOne();
+    }
+
+    @Test
+    @DisplayName("같은 실행의 두 완료 요청은 동일 응답과 단일 INDEXED 이벤트로 수렴한다")
+    void completeConcurrently_convergesToStoredResponse() throws Exception {
+        ExecutionContext context = insertFirstVersionExecution();
+        CompleteDocumentIndexingRequest request =
+            new CompleteDocumentIndexingRequest(context.workerId(), CLAIM_TOKEN);
+        CyclicBarrier startBarrier = new CyclicBarrier(CONCURRENT_REQUESTS);
+        ExecutorService executor = Executors.newFixedThreadPool(CONCURRENT_REQUESTS);
+
+        List<DocumentIndexingCompletionResponse> responses;
+        try {
+            List<Future<DocumentIndexingCompletionResponse>> futures = List.of(
+                executor.submit(() -> completeAfterBarrier(context, request, startBarrier)),
+                executor.submit(() -> completeAfterBarrier(context, request, startBarrier))
+            );
+            responses = List.of(
+                futures.get(0).get(TIMEOUT_SECONDS, TimeUnit.SECONDS),
+                futures.get(1).get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            );
+        } finally {
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+        }
+
+        assertThat(responses).hasSize(2);
+        assertThat(responses.get(1)).isEqualTo(responses.get(0));
+        assertThat(indexedEventCount(context.jobId())).isOne();
+        assertThat(queryString("SELECT status FROM embedding_jobs WHERE id = ?", context.jobId()))
+            .isEqualTo("INDEXED");
+        assertThat(queryString(
+            "SELECT status FROM embedding_job_attempts WHERE id = ?",
+            context.attemptId()
+        )).isEqualTo("SUCCESS");
+    }
+
+    @Test
+    @DisplayName("INDEXED 이벤트 저장 실패 시 이전 STALE 처리와 모든 완료 상태를 Rollback한다")
+    void complete_rollsBackAllChanges_whenFinalEventInsertFails() {
+        ExecutionContext context = insertReplacementVersionExecution();
+        installFailingIndexedEventTrigger();
+
+        try {
+            assertThatThrownBy(() -> completionService.complete(
+                context.jobId(),
+                context.attemptId(),
+                new CompleteDocumentIndexingRequest(context.workerId(), CLAIM_TOKEN)
+            )).isInstanceOf(RuntimeException.class);
+        } finally {
+            removeFailingIndexedEventTrigger();
+        }
+
+        assertThat(queryLong(
+            "SELECT current_version_id FROM documents WHERE id = ?",
+            context.documentId()
+        )).isEqualTo(context.previousVersionId());
+        assertThat(queryString(
+            "SELECT status FROM embeddings WHERE document_version_id = ?",
+            context.previousVersionId()
+        )).isEqualTo("ACTIVE");
+        assertThat(queryString(
+            "SELECT status FROM embeddings WHERE document_version_id = ?",
+            context.targetVersionId()
+        )).isEqualTo("ACTIVE");
+        assertThat(queryString(
+            "SELECT status FROM document_versions WHERE id = ?",
+            context.targetVersionId()
+        )).isEqualTo("EMBEDDING");
+        assertThat(queryString("SELECT status FROM embedding_jobs WHERE id = ?", context.jobId()))
+            .isEqualTo("PROCESSING");
+        assertThat(queryString(
+            "SELECT status FROM embedding_job_attempts WHERE id = ?",
+            context.attemptId()
+        )).isEqualTo("STARTED");
+        assertThat(indexedEventCount(context.jobId())).isZero();
     }
 
     private ExecutionContext insertFirstVersionExecution() {
@@ -356,6 +440,44 @@ class DocumentIndexingCompletionIntegrationTest {
             List.of(context.documentId()),
             5
         );
+    }
+
+    private DocumentIndexingCompletionResponse completeAfterBarrier(
+        ExecutionContext context,
+        CompleteDocumentIndexingRequest request,
+        CyclicBarrier startBarrier
+    ) throws Exception {
+        startBarrier.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        return completionService.complete(context.jobId(), context.attemptId(), request);
+    }
+
+    private void installFailingIndexedEventTrigger() {
+        jdbcTemplate.execute("""
+            CREATE OR REPLACE FUNCTION fail_indexed_event_insert()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                IF NEW.event_type = 'INDEXED' THEN
+                    RAISE EXCEPTION 'forced indexed event failure';
+                END IF;
+                RETURN NEW;
+            END;
+            $$
+            """);
+        jdbcTemplate.execute("""
+            CREATE TRIGGER trg_fail_indexed_event_insert
+            BEFORE INSERT ON indexing_events
+            FOR EACH ROW
+            EXECUTE FUNCTION fail_indexed_event_insert()
+            """);
+    }
+
+    private void removeFailingIndexedEventTrigger() {
+        jdbcTemplate.execute("""
+            DROP TRIGGER IF EXISTS trg_fail_indexed_event_insert ON indexing_events
+            """);
+        jdbcTemplate.execute("DROP FUNCTION IF EXISTS fail_indexed_event_insert()");
     }
 
     private String vector(float firstValue) {

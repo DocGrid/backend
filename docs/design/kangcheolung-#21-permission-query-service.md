@@ -34,7 +34,7 @@ DEPT 권한  → 매 요청마다 live 조회 (JOIN 여러 번)
 
 ### `domain/permission/service/query/PermissionQueryService.java`
 
-이 이슈의 핵심 파일이며, 6개의 public 메서드를 제공한다(`canReadCollection`은 이후 리팩토링에서 추가됨 — 아래 참고). 컬렉션 대상 3종(`canReadCollection`/`canWriteCollection`/`canAdminCollection`)은 각각 ID로 조회하는 버전과, 이미 조회된 `DocumentCollection` 엔티티를 받는 버전 2개씩 오버로드로 제공한다 — 호출부가 이미 엔티티를 들고 있으면 중복 조회 없이 엔티티 버전을 바로 쓸 수 있다.
+이 이슈의 핵심 파일이며, 6개의 권한 판정 그룹(`canReadDocument`/`canWriteDocument`/`canAdminDocument`/`canReadCollection`/`canWriteCollection`/`canAdminCollection`, `canReadCollection`은 이후 리팩토링에서 추가됨 — 아래 참고)을 제공한다. 컬렉션 대상 3종은 각각 ID로 조회하는 버전과, 이미 조회된 `DocumentCollection` 엔티티를 받는 버전 2개씩 오버로드로 제공해서 — 문서 3종(오버로드 없음) + 컬렉션 3종(오버로드 2개씩)으로 공개 메서드 시그니처는 총 9개다. 호출부가 이미 엔티티를 들고 있으면 중복 조회 없이 엔티티 버전을 바로 쓸 수 있다.
 
 #### `canReadDocument` (5단계)
 
@@ -172,7 +172,7 @@ if (cacheRepository.existsValidReadCache(...)) { ... }
 $ ./gradlew test --tests "*PermissionQueryServiceTest*"
 BUILD SUCCESSFUL
 ```
-`PermissionQueryServiceTest` 43개 모두 통과(현재 기준 재검증) — 이 서비스의 메서드 6개(`canReadDocument`, `canWriteDocument`, `canAdminDocument`, `canReadCollection`, `canWriteCollection`, `canAdminCollection`) 각각의 단계별 분기를 검증하는 테스트가 다수 포함되어 있다.
+`PermissionQueryServiceTest` 44개 모두 통과(현재 기준 재검증) — 이 서비스의 권한 판정 그룹 6개(`canReadDocument`, `canWriteDocument`, `canAdminDocument`, `canReadCollection`, `canWriteCollection`, `canAdminCollection`, 오버로드 포함 공개 메서드 시그니처 9개) 각각의 단계별 분기를 검증하는 테스트가 다수 포함되어 있다.
 
 ---
 

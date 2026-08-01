@@ -211,7 +211,7 @@ GET /collections
 $ ./gradlew test --tests "*CollectionCommandServiceTest*" --tests "*CollectionQueryServiceTest*"
 BUILD SUCCESSFUL
 ```
-`CollectionCommandServiceTest`(총 15개)에 `deleteCollection`/`removeDocument` 관련 케이스가 `#16`의 `createCollection`/`addDocument` 케이스와 함께 묶여 있다(클래스 자체는 `#16`에서 이미 생성, 이 이슈에서 케이스만 추가). `CollectionQueryServiceTest`(총 4개, `#16` 문서 참고 — `canReadCollection` 도입으로 케이스 추가됨)에 `getMyCollections` 케이스가 `getCollection`과 함께 있다.
+`CollectionCommandServiceTest`(총 15개)에 `deleteCollection`/`removeDocument` 관련 케이스가 `#16`의 `createCollection`/`addDocument` 케이스와 함께 묶여 있다(클래스 자체는 `#16`에서 이미 생성, 이 이슈에서 케이스만 추가). `CollectionQueryServiceTest`(총 4개, `#16` 문서 참고 — `canReadCollection` 도입으로 케이스 추가됨). 실제로는 4개 전부 `getCollection` 케이스이고 `getMyCollections`에 대한 단위 테스트는 없다 — 코드리뷰로 발견된 기존 테스트 커버리지 공백이며, 별도로 추가가 필요하다.
 
 ---
 

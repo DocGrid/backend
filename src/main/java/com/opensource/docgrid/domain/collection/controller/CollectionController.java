@@ -97,7 +97,7 @@ public class CollectionController {
 
     @Operation(
             summary = "컬렉션에 문서 추가",
-            description = "컬렉션에 문서를 추가합니다. 컬렉션 쓰기 권한(WRITE, 소유자 포함)이 있는 사용자만 가능합니다. 이미 추가된 문서면 409를 반환합니다."
+            description = "컬렉션에 문서를 추가합니다. 컬렉션 쓰기 권한(WRITE 또는 ADMIN, 소유자 포함)이 있는 사용자만 가능합니다. 이미 추가된 문서면 409를 반환합니다."
     )
     @PostMapping("/{collectionId}/documents")
     public ResponseEntity<ApiResponse<CollectionDocumentResponse>> addDocument(

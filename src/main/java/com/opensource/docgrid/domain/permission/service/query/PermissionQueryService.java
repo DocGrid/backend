@@ -251,8 +251,9 @@ public class PermissionQueryService {
         return canReadCollection(userId, getActiveCollection(collectionId));
     }
 
-    // 이미 조회된 컬렉션 엔티티로 판단 — 호출부가 이미 non-deleted 엔티티임을 보장해야 함
+    // 이미 조회된 컬렉션 엔티티로 판단 — soft-delete된 엔티티면 COLLECTION_NOT_FOUND
     public boolean canReadCollection(Long userId, DocumentCollection collection) {
+        validateActiveCollection(collection);
         if (collection.getOwner().getId().equals(userId)) return true;
         if (collection.getVisibility() == VisibilityType.PUBLIC) return true;
         Long collectionId = collection.getId();
@@ -267,6 +268,7 @@ public class PermissionQueryService {
     }
 
     public boolean canWriteCollection(Long userId, DocumentCollection collection) {
+        validateActiveCollection(collection);
         if (collection.getOwner().getId().equals(userId)) return true;
         Long collectionId = collection.getId();
         if (collectionPermissionRepository.existsUserWritePermission(userId, collectionId)) return true;
@@ -280,6 +282,7 @@ public class PermissionQueryService {
     }
 
     public boolean canAdminCollection(Long userId, DocumentCollection collection) {
+        validateActiveCollection(collection);
         if (collection.getOwner().getId().equals(userId)) return true;
         Long collectionId = collection.getId();
         if (collectionPermissionRepository.existsUserAdminPermission(userId, collectionId)) return true;
@@ -288,13 +291,17 @@ public class PermissionQueryService {
     }
 
     // collectionId로 조회하되, status가 DELETED인 컬렉션은 필터링해서 제외한다 (없는 것으로 취급).
-    // → DELETED가 아닌 컬렉션만 찾아서 반환하고, 없거나 DELETED면 COLLECTION_NOT_FOUND를 던진다.
-    // collectionId로 조회하는 다른 지점에서도 이 필터링을 동일하게 적용해야
-    // "삭제된 컬렉션을 살아있는 것처럼" 취급하는 구멍이 생기지 않는다.
     private DocumentCollection getActiveCollection(Long collectionId) {
         return collectionRepository.findById(collectionId)
                 .filter(c -> c.getStatus() != CollectionStatus.DELETED)
                 .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
+    }
+
+    // 엔티티 오버로드 방어 로직 — 호출부가 soft-delete 필터를 빠뜨리고 넘긴 엔티티도 여기서 최종 차단한다(추가 조회 없음).
+    private void validateActiveCollection(DocumentCollection collection) {
+        if (collection.getStatus() == CollectionStatus.DELETED) {
+            throw new DocGridException(ErrorCode.COLLECTION_NOT_FOUND);
+        }
     }
 
     private double ms(long fromNano) {

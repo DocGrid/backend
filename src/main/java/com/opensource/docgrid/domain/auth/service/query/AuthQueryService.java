@@ -26,9 +26,7 @@ public class AuthQueryService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new DocGridException(ErrorCode.USER_NOT_FOUND));
 
-        List<String> roles = userRoleRepository.findAllWithRoleByUserId(userId).stream()
-                .map(ur -> ur.getRole().getCode())
-                .toList();
+        List<String> roles = userRoleRepository.findRoleCodesByUserId(userId);
 
         return MeResponse.of(user, roles);
     }

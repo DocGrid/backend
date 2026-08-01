@@ -15,6 +15,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.opensource.docgrid.domain.collection.entity.DocumentCollection;
 import com.opensource.docgrid.domain.collection.fixture.CollectionFixture;
 import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
 import com.opensource.docgrid.domain.document.entity.Document;
@@ -308,6 +309,129 @@ class PermissionQueryServiceTest {
         boolean result = service.canAdminDocument(otherUserId, CollectionFixture.DOCUMENT_ID);
 
         assertThat(result).isFalse();
+    }
+
+    // ==================== canReadCollection ====================
+
+    @Test
+    @DisplayName("컬렉션 소유자는 canReadCollection이 true다")
+    void canReadCollection_owner_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
+                .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
+
+        boolean result = service.canReadCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isTrue();
+        then(collectionPermissionRepository).should(never()).existsUserReadPermission(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID);
+    }
+
+    @Test
+    @DisplayName("PUBLIC 컬렉션은 누구나 canReadCollection이 true다")
+    void canReadCollection_public_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection collection = CollectionFixture.createCollection(owner);
+        org.springframework.test.util.ReflectionTestUtils.setField(collection, "visibility", VisibilityType.PUBLIC);
+        Long otherUserId = 99L;
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+
+        boolean result = service.canReadCollection(otherUserId, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isTrue();
+        then(collectionPermissionRepository).should(never()).existsUserReadPermission(otherUserId, CollectionFixture.COLLECTION_ID);
+    }
+
+    @Test
+    @DisplayName("USER 권한으로 read가 부여된 경우 canReadCollection이 true다")
+    void canReadCollection_userPermission_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Long otherUserId = 99L;
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
+                .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
+        given(collectionPermissionRepository.existsUserReadPermission(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(true);
+
+        boolean result = service.canReadCollection(otherUserId, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    @DisplayName("ROLE live 권한이 있으면 canReadCollection이 true다")
+    void canReadCollection_roleLive_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Long otherUserId = 99L;
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
+                .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
+        given(collectionPermissionRepository.existsUserReadPermission(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsRoleReadPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(true);
+
+        boolean result = service.canReadCollection(otherUserId, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    @DisplayName("DEPARTMENT live 권한이 있으면 canReadCollection이 true다")
+    void canReadCollection_deptLive_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Long otherUserId = 99L;
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
+                .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
+        given(collectionPermissionRepository.existsUserReadPermission(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsRoleReadPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsDeptReadPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(true);
+
+        boolean result = service.canReadCollection(otherUserId, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    @DisplayName("권한이 없으면 canReadCollection이 false다")
+    void canReadCollection_noPermission_returnsFalse() {
+        User owner = CollectionFixture.createOwner();
+        Long otherUserId = 99L;
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
+                .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
+        given(collectionPermissionRepository.existsUserReadPermission(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsRoleReadPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsDeptReadPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+
+        boolean result = service.canReadCollection(otherUserId, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    @DisplayName("컬렉션이 없으면 canReadCollection 호출 시 COLLECTION_NOT_FOUND 예외가 발생한다")
+    void canReadCollection_collectionNotFound_throwsException() {
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.canReadCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.COLLECTION_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("삭제된 컬렉션이면 canReadCollection 호출 시 COLLECTION_NOT_FOUND 예외가 발생한다")
+    void canReadCollection_collectionDeleted_throwsException() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection collection = CollectionFixture.createCollection(owner);
+        org.springframework.test.util.ReflectionTestUtils.setField(collection, "status", com.opensource.docgrid.domain.collection.enums.CollectionStatus.DELETED);
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+
+        assertThatThrownBy(() -> service.canReadCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.COLLECTION_NOT_FOUND);
     }
 
     // ==================== canWriteCollection ====================

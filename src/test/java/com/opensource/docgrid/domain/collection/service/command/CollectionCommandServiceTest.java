@@ -159,7 +159,7 @@ class CollectionCommandServiceTest {
         AddDocumentRequest request = new AddDocumentRequest(CollectionFixture.DOCUMENT_ID);
 
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
-        given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID)).willReturn(true);
+        given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, collection)).willReturn(true);
         given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
         given(collectionDocumentRepository.existsByCollectionIdAndDocumentId(
                 CollectionFixture.COLLECTION_ID, CollectionFixture.DOCUMENT_ID)).willReturn(false);
@@ -204,7 +204,7 @@ class CollectionCommandServiceTest {
         User owner = CollectionFixture.createOwner();
         DocumentCollection collection = CollectionFixture.createCollection(owner);
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
-        given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID)).willReturn(true);
+        given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, collection)).willReturn(true);
         given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> collectionCommandService.addDocument(
@@ -220,7 +220,7 @@ class CollectionCommandServiceTest {
         DocumentCollection collection = CollectionFixture.createCollection(owner);
         Document document = CollectionFixture.createDocument(owner);
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
-        given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID)).willReturn(true);
+        given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, collection)).willReturn(true);
         given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
         given(collectionDocumentRepository.existsByCollectionIdAndDocumentId(
                 CollectionFixture.COLLECTION_ID, CollectionFixture.DOCUMENT_ID)).willReturn(true);

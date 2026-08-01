@@ -159,9 +159,10 @@ public CollectionResponse createCollection(Long userId, CreateCollectionRequest 
 
 public CollectionDocumentResponse addDocument(Long collectionId, Long userId, AddDocumentRequest request) {
     DocumentCollection collection = collectionRepository.findById(collectionId)
+            .filter(c -> c.getStatus() != CollectionStatus.DELETED)
             .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
 
-    if (!permissionQueryService.canWriteCollection(userId, collectionId)) {
+    if (!permissionQueryService.canWriteCollection(userId, collection)) {
         throw new DocGridException(ErrorCode.PERMISSION_DENIED);
     }
 
@@ -185,19 +186,23 @@ public CollectionDocumentResponse addDocument(Long collectionId, Long userId, Ad
 - `userRepository.getReferenceById(userId)`: `JpaRepository`가 기본 제공하는 프록시 조회 메서드. `SearchResultCommandService`(RAG 블록) 등이 쓰는 `entityManager.getReference()`와 동일한 목적(불필요한 SELECT 생략)을, Spring Data가 표준으로 제공하는 방식으로 구현한 것이다.
 - `addDocument()`는 `#21`에서 만든 `PermissionQueryService.canWriteCollection()`을 그대로 재사용한다 — 이 이슈에서 권한 판단 로직을 새로 만들지 않는다.
 - 존재 확인(컬렉션) → 권한 확인 → 존재 확인(문서) → 중복 확인 순서다. 컬렉션이 없는데 권한부터 확인하면 404 대신 엉뚱한 에러가 날 수 있어 존재 확인이 항상 먼저 온다.
-- **확인된 갭**: `collectionRepository.findById(collectionId)`는 `status`를 전혀 필터링하지 않는다(`CollectionRepository`에는 `findAllByOwnerIdAndStatus`만 있고, ID 단건 조회에 상태 조건을 건 메서드가 없다). 즉 `status=DELETED`(소프트 삭제된) 컬렉션에도 `addDocument()`로 문서를 계속 추가할 수 있다 — 아래 "남은 이슈/TODO"에 기록.
+- ~~**확인된 갭**: `collectionRepository.findById(collectionId)`는 `status`를 전혀 필터링하지 않는다(`CollectionRepository`에는 `findAllByOwnerIdAndStatus`만 있고, ID 단건 조회에 상태 조건을 건 메서드가 없다). 즉 `status=DELETED`(소프트 삭제된) 컬렉션에도 `addDocument()`로 문서를 계속 추가할 수 있다 — 아래 "남은 이슈/TODO"에 기록.~~ → 해결됨: `findById(...).filter(c -> c.getStatus() != CollectionStatus.DELETED)`로 soft-delete된 컬렉션을 걸러내도록 수정.
 
 ### 5. `domain/collection/service/query/CollectionQueryService.java` — `getCollection`
 
 ```java
-public CollectionResponse getCollection(Long collectionId) {
+public CollectionResponse getCollection(Long userId, Long collectionId) {
     DocumentCollection collection = collectionRepository.findById(collectionId)
+            .filter(c -> c.getStatus() != CollectionStatus.DELETED)
             .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
+    if (!permissionQueryService.canReadCollection(userId, collection)) {
+        throw new DocGridException(ErrorCode.PERMISSION_DENIED);
+    }
     return collectionConverter.toResponse(collection);
 }
 ```
 
-**주의**: 컬렉션 단건 조회는 권한 체크를 하지 않는다. `visibility`/`status`와 무관하게 ID만 알면 누구나(인증된 사용자면) 조회 가능하다. 이건 명시적으로 의도된 설계인지, 이번 이슈 범위에서 권한 체크가 빠진 것인지 코드만으로는 확정하기 어렵다 — 컬렉션 메타데이터(이름/설명 정도)만 노출되고 소속 문서 내용은 노출되지 않아서 위험도가 낮다고 판단했을 가능성이 있다.
+~~**주의**: 컬렉션 단건 조회는 권한 체크를 하지 않는다. `visibility`/`status`와 무관하게 ID만 알면 누구나(인증된 사용자면) 조회 가능하다. 이건 명시적으로 의도된 설계인지, 이번 이슈 범위에서 권한 체크가 빠진 것인지 코드만으로는 확정하기 어렵다 — 컬렉션 메타데이터(이름/설명 정도)만 노출되고 소속 문서 내용은 노출되지 않아서 위험도가 낮다고 판단했을 가능성이 있다.~~ → 해결됨: `PermissionQueryService.canReadCollection()`(소유자/PUBLIC/USER·ROLE·DEPARTMENT 권한)을 추가해서 `getCollection()`에 명시적으로 연결했다. `#21` 문서에 `canReadCollection` 메서드 설명 추가 필요.
 
 ### 6. `domain/collection/repository/CollectionRepository.java`, `CollectionDocumentRepository.java`
 
@@ -277,7 +282,7 @@ POST /collections/1/documents
 $ ./gradlew test --tests "*CollectionCommandServiceTest*" --tests "*CollectionQueryServiceTest*"
 BUILD SUCCESSFUL
 ```
-`CollectionCommandServiceTest` 15개, `CollectionQueryServiceTest` 2개, 총 17개 모두 통과(현재 기준 재검증).
+`CollectionCommandServiceTest` 15개, `CollectionQueryServiceTest` 4개(`canReadCollection` 도입으로 권한없음/삭제된 컬렉션 케이스 추가), 총 19개 모두 통과(현재 기준 재검증).
 
 ---
 
@@ -301,14 +306,16 @@ BUILD SUCCESSFUL
 
 **컬렉션 트리(`parentCollection`)는 자기참조 FK만 준비하고 순회 API는 만들지 않음**: 나중에 "하위 컬렉션 전체 조회" 같은 기능이 필요해질 걸 대비해 스키마는 미리 잡아뒀지만, 지금 당장 필요하지 않은 API까지 만들지 않았다(Simplicity First).
 
+**(추가) `canReadCollection` 도입 + soft-delete 필터를 "엔티티 오버로드"로 통일**: `getCollection()`/`addDocument()`가 컬렉션을 조회한 뒤 `PermissionQueryService`를 ID로 다시 호출하면 같은 row를 두 번 SELECT하게 된다. `PermissionQueryService.canReadCollection`/`canWriteCollection`/`canAdminCollection`을 각각 "ID 버전(조회 후 위임) + 엔티티 버전(조회 없이 판단)"으로 나눠서, 이미 엔티티를 들고 있는 호출부는 엔티티 버전을 호출해 중복 조회를 없앴다. soft-delete 필터(`status != DELETED`)는 `AuthCommandService.signup()`의 부서 활성 필터와 동일하게 `findById(...).filter(...).orElseThrow(...)` 관용구로 통일했다.
+
 ---
 
 ## 남은 이슈 / TODO
 
-- `getCollection()`(단건 조회)에 권한 체크가 없다 — 컬렉션 메타데이터만 노출되어 위험도가 낮다고 판단했을 수 있으나, 명시적으로 재검토가 필요하다.
-- `getCollection()`과 `addDocument()` 둘 다 `collectionRepository.findById()`만 쓰고 `status`를 확인하지 않는다 — `#29`에서 소프트 삭제(`status=DELETED`)를 도입한 이후에도 이 두 경로는 여전히 삭제된 컬렉션에 접근/문서 추가가 가능하다(코드리뷰 지적사항, `CollectionRepository`에 ID+ACTIVE 조합 조회 메서드 추가가 필요).
+- ~~`getCollection()`(단건 조회)에 권한 체크가 없다~~ → 해결됨: `canReadCollection()` 추가 (아래 "설계 결정 요약" 참고).
+- ~~`getCollection()`과 `addDocument()` 둘 다 `collectionRepository.findById()`만 쓰고 `status`를 확인하지 않는다~~ → 해결됨: `.filter(c -> c.getStatus() != CollectionStatus.DELETED)`를 두 메서드 모두에 추가. `#29`의 `deleteCollection()`/`removeDocument()`에도 동일하게 적용됨(해당 문서 참고).
 - `CollectionStatus.ARCHIVED`는 정의만 되어 있고 전환 로직이 없다.
-- `CollectionPermission`/`DocumentPermission` 엔티티의 Javadoc에 이미 명시된 TODO: `target_type`별로 단일 FK만 채워져야 한다는 규칙이 DB CHECK 제약으로 강제되지 않고 애플리케이션 검증(`validateTargetType()`, `#18`)에만 의존한다.
+- ~~`CollectionPermission`/`DocumentPermission` 엔티티의 Javadoc에 이미 명시된 TODO: `target_type`별로 단일 FK만 채워져야 한다는 규칙이 DB CHECK 제약으로 강제되지 않고 애플리케이션 검증(`validateTargetType()`, `#18`)에만 의존한다.~~ → 확인 결과 이미 해결되어 있음: `V11__create_collection_permissions.sql`/`V12__create_document_permissions.sql`에 `CHECK` 제약이 반영되어 있다(엔티티 Javadoc만 갱신되지 않은 상태였음).
 
 ## 다음 단계
 

@@ -71,6 +71,7 @@ public List<CollectionResponse> getMyCollections(Long userId) {
 // 컬렉션 soft delete — 소유자만 가능
 public void deleteCollection(Long collectionId, Long userId) {
     DocumentCollection collection = collectionRepository.findById(collectionId)
+            .filter(c -> c.getStatus() != CollectionStatus.DELETED)
             .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
 
     if (!collection.getOwner().getId().equals(userId)) {
@@ -94,6 +95,7 @@ public void deleteCollection(Long collectionId, Long userId) {
 // 컬렉션에서 문서 제거 — 소유자만 가능
 public void removeDocument(Long collectionId, Long documentId, Long userId) {
     DocumentCollection collection = collectionRepository.findById(collectionId)
+            .filter(c -> c.getStatus() != CollectionStatus.DELETED)
             .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
 
     if (!collection.getOwner().getId().equals(userId)) {
@@ -209,7 +211,7 @@ GET /collections
 $ ./gradlew test --tests "*CollectionCommandServiceTest*" --tests "*CollectionQueryServiceTest*"
 BUILD SUCCESSFUL
 ```
-`CollectionCommandServiceTest`(총 15개)에 `deleteCollection`/`removeDocument` 관련 케이스가 `#16`의 `createCollection`/`addDocument` 케이스와 함께 묶여 있다(클래스 자체는 `#16`에서 이미 생성, 이 이슈에서 케이스만 추가). `CollectionQueryServiceTest`(총 2개)에 `getMyCollections` 케이스가 `getCollection`과 함께 있다.
+`CollectionCommandServiceTest`(총 15개)에 `deleteCollection`/`removeDocument` 관련 케이스가 `#16`의 `createCollection`/`addDocument` 케이스와 함께 묶여 있다(클래스 자체는 `#16`에서 이미 생성, 이 이슈에서 케이스만 추가). `CollectionQueryServiceTest`(총 4개, `#16` 문서 참고 — `canReadCollection` 도입으로 케이스 추가됨)에 `getMyCollections` 케이스가 `getCollection`과 함께 있다.
 
 ---
 
@@ -238,7 +240,7 @@ BUILD SUCCESSFUL
 ## 남은 이슈 / TODO
 
 - `getMyCollections()`가 페이지네이션 없이 전체 목록을 반환한다 — 컬렉션 수가 많아지는 시나리오는 아직 없어 이슈로 등록하지 않음.
-- `deleteCollection()`/`removeDocument()` 둘 다 `collectionRepository.findById()`로만 컬렉션을 조회한다 — `#16`에서 이미 지적된 것과 같은 이유로, 이미 `status=DELETED`인 컬렉션에 대해서도 (멱등하게) 재호출이 가능하다. 실질적 위험은 낮지만(이미 지워진 걸 또 지우는 정도), `#16`의 TODO와 함께 ID+ACTIVE 조합 조회로 정리할 필요가 있다.
+- ~~`deleteCollection()`/`removeDocument()` 둘 다 `collectionRepository.findById()`로만 컬렉션을 조회한다 — `#16`에서 이미 지적된 것과 같은 이유로, 이미 `status=DELETED`인 컬렉션에 대해서도 (멱등하게) 재호출이 가능하다.~~ → 해결됨: 두 메서드 모두 `findById(...).filter(c -> c.getStatus() != CollectionStatus.DELETED)`로 변경(`#16`과 동일 패턴, `PermissionQueryService`의 `getActiveCollection()` 헬퍼와 동일한 관용구).
 
 ## 다음 단계
 

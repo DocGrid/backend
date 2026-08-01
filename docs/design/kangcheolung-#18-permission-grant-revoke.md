@@ -137,9 +137,10 @@ public enum AccessSourceType {
 ```java
 public CollectionPermissionResponse grantPermission(Long collectionId, Long grantorId, GrantPermissionRequest request) {
     DocumentCollection collection = collectionRepository.findById(collectionId)
+            .filter(c -> c.getStatus() != CollectionStatus.DELETED)
             .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
 
-    if (!permissionQueryService.canAdminCollection(grantorId, collectionId)) {
+    if (!permissionQueryService.canAdminCollection(grantorId, collection)) {
         throw new DocGridException(ErrorCode.PERMISSION_DENIED);
     }
 
@@ -329,11 +330,14 @@ BUILD SUCCESSFUL
 
 **권한 부여 자체에도 ADMIN 권한이 필요**: `#16`까지는 소유자만 문서를 추가할 수 있었는데, 이 이슈부터 "소유자가 다른 사람에게 ADMIN 권한을 위임하면, 그 사람도 권한을 나눠줄 수 있다"는 위임 구조가 생긴다. `canAdminCollection()`이 소유자와 ADMIN 위임자를 모두 포함해서 판단하므로 이 위임이 자연스럽게 성립한다.
 
+**(추가) `canAdminCollection`을 ID 버전 + 엔티티 버전으로 분리**: `grantPermission()`이 컬렉션을 조회한 뒤 `canAdminCollection(grantorId, collectionId)`을 ID로 다시 호출하면 같은 row를 두 번 SELECT하게 되고, soft-delete된 컬렉션에도 새 권한을 부여할 수 있는 구멍이 있었다. `canAdminCollection(userId, DocumentCollection)` 엔티티 오버로드를 추가해 이미 조회한 엔티티를 그대로 넘기도록 하고, ID 버전에는 `status != DELETED` 필터를 넣었다(`#16` 문서의 동일 리팩토링과 같은 패턴).
+
 ---
 
 ## 남은 이슈 / TODO
 
-- `target_type`별 단일 FK 제약이 DB 레벨(CHECK)이 아니라 애플리케이션 검증에만 있다(엔티티 Javadoc에 이미 기록됨).
+- ~~`target_type`별 단일 FK 제약이 DB 레벨(CHECK)이 아니라 애플리케이션 검증에만 있다(엔티티 Javadoc에 이미 기록됨).~~ → 확인 결과 이미 해결되어 있음: `V11__create_collection_permissions.sql`/`V12__create_document_permissions.sql`에 `CHECK` 제약이 반영되어 있다(엔티티 Javadoc만 갱신되지 않은 상태였음, `#16` 문서에서도 동일하게 확인).
+- `grantPermission()`/`canAdminCollection()`이 컬렉션을 두 번 조회하던 중복 쿼리 및 soft-delete된 컬렉션에도 권한을 부여할 수 있던 문제 → 해결됨(아래 "설계 결정 요약" 참고). `revokePermission()`은 자체 `findById` 호출이 없어 `canAdminCollection(revokerId, collectionId)`(ID 버전) 내부의 status 필터를 그대로 적용받는다 — 별도 수정 불필요.
 - `expiresAt`이 지난 권한을 정리(삭제 또는 자동 무효화)하는 배치가 없다 — live 조회 시 `expiresAt > CURRENT_TIMESTAMP` 조건으로 걸러지긴 하지만, 만료된 레코드 자체는 DB에 계속 쌓인다.
 - `AccessSourceType.OWNER`가 정의만 되어 있고 실제로 생성되지 않는다(위 "확인된 불일치" 참고) — enum에서 제거하거나, 실제로 OWNER 캐시를 생성하도록 코드를 맞추거나 둘 중 하나로 정리가 필요하다.
 - ~~`PermissionController`의 컬렉션/문서 권한 부여·회수 4개 엔드포인트 Swagger description이 "소유자(owner)만 가능"이라고 적혀 있던 문제~~ → 코드리뷰로 발견해 실제 인가 규칙(`canAdminCollection()`/`canAdminDocument()`, ADMIN 위임자도 허용)에 맞게 4곳 모두 "ADMIN 권한 보유자(소유자 포함)"로 수정 완료.

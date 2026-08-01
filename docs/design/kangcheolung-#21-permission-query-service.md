@@ -34,7 +34,7 @@ DEPT 권한  → 매 요청마다 live 조회 (JOIN 여러 번)
 
 ### `domain/permission/service/query/PermissionQueryService.java`
 
-이 이슈의 핵심 파일이며, 5개의 public 메서드를 제공한다.
+이 이슈의 핵심 파일이며, 6개의 public 메서드를 제공한다(`canReadCollection`은 이후 리팩토링에서 추가됨 — 아래 참고). 컬렉션 대상 3종(`canReadCollection`/`canWriteCollection`/`canAdminCollection`)은 각각 ID로 조회하는 버전과, 이미 조회된 `DocumentCollection` 엔티티를 받는 버전 2개씩 오버로드로 제공한다 — 호출부가 이미 엔티티를 들고 있으면 중복 조회 없이 엔티티 버전을 바로 쓸 수 있다.
 
 #### `canReadDocument` (5단계)
 
@@ -76,19 +76,32 @@ public boolean canReadDocument(Long userId, Long documentId) {
 
 `canReadDocument`와 거의 같은 구조이지만 **PUBLIC 단계가 없다** — PUBLIC은 읽기만 허용하는 개념이라 쓰기/관리 권한 판단에는 끼어들 자리가 없다. 그래서 1단계(소유자) → 2단계(USER 캐시) → 3단계(ROLE) → 4단계(DEPT), 총 4단계다.
 
-#### `canWriteCollection` / `canAdminCollection`
+#### `canReadCollection` / `canWriteCollection` / `canAdminCollection`
 
 ```java
+// ID로 조회 후 엔티티 버전에 위임 — soft-delete된 컬렉션은 걸러진다
 public boolean canWriteCollection(Long userId, Long collectionId) {
-    DocumentCollection collection = collectionRepository.findById(collectionId)
-            .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
+    return canWriteCollection(userId, getActiveCollection(collectionId));
+}
+
+// 이미 조회된 엔티티로 판단 — 호출부가 이미 non-deleted 엔티티임을 보장해야 함
+public boolean canWriteCollection(Long userId, DocumentCollection collection) {
     if (collection.getOwner().getId().equals(userId)) return true;
+    Long collectionId = collection.getId();
     if (collectionPermissionRepository.existsUserWritePermission(userId, collectionId)) return true;
     if (collectionPermissionRepository.existsRoleWritePermissionForCollection(userId, collectionId)) return true;
     return collectionPermissionRepository.existsDeptWritePermissionForCollection(userId, collectionId);
 }
+
+private DocumentCollection getActiveCollection(Long collectionId) {
+    return collectionRepository.findById(collectionId)
+            .filter(c -> c.getStatus() != CollectionStatus.DELETED)
+            .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
+}
 ```
-컬렉션 판단에는 **캐시가 없다** — `user_document_access_cache`는 문서 단위 캐시라 컬렉션 자체에 대한 캐시 개념이 없다. 그래서 OWNER, USER 직접 권한, ROLE, DEPT를 매번 순서대로 live 조회한다. `#16`의 `addDocument()`, `#18`의 `grantPermission()`이 이 메서드들을 그대로 호출한다.
+`canReadCollection`은 위와 동일한 구조에 **PUBLIC 단계**만 추가된다(`canReadDocument`의 2단계와 동일하게, `collection.getVisibility() == VisibilityType.PUBLIC`이면 소유자/권한 여부와 무관하게 허용). `canAdminCollection`도 같은 뼈대(대상 권한 종류만 다름)다.
+
+컬렉션 판단에는 **캐시가 없다** — `user_document_access_cache`는 문서 단위 캐시라 컬렉션 자체에 대한 캐시 개념이 없다. 그래서 OWNER, (READ의 경우 PUBLIC), USER 직접 권한, ROLE, DEPT를 매번 순서대로 live 조회한다. `#16`의 `addDocument()`/`getCollection()`, `#18`의 `grantPermission()`이 엔티티 버전을 호출해 중복 조회 없이 이 메서드들을 재사용한다.
 
 ### `domain/permission/repository/CollectionPermissionRepository.java` — 문서→컬렉션 경유 JOIN 쿼리
 
@@ -159,7 +172,7 @@ if (cacheRepository.existsValidReadCache(...)) { ... }
 $ ./gradlew test --tests "*PermissionQueryServiceTest*"
 BUILD SUCCESSFUL
 ```
-`PermissionQueryServiceTest` 35개 모두 통과(현재 기준 재검증) — 이 서비스의 메서드 5개(`canReadDocument`, `canWriteDocument`, `canAdminDocument`, `canWriteCollection`, `canAdminCollection`) 각각의 단계별 분기를 검증하는 테스트가 다수 포함되어 있다.
+`PermissionQueryServiceTest` 43개 모두 통과(현재 기준 재검증) — 이 서비스의 메서드 6개(`canReadDocument`, `canWriteDocument`, `canAdminDocument`, `canReadCollection`, `canWriteCollection`, `canAdminCollection`) 각각의 단계별 분기를 검증하는 테스트가 다수 포함되어 있다.
 
 ---
 
@@ -182,12 +195,14 @@ BUILD SUCCESSFUL
 
 **컬렉션 판단에는 캐시를 두지 않음**: `user_document_access_cache`가 애초에 문서 단위로 설계되어 있어서, 컬렉션 자체에 대한 접근 여부는 캐시할 방법이 없다(캐시하려면 별도 테이블이 필요했을 것). 컬렉션 판단은 상대적으로 호출 빈도가 낮다고 보고(문서 접근이 압도적으로 잦음) live 조회만으로 충분하다고 판단한 것으로 보인다.
 
+**(추가) `canReadCollection` 도입 + ID/엔티티 오버로드 분리**: `getCollection()`(`#16`) 단건 조회에 권한 체크가 전혀 없던 게 확인되어 `canReadCollection`(OWNER→PUBLIC→USER→ROLE→DEPT)을 추가했다. 동시에 `getCollection()`/`addDocument()`/`grantPermission()`이 컬렉션을 조회한 뒤 권한 메서드를 ID로 다시 호출해 같은 row를 두 번 SELECT하던 문제와, `findById()`가 soft-delete(`status=DELETED`)를 걸러내지 않던 문제가 함께 발견되어, 컬렉션 대상 3개 메서드를 "ID 버전(내부에서 조회+status 필터 후 위임) + 엔티티 버전(조회 없이 판단)"으로 나눠 한 번에 해결했다.
+
 ---
 
 ## 남은 이슈 / TODO
 
 - 나노초 기반 성능 로그가 프로덕션에서도 항상 `log.info()`로 남는다 — 트래픽이 많아지면 로그량 자체가 부담일 수 있어 로그 레벨 조정이나 샘플링이 필요할 수 있다.
-- `canReadDocument`류 메서드들 사이에 문서 조회(`documentRepository.findById`)가 메서드마다 중복된다 — 셋 다 필요하면(예: `checkDocumentPermission`처럼) 문서 조회를 한 번만 하고 넘기는 내부 메서드로 리팩터링할 여지가 있다.
+- `canReadDocument`류 메서드들 사이에 문서 조회(`documentRepository.findById`)가 메서드마다 중복된다 — 셋 다 필요하면(예: `checkDocumentPermission`처럼) 문서 조회를 한 번만 하고 넘기는 내부 메서드로 리팩터링할 여지가 있다. **(참고)** 컬렉션 쪽(`canReadCollection`/`canWriteCollection`/`canAdminCollection`)은 이미 "ID 버전 + 엔티티 버전" 오버로드로 이 문제를 해결했다 — 문서 쪽도 같은 패턴을 그대로 적용하면 된다(별도 후속 작업으로 분리, 이번 라운드는 컬렉션만 처리).
 
 ## 다음 단계
 

@@ -434,6 +434,18 @@ class PermissionQueryServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.COLLECTION_NOT_FOUND);
     }
 
+    @Test
+    @DisplayName("삭제된 컬렉션 엔티티를 직접 넘기면 소유자여도 canReadCollection 호출 시 COLLECTION_NOT_FOUND 예외가 발생한다")
+    void canReadCollection_entityOverload_rejectsDeletedCollection_evenForOwner() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection collection = CollectionFixture.createCollection(owner);
+        org.springframework.test.util.ReflectionTestUtils.setField(collection, "status", com.opensource.docgrid.domain.collection.enums.CollectionStatus.DELETED);
+
+        assertThatThrownBy(() -> service.canReadCollection(CollectionFixture.USER_ID, collection))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.COLLECTION_NOT_FOUND);
+    }
+
     // ==================== canWriteCollection ====================
 
     @Test

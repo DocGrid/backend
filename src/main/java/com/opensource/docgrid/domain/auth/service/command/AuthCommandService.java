@@ -89,9 +89,9 @@ public class AuthCommandService {
             throw new DocGridException(ErrorCode.ACCOUNT_INACTIVE);
         }
 
-        List<String> roles = userRoleRepository.findAllWithRoleByUserId(user.getId()).stream()
-                .map(ur -> ur.getRole().getCode())
-                .toList();
+        user.recordLogin(LocalDateTime.now());
+
+        List<String> roles = userRoleRepository.findRoleCodesByUserId(user.getId());
 
         String token = jwtProvider.generateToken(user.getId(), user.getEmail(), roles);
 

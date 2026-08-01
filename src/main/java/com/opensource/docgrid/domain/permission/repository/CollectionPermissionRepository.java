@@ -91,6 +91,17 @@ public interface CollectionPermissionRepository extends JpaRepository<Collection
             """)
     boolean existsDeptAdminPermissionForDocument(@Param("userId") Long userId, @Param("documentId") Long documentId);
 
+    // USER 직접 권한 — 컬렉션에 읽기 권한이 있는지 (canReadCollection 판단용)
+    @Query("""
+            SELECT COUNT(cp) > 0 FROM CollectionPermission cp
+            WHERE cp.collection.id = :collectionId
+              AND cp.targetType = com.opensource.docgrid.domain.permission.enums.PermissionTargetType.USER
+              AND cp.user.id = :userId
+              AND cp.canRead = true
+              AND (cp.expiresAt IS NULL OR cp.expiresAt > CURRENT_TIMESTAMP)
+            """)
+    boolean existsUserReadPermission(@Param("userId") Long userId, @Param("collectionId") Long collectionId);
+
     // USER 직접 권한 — 컬렉션에 쓰기 권한이 있는지 (canWriteCollection 판단용)
     @Query("""
             SELECT COUNT(cp) > 0 FROM CollectionPermission cp
@@ -112,6 +123,18 @@ public interface CollectionPermissionRepository extends JpaRepository<Collection
               AND (cp.expiresAt IS NULL OR cp.expiresAt > CURRENT_TIMESTAMP)
             """)
     boolean existsUserAdminPermission(@Param("userId") Long userId, @Param("collectionId") Long collectionId);
+
+    // ROLE live — 사용자 역할 기반 컬렉션 읽기 권한 존재 여부 (canReadCollection 판단용)
+    @Query("""
+            SELECT COUNT(cp) > 0 FROM CollectionPermission cp
+            JOIN UserRole ur ON ur.role = cp.role
+            WHERE cp.collection.id = :collectionId
+              AND cp.targetType = com.opensource.docgrid.domain.permission.enums.PermissionTargetType.ROLE
+              AND ur.user.id = :userId
+              AND cp.canRead = true
+              AND (cp.expiresAt IS NULL OR cp.expiresAt > CURRENT_TIMESTAMP)
+            """)
+    boolean existsRoleReadPermissionForCollection(@Param("userId") Long userId, @Param("collectionId") Long collectionId);
 
     // ROLE live — 사용자 역할 기반 컬렉션 쓰기 권한 존재 여부 (canWriteCollection 판단용)
     @Query("""
@@ -136,6 +159,18 @@ public interface CollectionPermissionRepository extends JpaRepository<Collection
               AND (cp.expiresAt IS NULL OR cp.expiresAt > CURRENT_TIMESTAMP)
             """)
     boolean existsRoleAdminPermissionForCollection(@Param("userId") Long userId, @Param("collectionId") Long collectionId);
+
+    // DEPARTMENT live — 사용자 부서 기반 컬렉션 읽기 권한 존재 여부 (canReadCollection 판단용)
+    @Query("""
+            SELECT COUNT(cp) > 0 FROM CollectionPermission cp
+            JOIN User u ON u.department = cp.department
+            WHERE cp.collection.id = :collectionId
+              AND cp.targetType = com.opensource.docgrid.domain.permission.enums.PermissionTargetType.DEPARTMENT
+              AND u.id = :userId
+              AND cp.canRead = true
+              AND (cp.expiresAt IS NULL OR cp.expiresAt > CURRENT_TIMESTAMP)
+            """)
+    boolean existsDeptReadPermissionForCollection(@Param("userId") Long userId, @Param("collectionId") Long collectionId);
 
     // DEPARTMENT live — 사용자 부서 기반 컬렉션 쓰기 권한 존재 여부 (canWriteCollection 판단용)
     @Query("""

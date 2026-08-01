@@ -70,7 +70,7 @@ class CollectionPermissionCommandServiceTest {
                 PermissionTargetType.USER, CollectionFixture.USER_ID, null, null, PermissionType.READ, null);
 
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
-        given(permissionQueryService.canAdminCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID)).willReturn(true);
+        given(permissionQueryService.canAdminCollection(CollectionFixture.USER_ID, collection)).willReturn(true);
         given(userRepository.findById(CollectionFixture.USER_ID)).willReturn(Optional.of(owner));
         given(userRepository.getReferenceById(CollectionFixture.USER_ID)).willReturn(owner);
         given(collectionDocumentRepository.findAllByCollectionId(CollectionFixture.COLLECTION_ID))
@@ -94,7 +94,7 @@ class CollectionPermissionCommandServiceTest {
                 PermissionTargetType.ROLE, null, PermissionFixture.ROLE_ID, null, PermissionType.READ, null);
 
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
-        given(permissionQueryService.canAdminCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID)).willReturn(true);
+        given(permissionQueryService.canAdminCollection(CollectionFixture.USER_ID, collection)).willReturn(true);
         given(roleRepository.findById(PermissionFixture.ROLE_ID)).willReturn(Optional.of(role));
         given(userRepository.getReferenceById(CollectionFixture.USER_ID)).willReturn(owner);
         given(permissionConverter.toCollectionPermissionResponse(any())).willReturn(null);
@@ -145,7 +145,7 @@ class CollectionPermissionCommandServiceTest {
                 PermissionTargetType.USER, null, null, null, PermissionType.READ, null);
 
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
-        given(permissionQueryService.canAdminCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID)).willReturn(true);
+        given(permissionQueryService.canAdminCollection(CollectionFixture.USER_ID, collection)).willReturn(true);
 
         assertThatThrownBy(() -> service.grantPermission(
                 CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID, request))

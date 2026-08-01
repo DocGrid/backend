@@ -86,17 +86,18 @@ public class CollectionController {
 
     @Operation(
             summary = "컬렉션 단건 조회",
-            description = "컬렉션 ID로 컬렉션 정보를 조회합니다."
+            description = "컬렉션 ID로 컬렉션 정보를 조회합니다. 소유자, PUBLIC 컬렉션, 또는 권한을 부여받은 사용자만 조회 가능합니다."
     )
     @GetMapping("/{collectionId}")
     public ResponseEntity<ApiResponse<CollectionResponse>> getCollection(
-            @PathVariable Long collectionId) {
-        return ResponseUtils.ok(collectionQueryService.getCollection(collectionId));
+            @PathVariable Long collectionId,
+            @Parameter(hidden = true) @CurrentUser Long userId) {
+        return ResponseUtils.ok(collectionQueryService.getCollection(userId, collectionId));
     }
 
     @Operation(
             summary = "컬렉션에 문서 추가",
-            description = "컬렉션에 문서를 추가합니다. 컬렉션 소유자(owner)만 가능합니다. 이미 추가된 문서면 409를 반환합니다."
+            description = "컬렉션에 문서를 추가합니다. 컬렉션 쓰기 권한(WRITE 또는 ADMIN, 소유자 포함)이 있는 사용자만 가능합니다. 이미 추가된 문서면 409를 반환합니다."
     )
     @PostMapping("/{collectionId}/documents")
     public ResponseEntity<ApiResponse<CollectionDocumentResponse>> addDocument(

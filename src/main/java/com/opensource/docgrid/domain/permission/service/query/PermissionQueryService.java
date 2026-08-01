@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 
 import com.opensource.docgrid.domain.collection.entity.DocumentCollection;
+import com.opensource.docgrid.domain.collection.enums.CollectionStatus;
 import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
@@ -245,11 +246,31 @@ public class PermissionQueryService {
         return new DocumentPermissionSummaryResponse(documentId, canRead, canWrite, canAdmin, sources);
     }
 
+    // 컬렉션 읽기 권한 판단 (소유자, PUBLIC, USER/ROLE/DEPT 직접 권한) — ID로 조회 후 엔티티 버전에 위임
+    public boolean canReadCollection(Long userId, Long collectionId) {
+        return canReadCollection(userId, getActiveCollection(collectionId));
+    }
+
+    // 이미 조회된 컬렉션 엔티티로 판단 — soft-delete된 엔티티면 COLLECTION_NOT_FOUND
+    public boolean canReadCollection(Long userId, DocumentCollection collection) {
+        validateActiveCollection(collection);
+        if (collection.getOwner().getId().equals(userId)) return true;
+        if (collection.getVisibility() == VisibilityType.PUBLIC) return true;
+        Long collectionId = collection.getId();
+        if (collectionPermissionRepository.existsUserReadPermission(userId, collectionId)) return true;
+        if (collectionPermissionRepository.existsRoleReadPermissionForCollection(userId, collectionId)) return true;
+        return collectionPermissionRepository.existsDeptReadPermissionForCollection(userId, collectionId);
+    }
+
     // 컬렉션 쓰기 권한 판단 (소유자, USER/ROLE/DEPT 직접 권한)
     public boolean canWriteCollection(Long userId, Long collectionId) {
-        DocumentCollection collection = collectionRepository.findById(collectionId)
-                .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
+        return canWriteCollection(userId, getActiveCollection(collectionId));
+    }
+
+    public boolean canWriteCollection(Long userId, DocumentCollection collection) {
+        validateActiveCollection(collection);
         if (collection.getOwner().getId().equals(userId)) return true;
+        Long collectionId = collection.getId();
         if (collectionPermissionRepository.existsUserWritePermission(userId, collectionId)) return true;
         if (collectionPermissionRepository.existsRoleWritePermissionForCollection(userId, collectionId)) return true;
         return collectionPermissionRepository.existsDeptWritePermissionForCollection(userId, collectionId);
@@ -257,12 +278,30 @@ public class PermissionQueryService {
 
     // 컬렉션 관리 권한 판단 (소유자, USER/ROLE/DEPT 직접 권한)
     public boolean canAdminCollection(Long userId, Long collectionId) {
-        DocumentCollection collection = collectionRepository.findById(collectionId)
-                .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
+        return canAdminCollection(userId, getActiveCollection(collectionId));
+    }
+
+    public boolean canAdminCollection(Long userId, DocumentCollection collection) {
+        validateActiveCollection(collection);
         if (collection.getOwner().getId().equals(userId)) return true;
+        Long collectionId = collection.getId();
         if (collectionPermissionRepository.existsUserAdminPermission(userId, collectionId)) return true;
         if (collectionPermissionRepository.existsRoleAdminPermissionForCollection(userId, collectionId)) return true;
         return collectionPermissionRepository.existsDeptAdminPermissionForCollection(userId, collectionId);
+    }
+
+    // collectionId로 조회하되, status가 DELETED인 컬렉션은 필터링해서 제외한다 (없는 것으로 취급).
+    private DocumentCollection getActiveCollection(Long collectionId) {
+        return collectionRepository.findById(collectionId)
+                .filter(c -> c.getStatus() != CollectionStatus.DELETED)
+                .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
+    }
+
+    // 엔티티 오버로드 방어 로직 — 호출부가 soft-delete 필터를 빠뜨리고 넘긴 엔티티도 여기서 최종 차단한다(추가 조회 없음).
+    private void validateActiveCollection(DocumentCollection collection) {
+        if (collection.getStatus() == CollectionStatus.DELETED) {
+            throw new DocGridException(ErrorCode.COLLECTION_NOT_FOUND);
+        }
     }
 
     private double ms(long fromNano) {

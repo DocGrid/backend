@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.opensource.docgrid.domain.collection.entity.CollectionDocument;
 import com.opensource.docgrid.domain.collection.entity.DocumentCollection;
+import com.opensource.docgrid.domain.collection.enums.CollectionStatus;
 import com.opensource.docgrid.domain.collection.repository.CollectionDocumentRepository;
 import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
 import com.opensource.docgrid.domain.document.entity.Document;
@@ -50,9 +51,10 @@ public class CollectionPermissionCommandService {
     public CollectionPermissionResponse grantPermission(Long collectionId, Long grantorId,
                                                         GrantPermissionRequest request) {
         DocumentCollection collection = collectionRepository.findById(collectionId)
+                .filter(c -> c.getStatus() != CollectionStatus.DELETED)
                 .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
 
-        if (!permissionQueryService.canAdminCollection(grantorId, collectionId)) {
+        if (!permissionQueryService.canAdminCollection(grantorId, collection)) {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 

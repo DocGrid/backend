@@ -74,9 +74,10 @@ public class CollectionCommandService {
     // 폴더에 문서 추가
     public CollectionDocumentResponse addDocument(Long collectionId, Long userId, AddDocumentRequest request) {
         DocumentCollection collection = collectionRepository.findById(collectionId)
+                .filter(c -> c.getStatus() != CollectionStatus.DELETED)
                 .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
 
-        if (!permissionQueryService.canWriteCollection(userId, collectionId)) {
+        if (!permissionQueryService.canWriteCollection(userId, collection)) {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 
@@ -104,24 +105,28 @@ public class CollectionCommandService {
     // 컬렉션 soft delete — 소유자만 가능
     public void deleteCollection(Long collectionId, Long userId) {
         DocumentCollection collection = collectionRepository.findById(collectionId)
+                .filter(c -> c.getStatus() != CollectionStatus.DELETED)
                 .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
 
         if (!collection.getOwner().getId().equals(userId)) {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 
+        // 폴더에 속한 모든 권한 삭제 및 캐시 무효화
         List<CollectionPermission> permissions = collectionPermissionRepository.findAllByCollectionId(collectionId);
         permissions.stream()
                 .filter(p -> p.getTargetType() == PermissionTargetType.USER)
+            // 컬렉션 권한이 USER 대상인 경우에만 캐시 무효화
                 .forEach(p -> cacheService.bulkRevokeBySource(AccessSourceType.DIRECT_COLLECTION_PERMISSION, p.getId()));
-        collectionPermissionRepository.deleteAll(permissions);
+        collectionPermissionRepository.deleteAll(permissions); // 컬렉션 권한 삭제
 
-        collection.markDeleted(LocalDateTime.now());
+        collection.markDeleted(LocalDateTime.now()); // 폴더 상태를 DELETED로 변경
     }
 
     // 컬렉션에서 문서 제거 — 소유자만 가능
     public void removeDocument(Long collectionId, Long documentId, Long userId) {
         DocumentCollection collection = collectionRepository.findById(collectionId)
+                .filter(c -> c.getStatus() != CollectionStatus.DELETED)
                 .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
 
         if (!collection.getOwner().getId().equals(userId)) {

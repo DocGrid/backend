@@ -13,7 +13,7 @@ import com.opensource.docgrid.domain.worker.entity.WorkerNode;
 import com.opensource.docgrid.domain.worker.enums.WorkerStatus;
 
 /**
- * Embedding Job의 Claim 상태 전이와 소유권 불변식을 검증하는 Entity 단위 테스트.
+ * Embedding Job의 Claim·인덱싱 완료 상태 전이와 소유권 불변식을 검증하는 Entity 단위 테스트.
  *
  * <p>PENDING Job이 PROCESSING으로 바뀔 때 Worker, Token, Lease, 최초 시작 시각이 함께 기록되는지와
  * 이미 Claim된 Job의 소유권 덮어쓰기가 차단되는지 확인한다.
@@ -55,6 +55,25 @@ class EmbeddingJobTest {
             EXPIRES_AT.plusSeconds(1)
         )).isInstanceOf(IllegalStateException.class)
             .hasMessage("PENDING 상태의 Job만 Claim할 수 있습니다.");
+    }
+
+    @Test
+    @DisplayName("PROCESSING Job만 INDEXED로 완료할 수 있다")
+    void markIndexed_acceptsOnlyProcessingJob() {
+        EmbeddingJob processingJob = createPendingJob();
+        processingJob.claim(createActiveWorker(), CLAIM_TOKEN, CLAIMED_AT, EXPIRES_AT);
+        LocalDateTime completedAt = CLAIMED_AT.plusSeconds(3);
+
+        processingJob.markIndexed(completedAt);
+
+        assertThat(processingJob.getStatus()).isEqualTo(EmbeddingJobStatus.INDEXED);
+        assertThat(processingJob.getCompletedAt()).isEqualTo(completedAt);
+
+        EmbeddingJob pendingJob = createPendingJob();
+        assertThatThrownBy(() -> pendingJob.markIndexed(completedAt))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("PROCESSING 상태의 Job만 INDEXED로 전환할 수 있습니다.");
+        assertThat(pendingJob.getStatus()).isEqualTo(EmbeddingJobStatus.PENDING);
     }
 
     private EmbeddingJob createPendingJob() {

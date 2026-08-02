@@ -142,7 +142,14 @@ public class DocumentVersion extends BaseEntity {
         this.status = DocumentVersionStatus.EMBEDDING;
     }
 
+    /**
+     * Embedding Set이 완성된 Version을 검색 가능한 완료 상태로 전환한다.
+     */
     public void markIndexed(LocalDateTime indexedAt) {
+        // Embedding 저장 단계를 거치지 않은 Version이 검색 대상으로 노출되지 않도록 전이를 제한한다.
+        if (status != DocumentVersionStatus.EMBEDDING) {
+            throw new IllegalStateException("EMBEDDING 상태의 문서 버전만 INDEXED로 전환할 수 있습니다.");
+        }
         this.status = DocumentVersionStatus.INDEXED;
         this.indexedAt = indexedAt;
     }

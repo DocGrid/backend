@@ -127,6 +127,21 @@ public enum ErrorCode {
         "DOCUMENT-EMBEDDING-002",
         "생성된 Embedding Vector가 올바르지 않습니다."
     ),
+    DOCUMENT_INDEXING_COMPLETION_NOT_ALLOWED(
+        HttpStatus.CONFLICT,
+        "DOCUMENT-INDEXING-001",
+        "현재 상태에서는 문서 인덱싱을 완료할 수 없습니다."
+    ),
+    DOCUMENT_INDEXING_STALE_COMPLETION(
+        HttpStatus.CONFLICT,
+        "DOCUMENT-INDEXING-002",
+        "최신 문서 버전이 아니므로 인덱싱을 완료할 수 없습니다."
+    ),
+    DOCUMENT_INDEXING_COMPLETION_INCONSISTENT(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "DOCUMENT-INDEXING-003",
+        "문서 인덱싱 완료 데이터를 확인할 수 없습니다."
+    ),
 
     // PERMISSION
     INVALID_TARGET_TYPE(HttpStatus.BAD_REQUEST, "PERMISSION-001", "target_type과 ID 필드 조합이 올바르지 않습니다."),

@@ -33,10 +33,12 @@ import com.opensource.docgrid.domain.document.service.command.DocumentChunkTrans
 import com.opensource.docgrid.domain.embedding.dto.response.ClaimedEmbeddingJobResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentChunksResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentEmbeddingsResponse;
+import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingCompletionResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.StartedEmbeddingJobAttemptResponse;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.service.DocumentEmbeddingService;
 import com.opensource.docgrid.domain.embedding.service.DocumentEmbeddingService.EmbeddingResult;
+import com.opensource.docgrid.domain.embedding.service.command.DocumentIndexingCompletionService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttemptService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttemptService.StartResult;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobClaimService;
@@ -46,7 +48,7 @@ import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
 /**
- * 관리자용 Job Claim, Attempt 시작과 Document Chunk·Embedding 생성 API 계약을 검증한다.
+ * 관리자용 Job Claim, Attempt 시작과 Document Chunk·Embedding 생성·인덱싱 완료 API 계약을 검증한다.
  *
  * <p>각 API의 최초 생성·멱등 재생·Validation·비즈니스 오류 및 ADMIN Security 동작을
  * 실제 Service 실행 없이 Controller 경계에서 확인한다.
@@ -60,6 +62,7 @@ class IndexingJobAdminControllerTest {
     private static final String ATTEMPT_URL = "/admin/indexing-jobs/10/attempts";
     private static final String CHUNKS_URL = "/admin/indexing-jobs/10/attempts/100/chunks";
     private static final String EMBEDDINGS_URL = "/admin/indexing-jobs/10/attempts/100/embeddings";
+    private static final String COMPLETE_URL = "/admin/indexing-jobs/10/attempts/100/complete";
     private static final Long JOB_ID = 10L;
     private static final Long ATTEMPT_ID = 100L;
     private static final Long WORKER_ID = 1L;
@@ -77,6 +80,7 @@ class IndexingJobAdminControllerTest {
     @MockitoBean private EmbeddingJobAttemptService embeddingJobAttemptService;
     @MockitoBean private DocumentParsingService documentParsingService;
     @MockitoBean private DocumentEmbeddingService documentEmbeddingService;
+    @MockitoBean private DocumentIndexingCompletionService documentIndexingCompletionService;
     @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
     @MockitoBean private JwtProvider jwtProvider;
     @MockitoBean private CorsConfigurationSource corsConfigurationSource;
@@ -422,6 +426,83 @@ class IndexingJobAdminControllerTest {
             .andExpect(status().isForbidden());
     }
 
+    @Test
+    @DisplayName("ADMIN 사용자의 최초 완료와 멱등 재생은 안정적인 응답으로 200을 반환한다")
+    void completeIndexing_returnsOkWithoutSensitiveFields() throws Exception {
+        DocumentIndexingCompletionResponse response = createCompletionResponse();
+        given(documentIndexingCompletionService.complete(eq(JOB_ID), eq(ATTEMPT_ID), any()))
+            .willReturn(response);
+
+        mockMvc.perform(post(COMPLETE_URL)
+                .contentType("application/json")
+                .content(VALID_ATTEMPT_BODY)
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.jobId").value(JOB_ID))
+            .andExpect(jsonPath("$.data.attemptId").value(ATTEMPT_ID))
+            .andExpect(jsonPath("$.data.documentId").value(10))
+            .andExpect(jsonPath("$.data.documentVersionId").value(22))
+            .andExpect(jsonPath("$.data.embeddingModelId").value(1))
+            .andExpect(jsonPath("$.data.jobStatus").value("INDEXED"))
+            .andExpect(jsonPath("$.data.attemptStatus").value("SUCCESS"))
+            .andExpect(jsonPath("$.data.versionStatus").value("INDEXED"))
+            .andExpect(jsonPath("$.data.completedAt").value("2026-07-31T16:00:00"))
+            .andExpect(jsonPath("$.data.durationMs").value(8421))
+            .andExpect(jsonPath("$.data.claimToken").doesNotExist())
+            .andExpect(jsonPath("$.data.chunkText").doesNotExist())
+            .andExpect(jsonPath("$.data.vector").doesNotExist());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidCompletionRequests")
+    @DisplayName("잘못된 인덱싱 완료 요청은 400을 반환한다")
+    void completeIndexing_returnsBadRequest_when_requestIsInvalid(
+        String description,
+        String url,
+        String body
+    ) throws Exception {
+        mockMvc.perform(post(url)
+                .contentType("application/json")
+                .content(body)
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().isBadRequest());
+    }
+
+    @ParameterizedTest
+    @MethodSource("completionBusinessErrors")
+    @DisplayName("인덱싱 완료 비즈니스 오류를 정의된 HTTP 상태와 코드로 반환한다")
+    void completeIndexing_returnsDefinedError(
+        ErrorCode errorCode,
+        int expectedStatus,
+        String expectedCode
+    ) throws Exception {
+        given(documentIndexingCompletionService.complete(eq(JOB_ID), eq(ATTEMPT_ID), any()))
+            .willThrow(new DocGridException(errorCode));
+
+        mockMvc.perform(post(COMPLETE_URL)
+                .contentType("application/json")
+                .content(VALID_ATTEMPT_BODY)
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().is(expectedStatus))
+            .andExpect(jsonPath("$.code").value(expectedCode));
+    }
+
+    @Test
+    @DisplayName("일반 사용자와 미인증 사용자는 인덱싱을 완료할 수 없다")
+    void completeIndexing_returnsForbidden_withoutAdminRole() throws Exception {
+        mockMvc.perform(post(COMPLETE_URL)
+                .contentType("application/json")
+                .content(VALID_ATTEMPT_BODY)
+                .with(user("user").roles("USER")))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post(COMPLETE_URL)
+                .contentType("application/json")
+                .content(VALID_ATTEMPT_BODY))
+            .andExpect(status().isForbidden());
+    }
+
     private static Stream<Arguments> invalidAttemptRequests() {
         return Stream.of(
             Arguments.of("Job ID가 양수가 아님", "/admin/indexing-jobs/0/attempts", VALID_ATTEMPT_BODY),
@@ -516,6 +597,60 @@ class IndexingJobAdminControllerTest {
         );
     }
 
+    private static Stream<Arguments> invalidCompletionRequests() {
+        return Stream.of(
+            Arguments.of(
+                "Job ID가 양수가 아님",
+                "/admin/indexing-jobs/0/attempts/100/complete",
+                VALID_ATTEMPT_BODY
+            ),
+            Arguments.of(
+                "Attempt ID가 양수가 아님",
+                "/admin/indexing-jobs/10/attempts/0/complete",
+                VALID_ATTEMPT_BODY
+            ),
+            Arguments.of("Worker ID 누락", COMPLETE_URL, """
+                {"claimToken": "%s"}
+                """.formatted(CLAIM_TOKEN)),
+            Arguments.of("Worker ID가 0", COMPLETE_URL, """
+                {"workerId": 0, "claimToken": "%s"}
+                """.formatted(CLAIM_TOKEN)),
+            Arguments.of("Worker ID가 음수", COMPLETE_URL, """
+                {"workerId": -1, "claimToken": "%s"}
+                """.formatted(CLAIM_TOKEN)),
+            Arguments.of("Claim Token 누락", COMPLETE_URL, """
+                {"workerId": 1}
+                """),
+            Arguments.of("Claim Token 공백", COMPLETE_URL, """
+                {"workerId": 1, "claimToken": " "}
+                """),
+            Arguments.of("Claim Token UUID 형식 오류", COMPLETE_URL, """
+                {"workerId": 1, "claimToken": "not-a-uuid"}
+                """)
+        );
+    }
+
+    private static Stream<Arguments> completionBusinessErrors() {
+        return Stream.of(
+            Arguments.of(ErrorCode.EMBEDDING_JOB_NOT_FOUND, 404, "EMBEDDING-JOB-001"),
+            Arguments.of(
+                ErrorCode.DOCUMENT_INDEXING_COMPLETION_NOT_ALLOWED,
+                409,
+                "DOCUMENT-INDEXING-001"
+            ),
+            Arguments.of(
+                ErrorCode.DOCUMENT_INDEXING_STALE_COMPLETION,
+                409,
+                "DOCUMENT-INDEXING-002"
+            ),
+            Arguments.of(
+                ErrorCode.DOCUMENT_INDEXING_COMPLETION_INCONSISTENT,
+                500,
+                "DOCUMENT-INDEXING-003"
+            )
+        );
+    }
+
     private StartedEmbeddingJobAttemptResponse createAttemptResponse() {
         return new StartedEmbeddingJobAttemptResponse(
             100L,
@@ -546,6 +681,21 @@ class IndexingJobAdminControllerTest {
             3,
             3,
             DocumentVersionStatus.EMBEDDING
+        );
+    }
+
+    private DocumentIndexingCompletionResponse createCompletionResponse() {
+        return new DocumentIndexingCompletionResponse(
+            JOB_ID,
+            ATTEMPT_ID,
+            10L,
+            22L,
+            1L,
+            EmbeddingJobStatus.INDEXED,
+            AttemptStatus.SUCCESS,
+            DocumentVersionStatus.INDEXED,
+            LocalDateTime.of(2026, 7, 31, 16, 0),
+            8_421L
         );
     }
 }

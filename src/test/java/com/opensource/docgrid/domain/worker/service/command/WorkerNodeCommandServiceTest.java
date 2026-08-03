@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -144,5 +145,24 @@ class WorkerNodeCommandServiceTest {
         );
 
         assertThat(result).isFalse();
+    }
+
+    @Test
+    @DisplayName("DEAD 기준에 도달한 ACTIVE와 IDLE Worker를 현재 시각에 일괄 확정한다")
+    void markDeadWorkers_updatesExpiredLiveWorkers() {
+        given(workerNodeRepository.markDeadWorkers(any(), any(), any(), any())).willReturn(2);
+
+        int result = workerNodeCommandService.markDeadWorkers(Duration.ofSeconds(30));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<WorkerStatus>> statusCaptor = ArgumentCaptor.forClass(Collection.class);
+        then(workerNodeRepository).should().markDeadWorkers(
+            eq(NOW),
+            eq(NOW.minusSeconds(30)),
+            eq(WorkerStatus.DEAD),
+            statusCaptor.capture()
+        );
+        assertThat(result).isEqualTo(2);
+        assertThat(statusCaptor.getValue()).containsExactly(WorkerStatus.ACTIVE, WorkerStatus.IDLE);
     }
 }

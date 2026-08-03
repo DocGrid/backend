@@ -119,6 +119,39 @@ class EmbeddingJobTest {
     }
 
     @Test
+    @DisplayName("유효한 PROCESSING Job Lease를 갱신하면 소유권은 보존하고 만료 시각만 연장한다")
+    void renewLease_extendsOnlyExpiration_when_currentLeaseIsValid() {
+        EmbeddingJob embeddingJob = createPendingJob();
+        WorkerNode workerNode = createActiveWorker();
+        embeddingJob.claim(workerNode, CLAIM_TOKEN, CLAIMED_AT, EXPIRES_AT);
+        LocalDateTime renewedAt = CLAIMED_AT.plusMinutes(1);
+        LocalDateTime renewedExpiresAt = renewedAt.plusMinutes(5);
+
+        embeddingJob.renewLease(renewedAt, renewedExpiresAt);
+
+        assertThat(embeddingJob.getLockedByWorker()).isSameAs(workerNode);
+        assertThat(embeddingJob.getClaimToken()).isEqualTo(CLAIM_TOKEN);
+        assertThat(embeddingJob.getLockedAt()).isEqualTo(CLAIMED_AT);
+        assertThat(embeddingJob.getLockExpiresAt()).isEqualTo(renewedExpiresAt);
+    }
+
+    @Test
+    @DisplayName("만료됐거나 기존 만료 시각을 연장하지 않는 Lease 갱신은 거부한다")
+    void renewLease_throws_when_currentOrNewLeaseIsInvalid() {
+        EmbeddingJob embeddingJob = createPendingJob();
+        embeddingJob.claim(createActiveWorker(), CLAIM_TOKEN, CLAIMED_AT, EXPIRES_AT);
+
+        assertThatThrownBy(() -> embeddingJob.renewLease(EXPIRES_AT, EXPIRES_AT.plusMinutes(5)))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("유효한 현재 Lease만 갱신할 수 있습니다.");
+
+        assertThatThrownBy(() -> embeddingJob.renewLease(CLAIMED_AT.plusMinutes(1), EXPIRES_AT))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("새 Lease 만료 시각은 현재 Lease보다 늦어야 합니다.");
+        assertThat(embeddingJob.getLockExpiresAt()).isEqualTo(EXPIRES_AT);
+    }
+
+    @Test
     @DisplayName("Retry 횟수를 모두 소진한 Job은 다시 예약할 수 없다")
     void scheduleRetry_throws_when_retriesAreExhausted() {
         EmbeddingJob embeddingJob = EmbeddingJob.builder()

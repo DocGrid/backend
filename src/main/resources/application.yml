@@ -23,12 +23,16 @@ indexing:
     name: ${INDEXING_WORKER_NAME:indexing-worker}
     heartbeat-interval: ${INDEXING_WORKER_HEARTBEAT_INTERVAL:10s}
     dead-threshold: ${INDEXING_WORKER_DEAD_THRESHOLD:30s}
+    polling-interval: ${INDEXING_WORKER_POLLING_INTERVAL:1s}
+    max-concurrency: ${INDEXING_WORKER_MAX_CONCURRENCY:2}
     lease-duration: ${INDEXING_WORKER_LEASE_DURATION:5m}
+    lease-renewal-interval: ${INDEXING_WORKER_LEASE_RENEWAL_INTERVAL:1m}
     lease-recovery-interval: ${INDEXING_WORKER_LEASE_RECOVERY_INTERVAL:30s}
     lease-recovery-batch-size: ${INDEXING_WORKER_LEASE_RECOVERY_BATCH_SIZE:100}
     # Retry 지연은 10초부터 지수 증가하며 운영 기본 상한인 5분에서 제한한다.
     retry-initial-delay: ${INDEXING_WORKER_RETRY_INITIAL_DELAY:10s}
     retry-max-delay: ${INDEXING_WORKER_RETRY_MAX_DELAY:5m}
+    shutdown-grace-period: ${INDEXING_WORKER_SHUTDOWN_GRACE_PERIOD:30s}
 
 server:
   port: 8080

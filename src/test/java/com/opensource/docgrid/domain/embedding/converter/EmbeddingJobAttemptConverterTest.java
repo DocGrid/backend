@@ -1,6 +1,7 @@
 package com.opensource.docgrid.domain.embedding.converter;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalDateTime;
 
@@ -17,11 +18,14 @@ import com.opensource.docgrid.domain.worker.entity.EmbeddingJobAttempt;
 import com.opensource.docgrid.domain.worker.entity.WorkerNode;
 import com.opensource.docgrid.domain.worker.enums.AttemptStatus;
 import com.opensource.docgrid.domain.worker.enums.WorkerStatus;
+import com.opensource.docgrid.global.exception.DocGridException;
+import com.opensource.docgrid.global.exception.ErrorCode;
 
 /**
  * Embedding Job Attempt Entity가 Token과 오류 메시지를 노출하지 않는 시작·실패 응답으로 변환되는지 검증한다.
  *
- * <p>연관 Entity 대신 Job·Worker 식별자를 사용하고 외부 계약에 필요한 시작 정보만 반환하는지 확인한다.
+ * <p>연관 Entity 대신 Job·Worker 식별자를 사용하고 외부 계약에 필요한 정보만 반환하며, 알 수 없는 실패
+ * 코드는 데이터 불일치로 거부하는지 확인한다.
  */
 @DisplayName("EmbeddingJobAttemptConverter 테스트")
 class EmbeddingJobAttemptConverterTest {
@@ -118,5 +122,34 @@ class EmbeddingJobAttemptConverterTest {
         assertThat(DocumentIndexingFailureResponse.class.getRecordComponents())
             .extracting(component -> component.getName())
             .doesNotContain("claimToken", "errorCode", "errorMessage", "jobStatus", "nextRetryAt");
+    }
+
+    @Test
+    @DisplayName("알 수 없는 저장 실패 코드는 데이터 불일치로 거부한다")
+    void toFailureResponse_throws_when_failureCodeIsUnknown() {
+        EmbeddingJob embeddingJob = EmbeddingJob.builder()
+            .status(EmbeddingJobStatus.PENDING)
+            .priority(0)
+            .maxRetryCount(3)
+            .build();
+        ReflectionTestUtils.setField(embeddingJob, "id", JOB_ID);
+        EmbeddingJobAttempt attempt = EmbeddingJobAttempt.builder()
+            .embeddingJob(embeddingJob)
+            .attemptNo(2)
+            .startedAt(STARTED_AT)
+            .endedAt(STARTED_AT.plusSeconds(4))
+            .durationMs(4_000L)
+            .status(AttemptStatus.FAILED)
+            .errorCode("LEGACY_UNKNOWN_FAILURE")
+            .errorMessage("legacy failure")
+            .build();
+        ReflectionTestUtils.setField(attempt, "id", ATTEMPT_ID);
+
+        assertThatThrownBy(() -> converter.toFailureResponse(attempt))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue(
+                "errorCode",
+                ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT
+            );
     }
 }

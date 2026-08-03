@@ -6,6 +6,8 @@ import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingFail
 import com.opensource.docgrid.domain.embedding.dto.response.StartedEmbeddingJobAttemptResponse;
 import com.opensource.docgrid.domain.embedding.enums.IndexingFailureType;
 import com.opensource.docgrid.domain.worker.entity.EmbeddingJobAttempt;
+import com.opensource.docgrid.global.exception.DocGridException;
+import com.opensource.docgrid.global.exception.ErrorCode;
 
 /**
  * Embedding Job Attempt Entity를 시작 또는 실패 결과 API DTO로 변환하는 Converter.
@@ -35,9 +37,18 @@ public class EmbeddingJobAttemptConverter {
             embeddingJobAttempt.getId(),
             embeddingJobAttempt.getAttemptNo(),
             embeddingJobAttempt.getStatus(),
-            IndexingFailureType.valueOf(embeddingJobAttempt.getErrorCode()),
+            toFailureType(embeddingJobAttempt.getErrorCode()),
             embeddingJobAttempt.getEndedAt(),
             embeddingJobAttempt.getDurationMs()
         );
+    }
+
+    private IndexingFailureType toFailureType(String errorCode) {
+        try {
+            return IndexingFailureType.valueOf(errorCode);
+        } catch (IllegalArgumentException | NullPointerException exception) {
+            // 수동 변경이나 이전 데이터의 알 수 없는 코드를 임의 유형으로 오인하지 않고 불일치로 드러낸다.
+            throw new DocGridException(ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT);
+        }
     }
 }

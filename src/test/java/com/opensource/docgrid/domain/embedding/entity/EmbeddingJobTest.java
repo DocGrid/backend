@@ -148,6 +148,36 @@ class EmbeddingJobTest {
     }
 
     @Test
+    @DisplayName("PROCESSING이 아닌 Job은 Retry를 예약할 수 없다")
+    void scheduleRetry_throws_when_jobIsNotProcessing() {
+        EmbeddingJob pendingJob = createPendingJob();
+
+        assertThatThrownBy(() -> pendingJob.scheduleRetry(
+            "STORAGE_UNAVAILABLE",
+            "Storage timeout",
+            CLAIMED_AT.plusSeconds(10)
+        )).isInstanceOf(IllegalStateException.class)
+            .hasMessage("PROCESSING 상태의 Job만 Retry를 예약할 수 있습니다.");
+        assertThat(pendingJob.getStatus()).isEqualTo(EmbeddingJobStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("다음 Retry 시각이 없으면 예약할 수 없다")
+    void scheduleRetry_throws_when_nextRetryAtIsNull() {
+        EmbeddingJob embeddingJob = createPendingJob();
+        embeddingJob.claim(createActiveWorker(), CLAIM_TOKEN, CLAIMED_AT, EXPIRES_AT);
+
+        assertThatThrownBy(() -> embeddingJob.scheduleRetry(
+            "STORAGE_UNAVAILABLE",
+            "Storage timeout",
+            null
+        )).isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("다음 Retry 시각은 필수입니다.");
+        assertThat(embeddingJob.getStatus()).isEqualTo(EmbeddingJobStatus.PROCESSING);
+        assertThat(embeddingJob.getRetryCount()).isZero();
+    }
+
+    @Test
     @DisplayName("PROCESSING Job만 최종 FAILED로 종료하고 예약 시각을 제거할 수 있다")
     void markFailed_acceptsOnlyProcessingJob() {
         EmbeddingJob processingJob = createPendingJob();

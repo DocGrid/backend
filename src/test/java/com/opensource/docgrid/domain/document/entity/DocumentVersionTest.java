@@ -13,7 +13,8 @@ import org.junit.jupiter.params.provider.EnumSource;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 
 /**
- * Document Version 파이프라인의 PARSING·CHUNKED·EMBEDDING·INDEXED·FAILED 상태 전이 Guard를 검증한다.
+ * Document Version 파이프라인의 UPLOADED·PARSING·CHUNKED·EMBEDDING·INDEXED·FAILED 상태 전이
+ * Guard를 검증한다.
  *
  * <p>Command Service를 우회한 잘못된 상태 변경은 즉시 실패하고 정상 순서만 허용되는지 확인한다.
  */

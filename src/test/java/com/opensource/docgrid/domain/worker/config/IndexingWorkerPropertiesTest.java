@@ -54,8 +54,14 @@ class IndexingWorkerPropertiesTest {
         properties.setRetryInitialDelay(Duration.ZERO);
         assertThat(properties.isRetryDelayValid()).isFalse();
 
+        properties.setRetryInitialDelay(Duration.ofSeconds(-1));
+        assertThat(properties.isRetryDelayValid()).isFalse();
+
         properties.setRetryInitialDelay(Duration.ofSeconds(10));
         properties.setRetryMaxDelay(Duration.ofSeconds(9));
         assertThat(properties.isRetryDelayValid()).isFalse();
+
+        properties.setRetryMaxDelay(Duration.ofSeconds(10));
+        assertThat(properties.isRetryDelayValid()).isTrue();
     }
 }

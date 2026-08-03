@@ -108,6 +108,7 @@ class EmbeddingJobAttemptTest {
         )).isInstanceOf(IllegalStateException.class)
             .hasMessage("STARTED 상태의 Attempt만 FAILED로 전환할 수 있습니다.");
         assertThat(attempt.getEndedAt()).isEqualTo(firstEndedAt);
+        assertThat(attempt.getDurationMs()).isEqualTo(2_000L);
         assertThat(attempt.getErrorCode()).isEqualTo("STORAGE_UNAVAILABLE");
         assertThat(attempt.getErrorMessage()).isEqualTo("Storage timeout");
     }

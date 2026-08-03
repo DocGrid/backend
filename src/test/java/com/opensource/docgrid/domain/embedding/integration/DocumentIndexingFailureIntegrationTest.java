@@ -41,7 +41,7 @@ import com.opensource.docgrid.domain.search.service.query.VectorSearchQueryServi
 import com.opensource.docgrid.global.exception.DocGridException;
 
 /**
- * 실제 OpenSQL에서 인덱싱 실패의 예약 Queue, 최종 검색 상태, 멱등성과 완료 경쟁을 검증한다.
+ * 실제 PostgreSQL에서 인덱싱 실패의 예약 Queue, 최종 검색 상태, 멱등성과 완료 경쟁을 검증한다.
  *
  * <p>격리 Schema에 각 실행 상태를 직접 구성한 뒤 실제 Service Transaction과 PostgreSQL 행 잠금을
  * 사용해 Retry 또는 최종 실패가 부분 상태 없이 원자 커밋되는지 확인한다.
@@ -51,7 +51,7 @@ import com.opensource.docgrid.global.exception.DocGridException;
 @SpringBootTest
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-@DisplayName("Document 인덱싱 실패 OpenSQL 통합 테스트")
+@DisplayName("Document 인덱싱 실패 PostgreSQL 통합 테스트")
 class DocumentIndexingFailureIntegrationTest {
 
     private static final String TEST_SCHEMA = "docgrid_index_failure_integration_test";
@@ -74,7 +74,7 @@ class DocumentIndexingFailureIntegrationTest {
         registry.add("TEST_DB_SCHEMA", () -> TEST_SCHEMA);
         registry.add("jwt.secret", () -> "docgrid-index-failure-integration-test-secret-key-2026");
         registry.add("indexing.worker.retry-initial-delay", () -> "10s");
-        registry.add("indexing.worker.retry-max-delay", () -> "40s");
+        registry.add("indexing.worker.retry-max-delay", () -> "5m");
     }
 
     @BeforeEach

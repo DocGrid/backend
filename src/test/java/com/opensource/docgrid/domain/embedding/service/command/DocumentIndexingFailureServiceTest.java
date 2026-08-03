@@ -77,6 +77,7 @@ class DocumentIndexingFailureServiceTest {
     @Mock private EmbeddingJobOwnershipValidator ownershipValidator;
 
     private DocumentIndexingFailureService service;
+    private IndexingWorkerProperties workerProperties;
     private Document document;
     private DocumentVersion documentVersion;
     private WorkerNode workerNode;
@@ -85,9 +86,7 @@ class DocumentIndexingFailureServiceTest {
 
     @BeforeEach
     void setUp() {
-        IndexingWorkerProperties properties = new IndexingWorkerProperties();
-        properties.setRetryInitialDelay(Duration.ofSeconds(10));
-        properties.setRetryMaxDelay(Duration.ofSeconds(40));
+        workerProperties = new IndexingWorkerProperties();
         Clock clock = Clock.fixed(
             Instant.parse("2026-08-03T01:30:00Z"),
             ZoneId.of("Asia/Seoul")
@@ -101,7 +100,7 @@ class DocumentIndexingFailureServiceTest {
             indexingEventRepository,
             ownershipValidator,
             new EmbeddingJobAttemptConverter(),
-            properties,
+            workerProperties,
             clock
         );
         prepareExecution(DocumentVersionStatus.PARSING, DocumentStatus.INDEXING);
@@ -144,6 +143,7 @@ class DocumentIndexingFailureServiceTest {
     @Test
     @DisplayName("누적 Retry 횟수가 커도 Backoff는 설정한 최대 지연을 넘지 않는다")
     void fail_capsRetryBackoffAtMaximumDelay() {
+        workerProperties.setRetryMaxDelay(Duration.ofSeconds(40));
         ReflectionTestUtils.setField(embeddingJob, "retryCount", 4);
         ReflectionTestUtils.setField(embeddingJob, "maxRetryCount", 6);
         givenLockedExecution();

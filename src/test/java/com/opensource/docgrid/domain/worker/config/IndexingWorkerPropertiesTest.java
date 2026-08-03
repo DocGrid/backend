@@ -13,7 +13,7 @@ import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 
 /**
- * Worker Lease와 Retry 지연 설정의 기본값 및 애플리케이션 시작 단계 유효성 검사를 검증하는 단위 테스트.
+ * Worker Polling, 실행 동시성, Lease와 종료 설정의 기본값 및 시작 단계 유효성 검사를 검증한다.
  *
  * <p>정상적인 양수 기간은 허용하고 발급 즉시 만료되는 0 또는 음수 기간은 차단하는지 확인한다.
  */
@@ -21,6 +21,50 @@ import jakarta.validation.Validator;
 class IndexingWorkerPropertiesTest {
 
     private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+
+    @Test
+    @DisplayName("기본 Polling과 실행 설정은 1초, 동시 실행 2, 종료 유예 30초다")
+    void defaultExecutionSettings_areValid() {
+        IndexingWorkerProperties properties = new IndexingWorkerProperties();
+
+        assertThat(properties.getPollingInterval()).isEqualTo(Duration.ofSeconds(1));
+        assertThat(properties.getMaxConcurrency()).isEqualTo(2);
+        assertThat(properties.getShutdownGracePeriod()).isEqualTo(Duration.ofSeconds(30));
+        assertThat(properties.isPollingIntervalValid()).isTrue();
+        assertThat(properties.isShutdownGracePeriodValid()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Polling 주기는 양수이고 종료 유예 시간은 0 이상이어야 한다")
+    void executionIntervals_areInvalid_when_outOfRange() {
+        IndexingWorkerProperties properties = new IndexingWorkerProperties();
+
+        properties.setPollingInterval(Duration.ZERO);
+        assertThat(properties.isPollingIntervalValid()).isFalse();
+
+        properties.setPollingInterval(Duration.ofMillis(1));
+        properties.setShutdownGracePeriod(Duration.ZERO);
+        assertThat(properties.isShutdownGracePeriodValid()).isTrue();
+
+        properties.setShutdownGracePeriod(Duration.ofNanos(-1));
+        assertThat(properties.isShutdownGracePeriodValid()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Lease 갱신 주기는 양수이고 Lease 기간보다 짧아야 한다")
+    void leaseRenewalInterval_isValid_onlyBeforeLeaseExpiry() {
+        IndexingWorkerProperties properties = new IndexingWorkerProperties();
+        properties.setLeaseDuration(Duration.ofMinutes(5));
+
+        properties.setLeaseRenewalInterval(Duration.ofMinutes(1));
+        assertThat(properties.isLeaseRenewalIntervalValid()).isTrue();
+
+        properties.setLeaseRenewalInterval(Duration.ZERO);
+        assertThat(properties.isLeaseRenewalIntervalValid()).isFalse();
+
+        properties.setLeaseRenewalInterval(Duration.ofMinutes(5));
+        assertThat(properties.isLeaseRenewalIntervalValid()).isFalse();
+    }
 
     @Test
     @DisplayName("기본 Lease 기간은 5분이며 유효하다")

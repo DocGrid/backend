@@ -53,7 +53,7 @@ public final class WorkerLeaseRenewalHandle implements AutoCloseable {
      * 단계 시작 전에 Scheduler가 확인한 소유권 상실을 Pipeline에 전달한다.
      */
     public void ensureOwned() {
-        if (ownershipLost.get()) {
+        if (ownershipLost.get() || closed.get()) {
             throw new DocGridException(ErrorCode.EMBEDDING_JOB_OWNERSHIP_INVALID);
         }
     }

@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -49,6 +50,7 @@ public class WorkerLeaseRenewalManager {
     private final IndexingWorkerProperties workerProperties;
     private final ConcurrentHashMap<Long, WorkerLeaseRenewalHandle> activeHandles =
         new ConcurrentHashMap<>();
+    private final AtomicBoolean accepting = new AtomicBoolean(true);
 
     public WorkerLeaseRenewalManager(
         @Qualifier(WORKER_LEASE_SCHEDULER) ScheduledThreadPoolExecutor leaseScheduler,
@@ -64,6 +66,10 @@ public class WorkerLeaseRenewalManager {
      * Attempt가 시작된 Claim의 Lease를 설정 주기로 갱신하는 Handle을 등록한다.
      */
     public WorkerLeaseRenewalHandle start(ClaimedEmbeddingJobResponse claimedJob) {
+        if (!accepting.get()) {
+            throw new IllegalStateException("Worker Lease 갱신 관리자가 종료 중입니다.");
+        }
+
         WorkerLeaseRenewalHandle handle = new WorkerLeaseRenewalHandle(
             claimedJob.jobId(),
             claimedJob.workerId(),
@@ -73,6 +79,10 @@ public class WorkerLeaseRenewalManager {
         WorkerLeaseRenewalHandle existing = activeHandles.putIfAbsent(claimedJob.jobId(), handle);
         if (existing != null) {
             throw new DocGridException(ErrorCode.EMBEDDING_JOB_OWNERSHIP_INCONSISTENT);
+        }
+        if (!accepting.get()) {
+            handle.close();
+            throw new IllegalStateException("Worker Lease 갱신 관리자가 종료 중입니다.");
         }
 
         try {
@@ -96,11 +106,16 @@ public class WorkerLeaseRenewalManager {
      * 애플리케이션 강제 종료 시 남은 모든 실행의 갱신 예약을 취소한다.
      */
     public void stopAll() {
+        accepting.set(false);
         activeHandles.values().forEach(WorkerLeaseRenewalHandle::close);
     }
 
     public int getActiveHandleCount() {
         return activeHandles.size();
+    }
+
+    public boolean isAccepting() {
+        return accepting.get();
     }
 
     private void renew(WorkerLeaseRenewalHandle handle) {

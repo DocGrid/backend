@@ -168,6 +168,44 @@ class WorkerNodeRepositoryTest {
         assertThat(persistedStoppedWorker.getStoppedAt()).isEqualTo(originalStoppedAt);
     }
 
+    @Test
+    @DisplayName("Heartbeat가 기준 시각 이하인 살아 있는 Worker만 DEAD로 확정한다")
+    void markDeadWorkers_updatesOnlyExpiredLiveWorkers() {
+        WorkerNode expiredActive = createWorker("expired-active", STARTED_AT, WorkerStatus.ACTIVE);
+        WorkerNode expiredIdle = createWorker("expired-idle", STARTED_AT, WorkerStatus.IDLE);
+        WorkerNode freshActive = createWorker(
+            "fresh-active",
+            STARTED_AT.plusSeconds(1),
+            WorkerStatus.ACTIVE
+        );
+        WorkerNode stopped = createWorker("already-stopped", STARTED_AT, WorkerStatus.STOPPED);
+        workerNodeRepository.saveAllAndFlush(List.of(
+            expiredActive,
+            expiredIdle,
+            freshActive,
+            stopped
+        ));
+        LocalDateTime detectedAt = STARTED_AT.plusSeconds(30);
+
+        int updatedRows = workerNodeRepository.markDeadWorkers(
+            detectedAt,
+            STARTED_AT,
+            WorkerStatus.DEAD,
+            List.of(WorkerStatus.ACTIVE, WorkerStatus.IDLE)
+        );
+        flushAndClear();
+
+        assertThat(updatedRows).isEqualTo(2);
+        assertThat(workerNodeRepository.findById(expiredActive.getId()).orElseThrow().getStatus())
+            .isEqualTo(WorkerStatus.DEAD);
+        assertThat(workerNodeRepository.findById(expiredIdle.getId()).orElseThrow().getStatus())
+            .isEqualTo(WorkerStatus.DEAD);
+        assertThat(workerNodeRepository.findById(freshActive.getId()).orElseThrow().getStatus())
+            .isEqualTo(WorkerStatus.ACTIVE);
+        assertThat(workerNodeRepository.findById(stopped.getId()).orElseThrow().getStatus())
+            .isEqualTo(WorkerStatus.STOPPED);
+    }
+
     private WorkerNode createWorker(String instanceId, LocalDateTime startedAt) {
         return createWorker(instanceId, startedAt, WorkerStatus.ACTIVE);
     }

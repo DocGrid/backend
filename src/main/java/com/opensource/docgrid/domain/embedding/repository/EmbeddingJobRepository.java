@@ -2,6 +2,7 @@ package com.opensource.docgrid.domain.embedding.repository;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 import jakarta.persistence.LockModeType;
@@ -17,8 +18,8 @@ import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 /**
  * Embedding Job Queue의 영속성과 Claim 후보 행 잠금을 담당하는 Repository.
  *
- * <p>일반 CRUD 외에 PostgreSQL의 {@code FOR UPDATE SKIP LOCKED}로 Queue Claim 경쟁을 제어하고,
- * 단일 Job의 후속 상태·Attempt 변경에는 표준 JPA 쓰기 행 잠금을 제공한다.
+ * <p>일반 CRUD 외에 PostgreSQL의 {@code FOR UPDATE SKIP LOCKED}로 Queue Claim과 만료 Lease 복구 경쟁을
+ * 제어하고, 단일 Job의 후속 상태·Attempt 변경에는 표준 JPA 쓰기 행 잠금을 제공한다.
  */
 public interface EmbeddingJobRepository extends JpaRepository<EmbeddingJob, Long> {
 
@@ -51,6 +52,47 @@ public interface EmbeddingJobRepository extends JpaRepository<EmbeddingJob, Long
         FOR UPDATE SKIP LOCKED
         """, nativeQuery = true)
     Optional<EmbeddingJob> findNextPendingForUpdate(@Param("claimedAt") LocalDateTime claimedAt);
+
+    /**
+     * 만료 Lease 복구 대상인 PROCESSING Job ID를 오래 만료된 순서대로 제한 조회한다.
+     *
+     * <p>이 결과는 작업 분배용 Snapshot일 뿐 정확성 경계가 아니다. 각 후보는 복구 Transaction에서 다시
+     * 잠그고 만료 여부를 검증해야 한다.
+     */
+    @Query(value = """
+        SELECT job.id
+        FROM embedding_jobs job
+        WHERE job.status = 'PROCESSING'
+          AND job.lock_expires_at IS NOT NULL
+          AND job.lock_expires_at <= :recoveredAt
+        ORDER BY job.lock_expires_at ASC,
+                 job.id ASC
+        LIMIT :batchSize
+        """, nativeQuery = true)
+    List<Long> findExpiredProcessingJobIds(
+        @Param("recoveredAt") LocalDateTime recoveredAt,
+        @Param("batchSize") int batchSize
+    );
+
+    /**
+     * 지정한 Job이 아직 만료 PROCESSING 상태일 때만 쓰기 잠금을 획득한다.
+     *
+     * <p>다른 복구 Transaction이 선점한 행은 기다리지 않고 건너뛴다. 반환된 행은 호출 Transaction이
+     * 끝날 때까지 잠기므로 반드시 독립 Transaction 안에서 호출한다.
+     */
+    @Query(value = """
+        SELECT job.*
+        FROM embedding_jobs job
+        WHERE job.id = :jobId
+          AND job.status = 'PROCESSING'
+          AND job.lock_expires_at IS NOT NULL
+          AND job.lock_expires_at <= :recoveredAt
+        FOR UPDATE SKIP LOCKED
+        """, nativeQuery = true)
+    Optional<EmbeddingJob> findExpiredByIdForUpdateSkipLocked(
+        @Param("jobId") Long jobId,
+        @Param("recoveredAt") LocalDateTime recoveredAt
+    );
 
     /**
      * 지정한 Job을 현재 Transaction이 끝날 때까지 쓰기 잠금 상태로 조회한다.

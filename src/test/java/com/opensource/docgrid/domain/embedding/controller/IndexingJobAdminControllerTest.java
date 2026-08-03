@@ -35,6 +35,7 @@ import com.opensource.docgrid.domain.embedding.dto.response.DocumentChunksRespon
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentEmbeddingsResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingCompletionResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingFailureResponse;
+import com.opensource.docgrid.domain.embedding.dto.response.RenewedEmbeddingJobLeaseResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.StartedEmbeddingJobAttemptResponse;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.enums.IndexingFailureType;
@@ -45,6 +46,7 @@ import com.opensource.docgrid.domain.embedding.service.command.DocumentIndexingF
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttemptService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttemptService.StartResult;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobClaimService;
+import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobLeaseService;
 import com.opensource.docgrid.domain.worker.enums.AttemptStatus;
 import com.opensource.docgrid.global.config.SecurityConfig;
 import com.opensource.docgrid.global.exception.DocGridException;
@@ -62,6 +64,7 @@ import com.opensource.docgrid.global.exception.ErrorCode;
 class IndexingJobAdminControllerTest {
 
     private static final String CLAIM_URL = "/admin/indexing-jobs/claim";
+    private static final String RENEW_LEASE_URL = "/admin/indexing-jobs/10/lease/renew";
     private static final String ATTEMPT_URL = "/admin/indexing-jobs/10/attempts";
     private static final String CHUNKS_URL = "/admin/indexing-jobs/10/attempts/100/chunks";
     private static final String EMBEDDINGS_URL = "/admin/indexing-jobs/10/attempts/100/embeddings";
@@ -72,6 +75,12 @@ class IndexingJobAdminControllerTest {
     private static final Long WORKER_ID = 1L;
     private static final String CLAIM_TOKEN = "34c19d16-6ae1-4f6a-a35d-0123456789ab";
     private static final String VALID_ATTEMPT_BODY = """
+        {
+          "workerId": 1,
+          "claimToken": "34c19d16-6ae1-4f6a-a35d-0123456789ab"
+        }
+        """;
+    private static final String VALID_RENEW_LEASE_BODY = """
         {
           "workerId": 1,
           "claimToken": "34c19d16-6ae1-4f6a-a35d-0123456789ab"
@@ -89,6 +98,7 @@ class IndexingJobAdminControllerTest {
     @Autowired private MockMvc mockMvc;
 
     @MockitoBean private EmbeddingJobClaimService embeddingJobClaimService;
+    @MockitoBean private EmbeddingJobLeaseService embeddingJobLeaseService;
     @MockitoBean private EmbeddingJobAttemptService embeddingJobAttemptService;
     @MockitoBean private DocumentParsingService documentParsingService;
     @MockitoBean private DocumentEmbeddingService documentEmbeddingService;
@@ -177,6 +187,81 @@ class IndexingJobAdminControllerTest {
     @DisplayName("미인증 사용자는 403으로 Job Claim이 거부된다")
     void claim_returnsForbidden_when_userIsNotAuthenticated() throws Exception {
         mockMvc.perform(post(CLAIM_URL).param("workerId", WORKER_ID.toString()))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("ADMIN 사용자가 현재 Embedding Job Lease를 갱신한다")
+    void renewLease_returnsRenewedLease_withoutClaimToken() throws Exception {
+        LocalDateTime renewedAt = LocalDateTime.of(2026, 8, 3, 15, 0);
+        RenewedEmbeddingJobLeaseResponse response = new RenewedEmbeddingJobLeaseResponse(
+            JOB_ID,
+            WORKER_ID,
+            renewedAt,
+            renewedAt.plusMinutes(5)
+        );
+        given(embeddingJobLeaseService.renew(eq(JOB_ID), any())).willReturn(response);
+
+        mockMvc.perform(post(RENEW_LEASE_URL)
+                .contentType("application/json")
+                .content(VALID_RENEW_LEASE_BODY)
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.jobId").value(JOB_ID))
+            .andExpect(jsonPath("$.data.workerId").value(WORKER_ID))
+            .andExpect(jsonPath("$.data.renewedAt").value("2026-08-03T15:00:00"))
+            .andExpect(jsonPath("$.data.lockExpiresAt").value("2026-08-03T15:05:00"))
+            .andExpect(jsonPath("$.data.claimToken").doesNotExist());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidRenewLeaseRequests")
+    @DisplayName("Lease 갱신 입력 형식이 올바르지 않으면 400을 반환한다")
+    void renewLease_returnsBadRequest_when_requestIsInvalid(
+        String description,
+        String url,
+        String body
+    ) throws Exception {
+        mockMvc.perform(post(url)
+                .contentType("application/json")
+                .content(body)
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("COMMON-002"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("renewLeaseBusinessErrors")
+    @DisplayName("Lease 갱신 비즈니스 오류를 정의된 HTTP 상태와 코드로 반환한다")
+    void renewLease_returnsDefinedError(
+        ErrorCode errorCode,
+        int expectedStatus,
+        String expectedCode
+    ) throws Exception {
+        given(embeddingJobLeaseService.renew(eq(JOB_ID), any()))
+            .willThrow(new DocGridException(errorCode));
+
+        mockMvc.perform(post(RENEW_LEASE_URL)
+                .contentType("application/json")
+                .content(VALID_RENEW_LEASE_BODY)
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().is(expectedStatus))
+            .andExpect(jsonPath("$.code").value(expectedCode));
+    }
+
+    @Test
+    @DisplayName("일반 사용자와 미인증 사용자는 Lease를 갱신할 수 없다")
+    void renewLease_returnsForbidden_withoutAdminRole() throws Exception {
+        mockMvc.perform(post(RENEW_LEASE_URL)
+                .contentType("application/json")
+                .content(VALID_RENEW_LEASE_BODY)
+                .with(user("user").roles("USER")))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post(RENEW_LEASE_URL)
+                .contentType("application/json")
+                .content(VALID_RENEW_LEASE_BODY))
             .andExpect(status().isForbidden());
     }
 
@@ -607,6 +692,36 @@ class IndexingJobAdminControllerTest {
             Arguments.of("Claim Token UUID 형식 오류", ATTEMPT_URL, """
                 {"workerId": 1, "claimToken": "not-a-uuid"}
                 """)
+        );
+    }
+
+    private static Stream<Arguments> invalidRenewLeaseRequests() {
+        return Stream.of(
+            Arguments.of(
+                "Job ID가 양수가 아님",
+                "/admin/indexing-jobs/0/lease/renew",
+                VALID_RENEW_LEASE_BODY
+            ),
+            Arguments.of("Worker ID가 양수가 아님", RENEW_LEASE_URL, """
+                {"workerId": 0, "claimToken": "%s"}
+                """.formatted(CLAIM_TOKEN)),
+            Arguments.of("Claim Token 누락", RENEW_LEASE_URL, """
+                {"workerId": 1}
+                """),
+            Arguments.of("Claim Token UUID 형식 오류", RENEW_LEASE_URL, """
+                {"workerId": 1, "claimToken": "not-a-uuid"}
+                """)
+        );
+    }
+
+    private static Stream<Arguments> renewLeaseBusinessErrors() {
+        return Stream.of(
+            Arguments.of(ErrorCode.EMBEDDING_JOB_NOT_FOUND, 404, "EMBEDDING-JOB-001"),
+            Arguments.of(ErrorCode.WORKER_NOT_FOUND, 404, "WORKER-001"),
+            Arguments.of(ErrorCode.EMBEDDING_JOB_OWNERSHIP_INVALID, 409, "EMBEDDING-JOB-003"),
+            Arguments.of(ErrorCode.EMBEDDING_JOB_LEASE_EXPIRED, 409, "EMBEDDING-JOB-004"),
+            Arguments.of(ErrorCode.WORKER_NOT_AVAILABLE, 409, "WORKER-002"),
+            Arguments.of(ErrorCode.EMBEDDING_JOB_OWNERSHIP_INCONSISTENT, 500, "EMBEDDING-JOB-005")
         );
     }
 

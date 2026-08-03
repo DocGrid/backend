@@ -3,9 +3,14 @@ package com.opensource.docgrid.domain.worker.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
+import java.util.Set;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 
 /**
  * Worker Lease와 Retry 지연 설정의 기본값 및 애플리케이션 시작 단계 유효성 검사를 검증하는 단위 테스트.
@@ -14,6 +19,8 @@ import org.junit.jupiter.api.Test;
  */
 @DisplayName("IndexingWorkerProperties 테스트")
 class IndexingWorkerPropertiesTest {
+
+    private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
     @Test
     @DisplayName("기본 Lease 기간은 5분이며 유효하다")
@@ -63,5 +70,36 @@ class IndexingWorkerPropertiesTest {
 
         properties.setRetryMaxDelay(Duration.ofSeconds(10));
         assertThat(properties.isRetryDelayValid()).isTrue();
+    }
+
+    @Test
+    @DisplayName("기본 Lease 복구 주기는 30초이고 Batch 크기는 100이다")
+    void defaultLeaseRecoverySettings_areValid() {
+        IndexingWorkerProperties properties = new IndexingWorkerProperties();
+
+        assertThat(properties.getLeaseRecoveryInterval()).isEqualTo(Duration.ofSeconds(30));
+        assertThat(properties.getLeaseRecoveryBatchSize()).isEqualTo(100);
+        assertThat(properties.isLeaseRecoveryIntervalValid()).isTrue();
+        assertThat(validator.validate(properties)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Lease 복구 주기가 0 이하이거나 Batch 크기가 1보다 작으면 유효하지 않다")
+    void leaseRecoverySettings_areInvalid_when_intervalOrBatchIsNotPositive() {
+        IndexingWorkerProperties properties = new IndexingWorkerProperties();
+
+        properties.setLeaseRecoveryInterval(Duration.ZERO);
+        assertThat(properties.isLeaseRecoveryIntervalValid()).isFalse();
+
+        properties.setLeaseRecoveryInterval(Duration.ofSeconds(-1));
+        assertThat(properties.isLeaseRecoveryIntervalValid()).isFalse();
+
+        properties.setLeaseRecoveryInterval(Duration.ofSeconds(1));
+        properties.setLeaseRecoveryBatchSize(0);
+        Set<ConstraintViolation<IndexingWorkerProperties>> violations = validator.validate(properties);
+        assertThat(violations)
+            .extracting(ConstraintViolation::getPropertyPath)
+            .extracting(Object::toString)
+            .contains("leaseRecoveryBatchSize");
     }
 }

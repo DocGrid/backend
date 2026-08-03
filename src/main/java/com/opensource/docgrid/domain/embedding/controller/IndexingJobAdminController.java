@@ -13,15 +13,17 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.opensource.docgrid.domain.embedding.dto.request.CompleteDocumentIndexingRequest;
-import com.opensource.docgrid.domain.embedding.dto.request.FailDocumentIndexingRequest;
 import com.opensource.docgrid.domain.embedding.dto.request.CreateDocumentChunksRequest;
 import com.opensource.docgrid.domain.embedding.dto.request.CreateDocumentEmbeddingsRequest;
+import com.opensource.docgrid.domain.embedding.dto.request.FailDocumentIndexingRequest;
+import com.opensource.docgrid.domain.embedding.dto.request.RenewEmbeddingJobLeaseRequest;
 import com.opensource.docgrid.domain.embedding.dto.request.StartEmbeddingJobAttemptRequest;
 import com.opensource.docgrid.domain.embedding.dto.response.ClaimedEmbeddingJobResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentChunksResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentEmbeddingsResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingCompletionResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingFailureResponse;
+import com.opensource.docgrid.domain.embedding.dto.response.RenewedEmbeddingJobLeaseResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.StartedEmbeddingJobAttemptResponse;
 import com.opensource.docgrid.domain.document.service.DocumentParsingService;
 import com.opensource.docgrid.domain.document.service.command.DocumentChunkTransactionService.ChunkResult;
@@ -32,6 +34,7 @@ import com.opensource.docgrid.domain.embedding.service.command.DocumentIndexingF
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttemptService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttemptService.StartResult;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobClaimService;
+import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobLeaseService;
 import com.opensource.docgrid.global.common.response.ApiResponse;
 import com.opensource.docgrid.global.common.response.ErrorResponse;
 import com.opensource.docgrid.global.common.response.ResponseUtils;
@@ -46,7 +49,8 @@ import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 관리자용 Embedding Job Claim, Attempt 시작과 문서 Chunk·Embedding·인덱싱 완료·실패 실행을 HTTP API로 제공한다.
+ * 관리자용 Embedding Job Claim·Lease 갱신, Attempt 시작과 문서 Chunk·Embedding·인덱싱 완료·실패
+ * 실행을 HTTP API로 제공한다.
  *
  * <p>HTTP 입력 검증과 성공 상태 변환만 담당한다. Job Claim 및 현재 소유권 기반 파이프라인 단계의
  * Transaction·외부 호출·동시성 규칙은 각 Service에 위임한다.
@@ -59,6 +63,7 @@ import lombok.RequiredArgsConstructor;
 public class IndexingJobAdminController {
 
     private final EmbeddingJobClaimService embeddingJobClaimService;
+    private final EmbeddingJobLeaseService embeddingJobLeaseService;
     private final EmbeddingJobAttemptService embeddingJobAttemptService;
     private final DocumentParsingService documentParsingService;
     private final DocumentEmbeddingService documentEmbeddingService;
@@ -109,6 +114,56 @@ public class IndexingJobAdminController {
 
         // 3. Claim에 성공하면 Worker가 후속 처리에 사용할 소유권 정보와 Token을 반환한다.
         return ResponseUtils.ok(claimedJob.get());
+    }
+
+    @Operation(
+        summary = "PROCESSING Job Lease 갱신",
+        description = "현재 Job의 Worker ID와 Claim Token 및 만료 전 Lease를 검증하고, "
+            + "Heartbeat가 유효한 ACTIVE 또는 IDLE Worker의 Lease 만료 시각만 연장합니다. "
+            + "Claim Token은 응답에 포함하지 않습니다."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "Job Lease 갱신 성공"
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "Job ID, Worker ID 또는 Claim Token 형식 오류",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "403",
+            description = "인증되지 않았거나 ADMIN 권한 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "Embedding Job 또는 Worker 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409",
+            description = "Job 상태, 현재 소유권, Lease 또는 Worker 생존 상태 오류",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "500",
+            description = "PROCESSING Job의 소유권 데이터 불일치",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        )
+    })
+    @PostMapping(
+        value = "/{jobId}/lease/renew",
+        consumes = MediaType.APPLICATION_JSON_VALUE,
+        produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<ApiResponse<RenewedEmbeddingJobLeaseResponse>> renewLease(
+        @PathVariable @Positive Long jobId,
+        @Valid @RequestBody RenewEmbeddingJobLeaseRequest request
+    ) {
+        // Service가 Job → Worker 잠금과 소유권·생존 검증 및 Lease 갱신을 한 Transaction으로 처리한다.
+        return ResponseUtils.ok(embeddingJobLeaseService.renew(jobId, request));
     }
 
     @Operation(

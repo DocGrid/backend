@@ -7,13 +7,14 @@ import org.springframework.stereotype.Component;
 import org.springframework.validation.annotation.Validated;
 
 import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 인덱싱 Worker의 실행 여부, Heartbeat, DEAD 판정, Job Lease와 Retry 지연을 바인딩하는 설정 클래스.
+ * 인덱싱 Worker의 실행 여부, Heartbeat, DEAD 판정, Job Lease와 만료 복구를 바인딩하는 설정 클래스.
  *
  * <p>{@code indexing.worker} 환경 설정을 타입 안전한 {@link Duration}으로 제공하고, 애플리케이션 시작
  * 단계에서 서로 모순되거나 0 이하인 시간 설정을 차단한다.
@@ -40,6 +41,13 @@ public class IndexingWorkerProperties {
     // Claim 후 Worker가 소유권을 유지하는 기본 시간이다. 만료 복구는 후속 처리에서 사용한다.
     @NotNull
     private Duration leaseDuration = Duration.ofMinutes(5);
+
+    // 만료 Lease 복구 작업의 실행 주기와 한 번에 조회할 최대 Job 수다.
+    @NotNull
+    private Duration leaseRecoveryInterval = Duration.ofSeconds(30);
+
+    @Min(1)
+    private int leaseRecoveryBatchSize = 100;
 
     // 실패한 Job의 첫 Retry 지연과 지수 Backoff 상한이다.
     @NotNull
@@ -68,6 +76,16 @@ public class IndexingWorkerProperties {
         return leaseDuration != null
             && !leaseDuration.isZero()
             && !leaseDuration.isNegative();
+    }
+
+    /**
+     * 만료 Lease 복구 Scheduler가 과도하게 반복되지 않도록 실행 주기가 양수인지 검증한다.
+     */
+    @AssertTrue(message = "Lease 복구 주기는 0보다 커야 합니다.")
+    public boolean isLeaseRecoveryIntervalValid() {
+        return leaseRecoveryInterval != null
+            && !leaseRecoveryInterval.isZero()
+            && !leaseRecoveryInterval.isNegative();
     }
 
     /**

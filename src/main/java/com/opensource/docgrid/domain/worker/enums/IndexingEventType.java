@@ -12,6 +12,7 @@ public enum IndexingEventType {
     EMBEDDING_STARTED,
     EMBEDDING_FAILED,
     INDEXED,
+    LEASE_EXPIRED,
     FAILED,
     RETRY
 }

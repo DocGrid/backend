@@ -93,6 +93,26 @@ class EmbeddingJobAttemptTest {
         assertThat(attempt.getErrorMessage()).isEqualTo("문서 파싱 실패");
     }
 
+    @Test
+    @DisplayName("종결된 Attempt는 다른 실패 내용으로 다시 실패 처리할 수 없다")
+    void markFailed_rejectsCompletedAttempt() {
+        EmbeddingJobAttempt attempt = createStartedAttempt();
+        LocalDateTime firstEndedAt = STARTED_AT.plusSeconds(2);
+        attempt.markFailed(firstEndedAt, 2_000L, "STORAGE_UNAVAILABLE", "Storage timeout");
+
+        assertThatThrownBy(() -> attempt.markFailed(
+            STARTED_AT.plusSeconds(5),
+            5_000L,
+            "WORKER_INTERNAL_ERROR",
+            "different failure"
+        )).isInstanceOf(IllegalStateException.class)
+            .hasMessage("STARTED 상태의 Attempt만 FAILED로 전환할 수 있습니다.");
+        assertThat(attempt.getEndedAt()).isEqualTo(firstEndedAt);
+        assertThat(attempt.getDurationMs()).isEqualTo(2_000L);
+        assertThat(attempt.getErrorCode()).isEqualTo("STORAGE_UNAVAILABLE");
+        assertThat(attempt.getErrorMessage()).isEqualTo("Storage timeout");
+    }
+
     private EmbeddingJobAttempt createStartedAttempt() {
         return EmbeddingJobAttempt.builder()
             .embeddingJob(createJob())

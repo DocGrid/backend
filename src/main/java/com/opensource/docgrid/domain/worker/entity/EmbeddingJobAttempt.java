@@ -130,6 +130,10 @@ public class EmbeddingJobAttempt extends BaseEntity {
     }
 
     public void markFailed(LocalDateTime endedAt, Long durationMs, String errorCode, String errorMessage) {
+        // 한 Attempt의 최초 실패 내용이 멱등 재생 중 다른 값으로 덮이지 않도록 종결 상태를 차단한다.
+        if (status != AttemptStatus.STARTED) {
+            throw new IllegalStateException("STARTED 상태의 Attempt만 FAILED로 전환할 수 있습니다.");
+        }
         this.status = AttemptStatus.FAILED;
         this.endedAt = endedAt;
         this.durationMs = durationMs;

@@ -24,6 +24,9 @@ indexing:
     heartbeat-interval: ${INDEXING_WORKER_HEARTBEAT_INTERVAL:10s}
     dead-threshold: ${INDEXING_WORKER_DEAD_THRESHOLD:30s}
     lease-duration: ${INDEXING_WORKER_LEASE_DURATION:5m}
+    # Retry 지연은 10초부터 지수 증가하며 운영 기본 상한인 5분에서 제한한다.
+    retry-initial-delay: ${INDEXING_WORKER_RETRY_INITIAL_DELAY:10s}
+    retry-max-delay: ${INDEXING_WORKER_RETRY_MAX_DELAY:5m}
 
 server:
   port: 8080

@@ -94,7 +94,7 @@ class EmbeddingJobClaimServiceTest {
             NOW.plusMinutes(5)
         );
         given(workerNodeRepository.findById(WorkerNodeFixture.WORKER_ID)).willReturn(Optional.of(workerNode));
-        given(embeddingJobRepository.findNextPendingForUpdate()).willReturn(Optional.of(embeddingJob));
+        given(embeddingJobRepository.findNextPendingForUpdate(NOW)).willReturn(Optional.of(embeddingJob));
         given(embeddingJobConverter.toClaimedResponse(embeddingJob)).willReturn(expected);
 
         Optional<ClaimedEmbeddingJobResponse> result = embeddingJobClaimService.claim(WorkerNodeFixture.WORKER_ID);
@@ -128,7 +128,7 @@ class EmbeddingJobClaimServiceTest {
             5L, 2L, "token", NOW, NOW.plusMinutes(5)
         );
         given(workerNodeRepository.findById(WorkerNodeFixture.WORKER_ID)).willReturn(Optional.of(workerNode));
-        given(embeddingJobRepository.findNextPendingForUpdate()).willReturn(Optional.of(embeddingJob));
+        given(embeddingJobRepository.findNextPendingForUpdate(NOW)).willReturn(Optional.of(embeddingJob));
         given(embeddingJobConverter.toClaimedResponse(embeddingJob)).willReturn(expected);
 
         assertThat(embeddingJobClaimService.claim(WorkerNodeFixture.WORKER_ID)).contains(expected);
@@ -142,7 +142,7 @@ class EmbeddingJobClaimServiceTest {
         assertThatThrownBy(() -> embeddingJobClaimService.claim(WorkerNodeFixture.WORKER_ID))
             .isInstanceOf(DocGridException.class)
             .hasFieldOrPropertyWithValue("errorCode", ErrorCode.WORKER_NOT_FOUND);
-        then(embeddingJobRepository).should(never()).findNextPendingForUpdate();
+        then(embeddingJobRepository).should(never()).findNextPendingForUpdate(any());
     }
 
     @Test
@@ -154,7 +154,7 @@ class EmbeddingJobClaimServiceTest {
         assertThatThrownBy(() -> embeddingJobClaimService.claim(WorkerNodeFixture.WORKER_ID))
             .isInstanceOf(DocGridException.class)
             .hasFieldOrPropertyWithValue("errorCode", ErrorCode.WORKER_NOT_AVAILABLE);
-        then(embeddingJobRepository).should(never()).findNextPendingForUpdate();
+        then(embeddingJobRepository).should(never()).findNextPendingForUpdate(any());
     }
 
     @Test
@@ -166,7 +166,7 @@ class EmbeddingJobClaimServiceTest {
         assertThatThrownBy(() -> embeddingJobClaimService.claim(WorkerNodeFixture.WORKER_ID))
             .isInstanceOf(DocGridException.class)
             .hasFieldOrPropertyWithValue("errorCode", ErrorCode.WORKER_NOT_AVAILABLE);
-        then(embeddingJobRepository).should(never()).findNextPendingForUpdate();
+        then(embeddingJobRepository).should(never()).findNextPendingForUpdate(any());
     }
 
     @Test
@@ -174,7 +174,7 @@ class EmbeddingJobClaimServiceTest {
     void claim_returnsEmpty_when_pendingJobDoesNotExist() {
         WorkerNode workerNode = createWorker(WorkerStatus.ACTIVE, NOW);
         given(workerNodeRepository.findById(WorkerNodeFixture.WORKER_ID)).willReturn(Optional.of(workerNode));
-        given(embeddingJobRepository.findNextPendingForUpdate()).willReturn(Optional.empty());
+        given(embeddingJobRepository.findNextPendingForUpdate(NOW)).willReturn(Optional.empty());
 
         assertThat(embeddingJobClaimService.claim(WorkerNodeFixture.WORKER_ID)).isEmpty();
         then(indexingEventRepository).should(never()).save(any());

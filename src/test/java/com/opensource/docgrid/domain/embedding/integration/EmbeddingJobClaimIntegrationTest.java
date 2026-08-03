@@ -2,6 +2,7 @@ package com.opensource.docgrid.domain.embedding.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -54,6 +55,7 @@ class EmbeddingJobClaimIntegrationTest {
 
     private static final String TEST_SCHEMA = "docgrid_embedding_job_claim_test";
     private static final long TIMEOUT_SECONDS = 10;
+    private static final LocalDateTime CLAIMED_AT = LocalDateTime.of(2026, 8, 3, 10, 0);
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -109,7 +111,7 @@ class EmbeddingJobClaimIntegrationTest {
         insertJob(documentVersionId, "PROCESSING", 100, "2026-07-22 08:00:00");
 
         Long selectedJobId = inNewTransaction(() ->
-            embeddingJobRepository.findNextPendingForUpdate().orElseThrow().getId()
+            embeddingJobRepository.findNextPendingForUpdate(CLAIMED_AT).orElseThrow().getId()
         );
 
         assertThat(selectedJobId).isEqualTo(oldHighPriorityJobId);
@@ -127,7 +129,7 @@ class EmbeddingJobClaimIntegrationTest {
 
         // 1. 첫 번째 Transaction이 최우선 Job의 행 잠금을 잡은 채 Commit을 지연한다.
         Future<Long> lockHolder = executorService.submit(() -> inNewTransaction(() -> {
-            Long selectedId = embeddingJobRepository.findNextPendingForUpdate().orElseThrow().getId();
+            Long selectedId = embeddingJobRepository.findNextPendingForUpdate(CLAIMED_AT).orElseThrow().getId();
             rowLocked.countDown();
             awaitLatch(releaseLock);
             return selectedId;
@@ -138,7 +140,7 @@ class EmbeddingJobClaimIntegrationTest {
 
         // 3. 두 번째 Transaction은 잠금 해제를 기다리지 않고 다음 PENDING Job을 선택해야 한다.
         Future<Long> skipLockedReader = executorService.submit(() -> inNewTransaction(() ->
-            embeddingJobRepository.findNextPendingForUpdate().orElseThrow().getId()
+            embeddingJobRepository.findNextPendingForUpdate(CLAIMED_AT).orElseThrow().getId()
         ));
 
         try {
@@ -149,6 +151,31 @@ class EmbeddingJobClaimIntegrationTest {
 
         // 4. 잠금을 보유했던 첫 번째 Transaction은 원래의 최우선 Job을 선택했는지 확인한다.
         assertThat(lockHolder.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo(firstJobId);
+    }
+
+    @Test
+    @DisplayName("Retry 예약 시각 이전에는 제외하고 정확히 예약 시각부터 Claim 후보가 된다")
+    void findNextPendingForUpdate_respectsNextRetryAtBoundary() {
+        Long documentVersionId = insertDocumentVersion();
+        Long immediateJobId = insertJob(documentVersionId, "PENDING", 1, "2026-08-03 09:00:00");
+        Long retryJobId = insertJob(documentVersionId, "PENDING", 100, "2026-08-03 08:00:00");
+        jdbcTemplate.update(
+            "UPDATE embedding_jobs SET next_retry_at = CAST(? AS TIMESTAMP) WHERE id = ?",
+            "2026-08-03 10:00:00",
+            retryJobId
+        );
+
+        Long beforeRetry = inNewTransaction(() -> embeddingJobRepository
+            .findNextPendingForUpdate(CLAIMED_AT.minusNanos(1_000))
+            .orElseThrow()
+            .getId());
+        Long atRetry = inNewTransaction(() -> embeddingJobRepository
+            .findNextPendingForUpdate(CLAIMED_AT)
+            .orElseThrow()
+            .getId());
+
+        assertThat(beforeRetry).isEqualTo(immediateJobId);
+        assertThat(atRetry).isEqualTo(retryJobId);
     }
 
     @Test
@@ -220,6 +247,28 @@ class EmbeddingJobClaimIntegrationTest {
             """, Integer.class);
 
         assertThat(length).isEqualTo(36);
+    }
+
+    @Test
+    @DisplayName("V35 Migration이 next_retry_at 컬럼과 조회 인덱스를 생성한다")
+    void migration_createsNextRetryAtColumnAndIndex() {
+        String dataType = jdbcTemplate.queryForObject("""
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'embedding_jobs'
+              AND column_name = 'next_retry_at'
+            """, String.class);
+        Integer indexCount = jdbcTemplate.queryForObject("""
+            SELECT COUNT(*)
+            FROM pg_indexes
+            WHERE schemaname = current_schema()
+              AND tablename = 'embedding_jobs'
+              AND indexname = 'idx_embedding_jobs_status_next_retry_at'
+            """, Integer.class);
+
+        assertThat(dataType).isEqualTo("timestamp without time zone");
+        assertThat(indexCount).isEqualTo(1);
     }
 
     private Optional<ClaimedEmbeddingJobResponse> claimAfterBarrier(Long workerId, CyclicBarrier barrier) {

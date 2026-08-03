@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.opensource.docgrid.domain.embedding.dto.request.CompleteDocumentIndexingRequest;
+import com.opensource.docgrid.domain.embedding.dto.request.FailDocumentIndexingRequest;
 import com.opensource.docgrid.domain.embedding.dto.request.CreateDocumentChunksRequest;
 import com.opensource.docgrid.domain.embedding.dto.request.CreateDocumentEmbeddingsRequest;
 import com.opensource.docgrid.domain.embedding.dto.request.StartEmbeddingJobAttemptRequest;
@@ -20,12 +21,14 @@ import com.opensource.docgrid.domain.embedding.dto.response.ClaimedEmbeddingJobR
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentChunksResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentEmbeddingsResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingCompletionResponse;
+import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingFailureResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.StartedEmbeddingJobAttemptResponse;
 import com.opensource.docgrid.domain.document.service.DocumentParsingService;
 import com.opensource.docgrid.domain.document.service.command.DocumentChunkTransactionService.ChunkResult;
 import com.opensource.docgrid.domain.embedding.service.DocumentEmbeddingService;
 import com.opensource.docgrid.domain.embedding.service.DocumentEmbeddingService.EmbeddingResult;
 import com.opensource.docgrid.domain.embedding.service.command.DocumentIndexingCompletionService;
+import com.opensource.docgrid.domain.embedding.service.command.DocumentIndexingFailureService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttemptService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttemptService.StartResult;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobClaimService;
@@ -43,7 +46,7 @@ import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 관리자용 Embedding Job Claim, Attempt 시작과 문서 Chunk·Embedding·인덱싱 완료 실행을 HTTP API로 제공한다.
+ * 관리자용 Embedding Job Claim, Attempt 시작과 문서 Chunk·Embedding·인덱싱 완료·실패 실행을 HTTP API로 제공한다.
  *
  * <p>HTTP 입력 검증과 성공 상태 변환만 담당한다. Job Claim 및 현재 소유권 기반 파이프라인 단계의
  * Transaction·외부 호출·동시성 규칙은 각 Service에 위임한다.
@@ -60,6 +63,7 @@ public class IndexingJobAdminController {
     private final DocumentParsingService documentParsingService;
     private final DocumentEmbeddingService documentEmbeddingService;
     private final DocumentIndexingCompletionService documentIndexingCompletionService;
+    private final DocumentIndexingFailureService documentIndexingFailureService;
 
     @Operation(
         summary = "PENDING Job Claim",
@@ -354,5 +358,56 @@ public class IndexingJobAdminController {
         return ResponseUtils.ok(
             documentIndexingCompletionService.complete(jobId, attemptId, request)
         );
+    }
+
+    @Operation(
+        summary = "Document 인덱싱 실패",
+        description = "현재 PROCESSING Job의 소유권과 Attempt를 검증하고 서버 실패 유형 정책에 따라 "
+            + "지연 Retry를 예약하거나 Version과 Job을 최종 실패로 종료합니다. "
+            + "같은 실패 실행의 재요청은 저장된 최초 Attempt 결과를 멱등 재생합니다."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "Document 인덱싱 최초 실패 기록 또는 기존 실패 결과 재생"
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "ID, Worker, Claim Token, 실패 유형 또는 오류 메시지 형식 오류",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "403",
+            description = "인증되지 않았거나 ADMIN 권한 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "Embedding Job 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409",
+            description = "현재 소유권, Lease, Attempt 또는 기존 실패 내용 충돌",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "500",
+            description = "Version, Document 또는 실패 이력 데이터 불일치",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        )
+    })
+    @PostMapping(
+        value = "/{jobId}/attempts/{attemptId}/fail",
+        consumes = MediaType.APPLICATION_JSON_VALUE,
+        produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<ApiResponse<DocumentIndexingFailureResponse>> failIndexing(
+        @PathVariable @Positive Long jobId,
+        @PathVariable @Positive Long attemptId,
+        @Valid @RequestBody FailDocumentIndexingRequest request
+    ) {
+        // 최초 실패와 멱등 재생 모두 같은 Attempt 기반 실패 응답을 200 OK로 반환한다.
+        return ResponseUtils.ok(documentIndexingFailureService.fail(jobId, attemptId, request));
     }
 }

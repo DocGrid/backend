@@ -34,11 +34,14 @@ import com.opensource.docgrid.domain.embedding.dto.response.ClaimedEmbeddingJobR
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentChunksResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentEmbeddingsResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingCompletionResponse;
+import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingFailureResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.StartedEmbeddingJobAttemptResponse;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
+import com.opensource.docgrid.domain.embedding.enums.IndexingFailureType;
 import com.opensource.docgrid.domain.embedding.service.DocumentEmbeddingService;
 import com.opensource.docgrid.domain.embedding.service.DocumentEmbeddingService.EmbeddingResult;
 import com.opensource.docgrid.domain.embedding.service.command.DocumentIndexingCompletionService;
+import com.opensource.docgrid.domain.embedding.service.command.DocumentIndexingFailureService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttemptService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttemptService.StartResult;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobClaimService;
@@ -48,7 +51,7 @@ import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
 /**
- * 관리자용 Job Claim, Attempt 시작과 Document Chunk·Embedding 생성·인덱싱 완료 API 계약을 검증한다.
+ * 관리자용 Job Claim, Attempt 시작과 Document Chunk·Embedding 생성·인덱싱 완료·실패 API 계약을 검증한다.
  *
  * <p>각 API의 최초 생성·멱등 재생·Validation·비즈니스 오류 및 ADMIN Security 동작을
  * 실제 Service 실행 없이 Controller 경계에서 확인한다.
@@ -63,6 +66,7 @@ class IndexingJobAdminControllerTest {
     private static final String CHUNKS_URL = "/admin/indexing-jobs/10/attempts/100/chunks";
     private static final String EMBEDDINGS_URL = "/admin/indexing-jobs/10/attempts/100/embeddings";
     private static final String COMPLETE_URL = "/admin/indexing-jobs/10/attempts/100/complete";
+    private static final String FAIL_URL = "/admin/indexing-jobs/10/attempts/100/fail";
     private static final Long JOB_ID = 10L;
     private static final Long ATTEMPT_ID = 100L;
     private static final Long WORKER_ID = 1L;
@@ -73,6 +77,14 @@ class IndexingJobAdminControllerTest {
           "claimToken": "34c19d16-6ae1-4f6a-a35d-0123456789ab"
         }
         """;
+    private static final String VALID_FAILURE_BODY = """
+        {
+          "workerId": 1,
+          "claimToken": "34c19d16-6ae1-4f6a-a35d-0123456789ab",
+          "failureType": "EMBEDDING_PROVIDER_UNAVAILABLE",
+          "errorMessage": "Embedding provider request timed out"
+        }
+        """;
 
     @Autowired private MockMvc mockMvc;
 
@@ -81,6 +93,7 @@ class IndexingJobAdminControllerTest {
     @MockitoBean private DocumentParsingService documentParsingService;
     @MockitoBean private DocumentEmbeddingService documentEmbeddingService;
     @MockitoBean private DocumentIndexingCompletionService documentIndexingCompletionService;
+    @MockitoBean private DocumentIndexingFailureService documentIndexingFailureService;
     @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
     @MockitoBean private JwtProvider jwtProvider;
     @MockitoBean private CorsConfigurationSource corsConfigurationSource;
@@ -503,6 +516,82 @@ class IndexingJobAdminControllerTest {
             .andExpect(status().isForbidden());
     }
 
+    @Test
+    @DisplayName("ADMIN 사용자의 최초 실패와 멱등 재생은 Attempt 기반 응답으로 200을 반환한다")
+    void failIndexing_returnsOkWithoutSensitiveFields() throws Exception {
+        DocumentIndexingFailureResponse response = createFailureResponse();
+        given(documentIndexingFailureService.fail(eq(JOB_ID), eq(ATTEMPT_ID), any()))
+            .willReturn(response);
+
+        mockMvc.perform(post(FAIL_URL)
+                .contentType("application/json")
+                .content(VALID_FAILURE_BODY)
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.jobId").value(JOB_ID))
+            .andExpect(jsonPath("$.data.attemptId").value(ATTEMPT_ID))
+            .andExpect(jsonPath("$.data.attemptNo").value(2))
+            .andExpect(jsonPath("$.data.attemptStatus").value("FAILED"))
+            .andExpect(jsonPath("$.data.failureType").value("EMBEDDING_PROVIDER_UNAVAILABLE"))
+            .andExpect(jsonPath("$.data.failedAt").value("2026-08-03T10:30:00"))
+            .andExpect(jsonPath("$.data.durationMs").value(42031))
+            .andExpect(jsonPath("$.data.claimToken").doesNotExist())
+            .andExpect(jsonPath("$.data.errorMessage").doesNotExist())
+            .andExpect(jsonPath("$.data.jobStatus").doesNotExist())
+            .andExpect(jsonPath("$.data.nextRetryAt").doesNotExist());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidFailureRequests")
+    @DisplayName("잘못된 인덱싱 실패 요청은 400을 반환한다")
+    void failIndexing_returnsBadRequest_when_requestIsInvalid(
+        String description,
+        String url,
+        String body
+    ) throws Exception {
+        mockMvc.perform(post(url)
+                .contentType("application/json")
+                .content(body)
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("COMMON-002"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("failureBusinessErrors")
+    @DisplayName("인덱싱 실패 비즈니스 오류를 정의된 HTTP 상태와 코드로 반환한다")
+    void failIndexing_returnsDefinedError(
+        ErrorCode errorCode,
+        int expectedStatus,
+        String expectedCode
+    ) throws Exception {
+        given(documentIndexingFailureService.fail(eq(JOB_ID), eq(ATTEMPT_ID), any()))
+            .willThrow(new DocGridException(errorCode));
+
+        mockMvc.perform(post(FAIL_URL)
+                .contentType("application/json")
+                .content(VALID_FAILURE_BODY)
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().is(expectedStatus))
+            .andExpect(jsonPath("$.code").value(expectedCode));
+    }
+
+    @Test
+    @DisplayName("일반 사용자와 미인증 사용자는 인덱싱 실패를 보고할 수 없다")
+    void failIndexing_returnsForbidden_withoutAdminRole() throws Exception {
+        mockMvc.perform(post(FAIL_URL)
+                .contentType("application/json")
+                .content(VALID_FAILURE_BODY)
+                .with(user("user").roles("USER")))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post(FAIL_URL)
+                .contentType("application/json")
+                .content(VALID_FAILURE_BODY))
+            .andExpect(status().isForbidden());
+    }
+
     private static Stream<Arguments> invalidAttemptRequests() {
         return Stream.of(
             Arguments.of("Job ID가 양수가 아님", "/admin/indexing-jobs/0/attempts", VALID_ATTEMPT_BODY),
@@ -651,6 +740,84 @@ class IndexingJobAdminControllerTest {
         );
     }
 
+    private static Stream<Arguments> invalidFailureRequests() {
+        return Stream.of(
+            Arguments.of(
+                "Job ID가 양수가 아님",
+                "/admin/indexing-jobs/0/attempts/100/fail",
+                VALID_FAILURE_BODY
+            ),
+            Arguments.of(
+                "Attempt ID가 양수가 아님",
+                "/admin/indexing-jobs/10/attempts/0/fail",
+                VALID_FAILURE_BODY
+            ),
+            Arguments.of("Worker ID가 양수가 아님", FAIL_URL, """
+                {
+                  "workerId": 0,
+                  "claimToken": "%s",
+                  "failureType": "WORKER_INTERNAL_ERROR",
+                  "errorMessage": "temporary failure"
+                }
+                """.formatted(CLAIM_TOKEN)),
+            Arguments.of("Claim Token 형식 오류", FAIL_URL, """
+                {
+                  "workerId": 1,
+                  "claimToken": "not-a-uuid",
+                  "failureType": "WORKER_INTERNAL_ERROR",
+                  "errorMessage": "temporary failure"
+                }
+                """),
+            Arguments.of("실패 유형 누락", FAIL_URL, """
+                {
+                  "workerId": 1,
+                  "claimToken": "%s",
+                  "errorMessage": "temporary failure"
+                }
+                """.formatted(CLAIM_TOKEN)),
+            Arguments.of("실패 유형 Enum 오류", FAIL_URL, """
+                {
+                  "workerId": 1,
+                  "claimToken": "%s",
+                  "failureType": "UNKNOWN_FAILURE",
+                  "errorMessage": "temporary failure"
+                }
+                """.formatted(CLAIM_TOKEN)),
+            Arguments.of("오류 메시지 공백", FAIL_URL, """
+                {
+                  "workerId": 1,
+                  "claimToken": "%s",
+                  "failureType": "WORKER_INTERNAL_ERROR",
+                  "errorMessage": " "
+                }
+                """.formatted(CLAIM_TOKEN)),
+            Arguments.of("오류 메시지 2000자 초과", FAIL_URL, """
+                {
+                  "workerId": 1,
+                  "claimToken": "%s",
+                  "failureType": "WORKER_INTERNAL_ERROR",
+                  "errorMessage": "%s"
+                }
+                """.formatted(CLAIM_TOKEN, "x".repeat(2001)))
+        );
+    }
+
+    private static Stream<Arguments> failureBusinessErrors() {
+        return Stream.of(
+            Arguments.of(ErrorCode.EMBEDDING_JOB_NOT_FOUND, 404, "EMBEDDING-JOB-001"),
+            Arguments.of(ErrorCode.EMBEDDING_JOB_NOT_PROCESSING, 409, "EMBEDDING-JOB-002"),
+            Arguments.of(ErrorCode.EMBEDDING_JOB_OWNERSHIP_INVALID, 409, "EMBEDDING-JOB-003"),
+            Arguments.of(ErrorCode.EMBEDDING_JOB_LEASE_EXPIRED, 409, "EMBEDDING-JOB-004"),
+            Arguments.of(ErrorCode.EMBEDDING_JOB_ATTEMPT_INVALID, 409, "EMBEDDING-JOB-006"),
+            Arguments.of(ErrorCode.EMBEDDING_JOB_FAILURE_CONFLICT, 409, "EMBEDDING-JOB-007"),
+            Arguments.of(
+                ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT,
+                500,
+                "DOCUMENT-INDEXING-004"
+            )
+        );
+    }
+
     private StartedEmbeddingJobAttemptResponse createAttemptResponse() {
         return new StartedEmbeddingJobAttemptResponse(
             100L,
@@ -696,6 +863,18 @@ class IndexingJobAdminControllerTest {
             DocumentVersionStatus.INDEXED,
             LocalDateTime.of(2026, 7, 31, 16, 0),
             8_421L
+        );
+    }
+
+    private DocumentIndexingFailureResponse createFailureResponse() {
+        return new DocumentIndexingFailureResponse(
+            JOB_ID,
+            ATTEMPT_ID,
+            2,
+            AttemptStatus.FAILED,
+            IndexingFailureType.EMBEDDING_PROVIDER_UNAVAILABLE,
+            LocalDateTime.of(2026, 8, 3, 10, 30),
+            42_031L
         );
     }
 }

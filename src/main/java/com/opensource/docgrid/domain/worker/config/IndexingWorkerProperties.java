@@ -13,7 +13,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 인덱싱 Worker의 실행 여부, Heartbeat, DEAD 판정, Job Lease 시간을 바인딩하는 설정 클래스.
+ * 인덱싱 Worker의 실행 여부, Heartbeat, DEAD 판정, Job Lease와 Retry 지연을 바인딩하는 설정 클래스.
  *
  * <p>{@code indexing.worker} 환경 설정을 타입 안전한 {@link Duration}으로 제공하고, 애플리케이션 시작
  * 단계에서 서로 모순되거나 0 이하인 시간 설정을 차단한다.
@@ -41,6 +41,13 @@ public class IndexingWorkerProperties {
     @NotNull
     private Duration leaseDuration = Duration.ofMinutes(5);
 
+    // 실패한 Job의 첫 Retry 지연과 지수 Backoff 상한이다.
+    @NotNull
+    private Duration retryInitialDelay = Duration.ofSeconds(10);
+
+    @NotNull
+    private Duration retryMaxDelay = Duration.ofMinutes(5);
+
     /**
      * Heartbeat가 양수이고 DEAD 기준보다 짧은지 검증한다.
      */
@@ -61,5 +68,17 @@ public class IndexingWorkerProperties {
         return leaseDuration != null
             && !leaseDuration.isZero()
             && !leaseDuration.isNegative();
+    }
+
+    /**
+     * Retry 지연이 모두 양수이고 최대 지연이 초기 지연보다 짧지 않은지 검증한다.
+     */
+    @AssertTrue(message = "Retry 최대 지연은 양수인 초기 지연보다 짧을 수 없습니다.")
+    public boolean isRetryDelayValid() {
+        return retryInitialDelay != null
+            && retryMaxDelay != null
+            && !retryInitialDelay.isZero()
+            && !retryInitialDelay.isNegative()
+            && retryMaxDelay.compareTo(retryInitialDelay) >= 0;
     }
 }

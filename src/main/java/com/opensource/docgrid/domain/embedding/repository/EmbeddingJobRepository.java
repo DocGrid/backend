@@ -1,5 +1,6 @@
 package com.opensource.docgrid.domain.embedding.repository;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.Optional;
 
@@ -30,24 +31,26 @@ public interface EmbeddingJobRepository extends JpaRepository<EmbeddingJob, Long
     );
 
     /**
-     * 우선순위 Queue 정책에 따라 다음 PENDING Job 한 건을 잠금 상태로 조회한다.
+     * 우선순위 Queue 정책에 따라 현재 실행 가능한 다음 PENDING Job 한 건을 잠금 상태로 조회한다.
      *
      * <p>다른 Transaction이 잠근 행은 기다리지 않고 건너뛴다. 반환된 행 잠금은 호출한 Service의
      * Transaction이 끝날 때까지 유지돼야 하므로 반드시 Transaction 내부에서 호출한다.
      *
+     * @param claimedAt Retry 예약 시각과 비교할 Claim 기준 시각
      * @return 잠금을 획득한 다음 PENDING Job, 처리 가능한 후보가 없으면 빈 값
      */
     @Query(value = """
         SELECT job.*
         FROM embedding_jobs job
         WHERE job.status = 'PENDING'
+          AND (job.next_retry_at IS NULL OR job.next_retry_at <= :claimedAt)
         ORDER BY job.priority DESC,
                  job.created_at ASC,
                  job.id ASC
         LIMIT 1
         FOR UPDATE SKIP LOCKED
         """, nativeQuery = true)
-    Optional<EmbeddingJob> findNextPendingForUpdate();
+    Optional<EmbeddingJob> findNextPendingForUpdate(@Param("claimedAt") LocalDateTime claimedAt);
 
     /**
      * 지정한 Job을 현재 Transaction이 끝날 때까지 쓰기 잠금 상태로 조회한다.

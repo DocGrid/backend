@@ -142,6 +142,11 @@ public enum ErrorCode {
         "DOCUMENT-INDEXING-003",
         "문서 인덱싱 완료 데이터를 확인할 수 없습니다."
     ),
+    DOCUMENT_INDEXING_FAILURE_INCONSISTENT(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "DOCUMENT-INDEXING-004",
+        "문서 인덱싱 실패 데이터를 확인할 수 없습니다."
+    ),
 
     // PERMISSION
     INVALID_TARGET_TYPE(HttpStatus.BAD_REQUEST, "PERMISSION-001", "target_type과 ID 필드 조합이 올바르지 않습니다."),
@@ -184,6 +189,11 @@ public enum ErrorCode {
         HttpStatus.CONFLICT,
         "EMBEDDING-JOB-006",
         "현재 Claim 실행 Context와 Attempt가 일치하지 않습니다."
+    ),
+    EMBEDDING_JOB_FAILURE_CONFLICT(
+        HttpStatus.CONFLICT,
+        "EMBEDDING-JOB-007",
+        "동일한 Embedding Job Attempt에 다른 실패 내용이 이미 기록되었습니다."
     ),
 
     // EMBEDDING MODEL

@@ -1,5 +1,6 @@
 package com.opensource.docgrid.domain.worker.service;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
@@ -31,6 +32,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "indexing.worker", name = "enabled", havingValue = "true")
 public class WorkerIndexingPipeline {
 
     private final EmbeddingJobAttemptService embeddingJobAttemptService;
@@ -39,6 +41,7 @@ public class WorkerIndexingPipeline {
     private final DocumentEmbeddingService documentEmbeddingService;
     private final DocumentIndexingCompletionService completionService;
     private final WorkerIndexingFailureReporter failureReporter;
+    private final WorkerLeaseRenewalManager leaseRenewalManager;
 
     /**
      * 현재 Claim의 Attempt를 시작하고 문서 상태에 맞는 단계부터 완료까지 실행한다.
@@ -58,8 +61,11 @@ public class WorkerIndexingPipeline {
                 new StartEmbeddingJobAttemptRequest(claimedJob.workerId(), claimedJob.claimToken())
             ).response();
 
-            try {
-                // 2. 경로 선택용 상태 Snapshot을 조회하고 이미 완료한 단계는 다시 외부 호출하지 않는다.
+            // 2. 실제 Attempt 수명에 맞춰 Lease 갱신을 시작하고 모든 종료 경로에서 예약을 해제한다.
+            try (WorkerLeaseRenewalHandle leaseHandle = leaseRenewalManager.start(claimedJob)) {
+                leaseHandle.ensureOwned();
+
+                // 3. 경로 선택용 상태 Snapshot을 조회하고 이미 완료한 단계는 다시 외부 호출하지 않는다.
                 DocumentVersionStatus initialStatus = stageQueryService.getStatus(
                     claimedJob.documentVersionId()
                 );
@@ -70,9 +76,10 @@ public class WorkerIndexingPipeline {
                     attempt.attemptId(),
                     initialStatus
                 );
-                executeFromCurrentStage(claimedJob, attempt.attemptId(), initialStatus);
+                executeFromCurrentStage(claimedJob, attempt.attemptId(), initialStatus, leaseHandle);
 
-                // 3. 전체 Embedding Set과 현재 실행 소유권을 최종 검증해 검색 가능한 Version으로 확정한다.
+                // 4. 전체 Embedding Set과 현재 실행 소유권을 최종 검증해 검색 가능한 Version으로 확정한다.
+                leaseHandle.ensureOwned();
                 completionService.complete(
                     claimedJob.jobId(),
                     attempt.attemptId(),
@@ -85,7 +92,7 @@ public class WorkerIndexingPipeline {
                     attempt.attemptId()
                 );
             } catch (RuntimeException exception) {
-                // 4. 실제 Attempt가 시작된 뒤의 오류만 제한된 실패 계약으로 기록한다.
+                // 5. 실제 Attempt가 시작된 뒤의 오류만 제한된 실패 계약으로 기록한다.
                 failureReporter.report(claimedJob, attempt.attemptId(), exception);
             }
         }
@@ -105,7 +112,8 @@ public class WorkerIndexingPipeline {
     private void executeFromCurrentStage(
         ClaimedEmbeddingJobResponse claimedJob,
         Long attemptId,
-        DocumentVersionStatus initialStatus
+        DocumentVersionStatus initialStatus,
+        WorkerLeaseRenewalHandle leaseHandle
     ) {
         // 1. 새 Version과 중단된 Parsing은 기존 Chunk Service의 멱등·재개 계약으로 CHUNKED까지 진행한다.
         if (initialStatus == DocumentVersionStatus.UPLOADED
@@ -115,16 +123,19 @@ public class WorkerIndexingPipeline {
                 attemptId,
                 new CreateDocumentChunksRequest(claimedJob.workerId(), claimedJob.claimToken())
             );
+            leaseHandle.ensureOwned();
         } else if (initialStatus != DocumentVersionStatus.CHUNKED
             && initialStatus != DocumentVersionStatus.EMBEDDING) {
             throw new DocGridException(ErrorCode.INDEXING_STATUS_INCONSISTENT);
         }
 
         // 2. CHUNKED 또는 중단된 EMBEDDING 상태를 기존 Service의 생성·재생 계약으로 완료한다.
+        leaseHandle.ensureOwned();
         documentEmbeddingService.createEmbeddings(
             claimedJob.jobId(),
             attemptId,
             new CreateDocumentEmbeddingsRequest(claimedJob.workerId(), claimedJob.claimToken())
         );
+        leaseHandle.ensureOwned();
     }
 }

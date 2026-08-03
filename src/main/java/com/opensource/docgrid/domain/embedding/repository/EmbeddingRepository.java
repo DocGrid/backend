@@ -13,7 +13,7 @@ import com.opensource.docgrid.domain.embedding.enums.EmbeddingStatus;
  *
  * <p>생성 Transaction은 Version·Model 단위 저장 개수로 부분 저장을 구분한다. 완료 Transaction은
  * Vector를 Java Heap으로 역직렬화하지 않고 DB 집계로 관계·차원·Hash 불변식을 검증하고,
- * 이전 현재 Version의 ACTIVE Set을 STALE로 일괄 전환한다.
+ * 이전 현재 Version 또는 최종 실패한 Version의 ACTIVE Set을 STALE로 일괄 전환한다.
  */
 public interface EmbeddingRepository extends JpaRepository<Embedding, Long> {
 
@@ -31,7 +31,7 @@ public interface EmbeddingRepository extends JpaRepository<Embedding, Long> {
     );
 
     /**
-     * 이전 현재 Version의 검색 가능한 Embedding을 한 SQL로 비활성화한다.
+     * 인덱싱 완료 시 이전 현재 Version 또는 최종 실패 대상의 검색 가능한 Embedding을 한 SQL로 비활성화한다.
      *
      * @return 실제 STALE로 변경된 행 수
      */

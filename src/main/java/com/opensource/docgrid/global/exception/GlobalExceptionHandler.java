@@ -91,7 +91,7 @@ public class GlobalExceptionHandler {
         log.warn("[NotReadable] {} {} | {}", request.getMethod(), request.getRequestURI(), e.getMessage());
         return ResponseEntity
             .status(HttpStatus.BAD_REQUEST)
-            .body(ErrorResponse.of(ErrorCode.BAD_REQUEST, request));
+            .body(ErrorResponse.of(ErrorCode.INVALID_PARAMETER, request));
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)

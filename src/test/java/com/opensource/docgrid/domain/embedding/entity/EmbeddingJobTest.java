@@ -13,7 +13,7 @@ import com.opensource.docgrid.domain.worker.entity.WorkerNode;
 import com.opensource.docgrid.domain.worker.enums.WorkerStatus;
 
 /**
- * Embedding Job의 Claim·인덱싱 완료 상태 전이와 소유권 불변식을 검증하는 Entity 단위 테스트.
+ * Embedding Job의 Claim·Retry 예약·인덱싱 완료 상태 전이와 소유권 불변식을 검증하는 Entity 단위 테스트.
  *
  * <p>PENDING Job이 PROCESSING으로 바뀔 때 Worker, Token, Lease, 최초 시작 시각이 함께 기록되는지와
  * 이미 Claim된 Job의 소유권 덮어쓰기가 차단되는지 확인한다.
@@ -74,6 +74,77 @@ class EmbeddingJobTest {
             .isInstanceOf(IllegalStateException.class)
             .hasMessage("PROCESSING 상태의 Job만 INDEXED로 전환할 수 있습니다.");
         assertThat(pendingJob.getStatus()).isEqualTo(EmbeddingJobStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("PROCESSING Job의 Retry를 예약하면 횟수와 시각을 기록하고 현재 소유권을 해제한다")
+    void scheduleRetry_requeuesJobAndReleasesOwnership() {
+        EmbeddingJob embeddingJob = createPendingJob();
+        embeddingJob.claim(createActiveWorker(), CLAIM_TOKEN, CLAIMED_AT, EXPIRES_AT);
+        LocalDateTime nextRetryAt = CLAIMED_AT.plusSeconds(10);
+
+        embeddingJob.scheduleRetry("STORAGE_UNAVAILABLE", "Storage timeout", nextRetryAt);
+
+        assertThat(embeddingJob.getStatus()).isEqualTo(EmbeddingJobStatus.PENDING);
+        assertThat(embeddingJob.getRetryCount()).isEqualTo(1);
+        assertThat(embeddingJob.getNextRetryAt()).isEqualTo(nextRetryAt);
+        assertThat(embeddingJob.getErrorCode()).isEqualTo("STORAGE_UNAVAILABLE");
+        assertThat(embeddingJob.getErrorMessage()).isEqualTo("Storage timeout");
+        assertThat(embeddingJob.getLockedByWorker()).isNull();
+        assertThat(embeddingJob.getClaimToken()).isNull();
+        assertThat(embeddingJob.getLockedAt()).isNull();
+        assertThat(embeddingJob.getLockExpiresAt()).isNull();
+        assertThat(embeddingJob.getStartedAt()).isEqualTo(CLAIMED_AT);
+    }
+
+    @Test
+    @DisplayName("Retry로 복귀한 Job을 다시 Claim하면 예약 시각을 소비하고 최초 시작 시각을 보존한다")
+    void claim_clearsRetryScheduleAndPreservesFirstStart() {
+        EmbeddingJob embeddingJob = createPendingJob();
+        WorkerNode workerNode = createActiveWorker();
+        embeddingJob.claim(workerNode, CLAIM_TOKEN, CLAIMED_AT, EXPIRES_AT);
+        embeddingJob.scheduleRetry("STORAGE_UNAVAILABLE", "Storage timeout", CLAIMED_AT.plusSeconds(10));
+
+        LocalDateTime reclaimedAt = CLAIMED_AT.plusSeconds(10);
+        embeddingJob.claim(
+            workerNode,
+            "8d242ac5-0916-4e1c-a781-1f7b932f989b",
+            reclaimedAt,
+            reclaimedAt.plusMinutes(5)
+        );
+
+        assertThat(embeddingJob.getNextRetryAt()).isNull();
+        assertThat(embeddingJob.getStartedAt()).isEqualTo(CLAIMED_AT);
+        assertThat(embeddingJob.getRetryCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Retry 횟수를 모두 소진한 Job은 다시 예약할 수 없다")
+    void scheduleRetry_throws_when_retriesAreExhausted() {
+        EmbeddingJob embeddingJob = EmbeddingJob.builder()
+            .status(EmbeddingJobStatus.PENDING)
+            .priority(0)
+            .maxRetryCount(1)
+            .build();
+        WorkerNode workerNode = createActiveWorker();
+        embeddingJob.claim(workerNode, CLAIM_TOKEN, CLAIMED_AT, EXPIRES_AT);
+        embeddingJob.scheduleRetry("WORKER_INTERNAL_ERROR", "temporary", CLAIMED_AT.plusSeconds(10));
+        LocalDateTime reclaimedAt = CLAIMED_AT.plusSeconds(10);
+        embeddingJob.claim(
+            workerNode,
+            "8d242ac5-0916-4e1c-a781-1f7b932f989b",
+            reclaimedAt,
+            reclaimedAt.plusMinutes(5)
+        );
+
+        assertThat(embeddingJob.hasRemainingRetries()).isFalse();
+        assertThatThrownBy(() -> embeddingJob.scheduleRetry(
+            "WORKER_INTERNAL_ERROR",
+            "temporary",
+            reclaimedAt.plusSeconds(20)
+        )).isInstanceOf(IllegalStateException.class)
+            .hasMessage("Embedding Job Retry 횟수를 모두 소진했습니다.");
+        assertThat(embeddingJob.getStatus()).isEqualTo(EmbeddingJobStatus.PROCESSING);
     }
 
     private EmbeddingJob createPendingJob() {

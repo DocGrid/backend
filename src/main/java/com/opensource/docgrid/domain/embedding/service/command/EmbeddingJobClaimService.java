@@ -69,7 +69,7 @@ public class EmbeddingJobClaimService {
         validateClaimable(workerNode, claimedAt);
 
         // 4. 잠기지 않은 최우선 PENDING Job을 가져오고, 존재할 때만 Lease 발급 흐름을 계속한다.
-        return embeddingJobRepository.findNextPendingForUpdate()
+        return embeddingJobRepository.findNextPendingForUpdate(claimedAt)
             .map(job -> claim(job, workerNode, claimedAt));
     }
 

@@ -33,8 +33,8 @@ import lombok.NoArgsConstructor;
  * -> Worker가 파싱/청킹/임베딩 -> embeddings 저장).
  * 관계: document_version_id -> DocumentVersion, embedding_model_id -> EmbeddingModel,
  * locked_by_worker_id -> WorkerNode(nullable, lock을 잡은 Worker).
- * index: (status, priority, created_at) 우선순위 큐 조회용, lock_expires_at, (document_version_id, embedding_model_id),
- * locked_by_worker_id.
+ * index: (status, priority, created_at) 우선순위 큐 조회용, (status, next_retry_at) Retry 실행 가능 시각 조회용,
+ * lock_expires_at, (document_version_id, embedding_model_id), locked_by_worker_id.
  *
  * <p>주의사항: Worker는 Claim 시 PROCESSING 상태, 소유 Worker, UUID Claim Token, Lease 시작·만료 시각을
  * 함께 기록한다. DB 행 잠금은 Claim Transaction 동안의 중복 선택을 막고, Lease와 Claim Token은
@@ -48,6 +48,7 @@ import lombok.NoArgsConstructor;
         name = "embedding_jobs",
         indexes = {
                 @Index(name = "idx_embedding_jobs_status_priority_created_at", columnList = "status, priority, created_at"),
+                @Index(name = "idx_embedding_jobs_status_next_retry_at", columnList = "status, next_retry_at"),
                 @Index(name = "idx_embedding_jobs_lock_expires_at", columnList = "lock_expires_at"),
                 @Index(name = "idx_embedding_jobs_document_version_id_embedding_model_id", columnList = "document_version_id, embedding_model_id"),
                 @Index(name = "idx_embedding_jobs_locked_by_worker_id", columnList = "locked_by_worker_id")
@@ -107,6 +108,10 @@ public class EmbeddingJob extends BaseEntity {
     @Column(name = "failed_at")
     private LocalDateTime failedAt;
 
+    // PENDING Retry Job이 다시 Claim 가능해지는 시각이며 null이면 즉시 실행할 수 있다.
+    @Column(name = "next_retry_at")
+    private LocalDateTime nextRetryAt;
+
     @Column(name = "error_code", length = 100)
     private String errorCode;
 
@@ -150,6 +155,7 @@ public class EmbeddingJob extends BaseEntity {
         // 3. DB 행 잠금 이후에도 소유권 유효 기간을 판단할 수 있도록 Lease 시간을 기록한다.
         this.lockedAt = claimedAt;
         this.lockExpiresAt = lockExpiresAt;
+        this.nextRetryAt = null;
 
         // 4. startedAt은 전체 처리의 최초 시작 시각이므로 향후 재Claim에서도 기존 값을 보존한다.
         if (startedAt == null) {
@@ -169,6 +175,48 @@ public class EmbeddingJob extends BaseEntity {
         }
         this.status = EmbeddingJobStatus.INDEXED;
         this.completedAt = completedAt;
+        // Attempt 이력에 실패 원인이 남으므로 현재 Job Snapshot에서는 과거 Retry 오류를 제거한다.
+        this.failedAt = null;
+        this.nextRetryAt = null;
+        this.errorCode = null;
+        this.errorMessage = null;
+    }
+
+    /**
+     * 현재 Claim을 실패한 Attempt 이력으로 남기고 Job을 지정 시각 이후의 PENDING Queue로 복귀시킨다.
+     *
+     * <p>현재 소유권을 모두 제거해야 과거 Worker의 Token이 후속 단계 저장 권한으로 재사용되지 않는다.
+     */
+    public void scheduleRetry(String errorCode, String errorMessage, LocalDateTime nextRetryAt) {
+        // 1. 처리 중인 현재 Claim만 Queue로 되돌릴 수 있다.
+        if (status != EmbeddingJobStatus.PROCESSING) {
+            throw new IllegalStateException("PROCESSING 상태의 Job만 Retry를 예약할 수 있습니다.");
+        }
+        // 2. 최대 횟수와 같아진 Job은 별도의 최종 실패 전이로 종결해야 한다.
+        if (retryCount >= maxRetryCount) {
+            throw new IllegalStateException("Embedding Job Retry 횟수를 모두 소진했습니다.");
+        }
+        if (nextRetryAt == null) {
+            throw new IllegalArgumentException("다음 Retry 시각은 필수입니다.");
+        }
+
+        // 3. Queue 상태와 실행 가능 시각 및 최신 오류 Snapshot을 함께 기록한다.
+        this.status = EmbeddingJobStatus.PENDING;
+        this.retryCount++;
+        this.nextRetryAt = nextRetryAt;
+        this.errorCode = errorCode;
+        this.errorMessage = errorMessage;
+        this.failedAt = null;
+
+        // 4. 새 Claim이 새로운 소유권을 발급하도록 과거 Worker, Token과 Lease를 모두 해제한다.
+        this.lockedByWorker = null;
+        this.claimToken = null;
+        this.lockedAt = null;
+        this.lockExpiresAt = null;
+    }
+
+    public boolean hasRemainingRetries() {
+        return retryCount < maxRetryCount;
     }
 
     public void markFailed(String errorCode, String errorMessage, LocalDateTime failedAt) {
@@ -178,7 +226,4 @@ public class EmbeddingJob extends BaseEntity {
         this.failedAt = failedAt;
     }
 
-    public void increaseRetryCount() {
-        this.retryCount++;
-    }
 }

@@ -10,7 +10,6 @@ import com.opensource.docgrid.domain.embedding.dto.request.CreateDocumentChunksR
 import com.opensource.docgrid.domain.embedding.dto.request.CreateDocumentEmbeddingsRequest;
 import com.opensource.docgrid.domain.embedding.dto.request.StartEmbeddingJobAttemptRequest;
 import com.opensource.docgrid.domain.embedding.dto.response.ClaimedEmbeddingJobResponse;
-import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingCompletionResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.StartedEmbeddingJobAttemptResponse;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.service.DocumentEmbeddingService;
@@ -39,13 +38,14 @@ public class WorkerIndexingPipeline {
     private final DocumentParsingService documentParsingService;
     private final DocumentEmbeddingService documentEmbeddingService;
     private final DocumentIndexingCompletionService completionService;
+    private final WorkerIndexingFailureReporter failureReporter;
 
     /**
      * 현재 Claim의 Attempt를 시작하고 문서 상태에 맞는 단계부터 완료까지 실행한다.
      *
      * <p>호출자가 넘긴 실행 Slot의 소유권을 인수하며 성공과 예외 경로 모두에서 정확히 한 번 반환한다.
      */
-    public DocumentIndexingCompletionResponse execute(
+    public void execute(
         ClaimedEmbeddingJobResponse claimedJob,
         WorkerExecutionSlot executionSlot
     ) {
@@ -58,32 +58,36 @@ public class WorkerIndexingPipeline {
                 new StartEmbeddingJobAttemptRequest(claimedJob.workerId(), claimedJob.claimToken())
             ).response();
 
-            // 2. 경로 선택용 상태 Snapshot을 조회하고 이미 완료한 단계는 다시 외부 호출하지 않는다.
-            DocumentVersionStatus initialStatus = stageQueryService.getStatus(
-                claimedJob.documentVersionId()
-            );
-            log.info(
-                "Worker 인덱싱 실행을 시작합니다. workerId={}, jobId={}, attemptId={}, initialStatus={}",
-                claimedJob.workerId(),
-                claimedJob.jobId(),
-                attempt.attemptId(),
-                initialStatus
-            );
-            executeFromCurrentStage(claimedJob, attempt.attemptId(), initialStatus);
+            try {
+                // 2. 경로 선택용 상태 Snapshot을 조회하고 이미 완료한 단계는 다시 외부 호출하지 않는다.
+                DocumentVersionStatus initialStatus = stageQueryService.getStatus(
+                    claimedJob.documentVersionId()
+                );
+                log.info(
+                    "Worker 인덱싱 실행을 시작합니다. workerId={}, jobId={}, attemptId={}, initialStatus={}",
+                    claimedJob.workerId(),
+                    claimedJob.jobId(),
+                    attempt.attemptId(),
+                    initialStatus
+                );
+                executeFromCurrentStage(claimedJob, attempt.attemptId(), initialStatus);
 
-            // 3. 전체 Embedding Set과 현재 실행 소유권을 최종 검증해 검색 가능한 Version으로 확정한다.
-            DocumentIndexingCompletionResponse response = completionService.complete(
-                claimedJob.jobId(),
-                attempt.attemptId(),
-                new CompleteDocumentIndexingRequest(claimedJob.workerId(), claimedJob.claimToken())
-            );
-            log.info(
-                "Worker 인덱싱 실행을 완료했습니다. workerId={}, jobId={}, attemptId={}",
-                claimedJob.workerId(),
-                claimedJob.jobId(),
-                attempt.attemptId()
-            );
-            return response;
+                // 3. 전체 Embedding Set과 현재 실행 소유권을 최종 검증해 검색 가능한 Version으로 확정한다.
+                completionService.complete(
+                    claimedJob.jobId(),
+                    attempt.attemptId(),
+                    new CompleteDocumentIndexingRequest(claimedJob.workerId(), claimedJob.claimToken())
+                );
+                log.info(
+                    "Worker 인덱싱 실행을 완료했습니다. workerId={}, jobId={}, attemptId={}",
+                    claimedJob.workerId(),
+                    claimedJob.jobId(),
+                    attempt.attemptId()
+                );
+            } catch (RuntimeException exception) {
+                // 4. 실제 Attempt가 시작된 뒤의 오류만 제한된 실패 계약으로 기록한다.
+                failureReporter.report(claimedJob, attempt.attemptId(), exception);
+            }
         }
     }
 

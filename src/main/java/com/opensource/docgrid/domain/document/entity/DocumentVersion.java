@@ -155,6 +155,10 @@ public class DocumentVersion extends BaseEntity {
     }
 
     public void markFailed() {
+        // 처리 중인 Version만 실패할 수 있고 완료되거나 이미 실패한 결과는 덮어쓰지 않는다.
+        if (status == DocumentVersionStatus.INDEXED || status == DocumentVersionStatus.FAILED) {
+            throw new IllegalStateException("처리 중인 문서 버전만 FAILED로 전환할 수 있습니다.");
+        }
         this.status = DocumentVersionStatus.FAILED;
     }
 }

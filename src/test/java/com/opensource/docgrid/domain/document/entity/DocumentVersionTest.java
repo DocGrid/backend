@@ -13,7 +13,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 
 /**
- * Document Version 파이프라인의 PARSING·CHUNKED·EMBEDDING·INDEXED 상태 전이 Guard를 검증한다.
+ * Document Version 파이프라인의 PARSING·CHUNKED·EMBEDDING·INDEXED·FAILED 상태 전이 Guard를 검증한다.
  *
  * <p>Command Service를 우회한 잘못된 상태 변경은 즉시 실패하고 정상 순서만 허용되는지 확인한다.
  */
@@ -97,6 +97,29 @@ class DocumentVersionTest {
             .isInstanceOf(IllegalStateException.class);
         assertThat(version.getStatus()).isEqualTo(status);
         assertThat(version.getIndexedAt()).isNull();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DocumentVersionStatus.class, names = {"UPLOADED", "PARSING", "CHUNKED", "EMBEDDING"})
+    @DisplayName("처리 중인 Version은 FAILED로 종결할 수 있다")
+    void markFailed_transitionsProcessingStatus(DocumentVersionStatus status) {
+        DocumentVersion version = version(status);
+
+        version.markFailed();
+
+        assertThat(version.getStatus()).isEqualTo(DocumentVersionStatus.FAILED);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DocumentVersionStatus.class, names = {"INDEXED", "FAILED"})
+    @DisplayName("완료되거나 이미 실패한 Version은 다시 FAILED로 전환할 수 없다")
+    void markFailed_rejectsTerminalStatus(DocumentVersionStatus status) {
+        DocumentVersion version = version(status);
+
+        assertThatThrownBy(version::markFailed)
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("처리 중인 문서 버전만 FAILED로 전환할 수 있습니다.");
+        assertThat(version.getStatus()).isEqualTo(status);
     }
 
     private DocumentVersion version(DocumentVersionStatus status) {

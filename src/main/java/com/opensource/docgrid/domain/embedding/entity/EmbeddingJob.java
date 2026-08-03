@@ -220,10 +220,15 @@ public class EmbeddingJob extends BaseEntity {
     }
 
     public void markFailed(String errorCode, String errorMessage, LocalDateTime failedAt) {
+        // 현재 Claim을 보유한 처리 중 Job만 최종 실패로 종결할 수 있다.
+        if (status != EmbeddingJobStatus.PROCESSING) {
+            throw new IllegalStateException("PROCESSING 상태의 Job만 FAILED로 전환할 수 있습니다.");
+        }
         this.status = EmbeddingJobStatus.FAILED;
         this.errorCode = errorCode;
         this.errorMessage = errorMessage;
         this.failedAt = failedAt;
+        this.nextRetryAt = null;
     }
 
 }

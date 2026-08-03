@@ -13,7 +13,7 @@ import com.opensource.docgrid.domain.worker.entity.WorkerNode;
 import com.opensource.docgrid.domain.worker.enums.WorkerStatus;
 
 /**
- * Embedding Job의 Claim·Retry 예약·인덱싱 완료 상태 전이와 소유권 불변식을 검증하는 Entity 단위 테스트.
+ * Embedding Job의 Claim·Retry 예약·인덱싱 완료·실패 상태 전이와 소유권 불변식을 검증하는 Entity 단위 테스트.
  *
  * <p>PENDING Job이 PROCESSING으로 바뀔 때 Worker, Token, Lease, 최초 시작 시각이 함께 기록되는지와
  * 이미 Claim된 Job의 소유권 덮어쓰기가 차단되는지 확인한다.
@@ -145,6 +145,31 @@ class EmbeddingJobTest {
         )).isInstanceOf(IllegalStateException.class)
             .hasMessage("Embedding Job Retry 횟수를 모두 소진했습니다.");
         assertThat(embeddingJob.getStatus()).isEqualTo(EmbeddingJobStatus.PROCESSING);
+    }
+
+    @Test
+    @DisplayName("PROCESSING Job만 최종 FAILED로 종료하고 예약 시각을 제거할 수 있다")
+    void markFailed_acceptsOnlyProcessingJob() {
+        EmbeddingJob processingJob = createPendingJob();
+        processingJob.claim(createActiveWorker(), CLAIM_TOKEN, CLAIMED_AT, EXPIRES_AT);
+        LocalDateTime failedAt = CLAIMED_AT.plusSeconds(3);
+
+        processingJob.markFailed("DOCUMENT_CONTENT_INVALID", "Unsupported content", failedAt);
+
+        assertThat(processingJob.getStatus()).isEqualTo(EmbeddingJobStatus.FAILED);
+        assertThat(processingJob.getErrorCode()).isEqualTo("DOCUMENT_CONTENT_INVALID");
+        assertThat(processingJob.getErrorMessage()).isEqualTo("Unsupported content");
+        assertThat(processingJob.getFailedAt()).isEqualTo(failedAt);
+        assertThat(processingJob.getNextRetryAt()).isNull();
+
+        EmbeddingJob pendingJob = createPendingJob();
+        assertThatThrownBy(() -> pendingJob.markFailed(
+            "DOCUMENT_CONTENT_INVALID",
+            "Unsupported content",
+            failedAt
+        )).isInstanceOf(IllegalStateException.class)
+            .hasMessage("PROCESSING 상태의 Job만 FAILED로 전환할 수 있습니다.");
+        assertThat(pendingJob.getStatus()).isEqualTo(EmbeddingJobStatus.PENDING);
     }
 
     private EmbeddingJob createPendingJob() {

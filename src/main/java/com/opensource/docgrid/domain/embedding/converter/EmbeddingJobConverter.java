@@ -1,15 +1,18 @@
 package com.opensource.docgrid.domain.embedding.converter;
 
+import java.time.LocalDateTime;
+
 import org.springframework.stereotype.Component;
 
 import com.opensource.docgrid.domain.embedding.dto.response.ClaimedEmbeddingJobResponse;
+import com.opensource.docgrid.domain.embedding.dto.response.RenewedEmbeddingJobLeaseResponse;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
 
 /**
  * Embedding Job Entity를 API 전용 응답 DTO로 변환하는 Converter.
  *
- * <p>Controller에 Entity와 연관 Entity를 직접 노출하지 않고 Claim 이후 Worker가 필요한 식별자와
- * Lease 정보만 전달한다.
+ * <p>Controller에 Entity와 연관 Entity를 직접 노출하지 않고 Claim과 Lease 갱신 이후 Worker가
+ * 필요한 식별자와 소유권 시각만 전달한다.
  */
 @Component
 public class EmbeddingJobConverter {
@@ -30,6 +33,25 @@ public class EmbeddingJobConverter {
             embeddingJob.getEmbeddingModel().getId(),
             embeddingJob.getClaimToken(),
             embeddingJob.getLockedAt(),
+            embeddingJob.getLockExpiresAt()
+        );
+    }
+
+    /**
+     * 갱신된 현재 Lease를 Claim Token 없이 API 응답으로 변환한다.
+     *
+     * @param embeddingJob PROCESSING 상태와 현재 Worker를 유지한 갱신 대상 Job
+     * @param renewedAt 갱신 Transaction이 사용한 기준 시각
+     * @return Worker가 다음 갱신 시점을 결정할 수 있는 안전한 Lease 응답
+     */
+    public RenewedEmbeddingJobLeaseResponse toRenewedLeaseResponse(
+        EmbeddingJob embeddingJob,
+        LocalDateTime renewedAt
+    ) {
+        return new RenewedEmbeddingJobLeaseResponse(
+            embeddingJob.getId(),
+            embeddingJob.getLockedByWorker().getId(),
+            renewedAt,
             embeddingJob.getLockExpiresAt()
         );
     }

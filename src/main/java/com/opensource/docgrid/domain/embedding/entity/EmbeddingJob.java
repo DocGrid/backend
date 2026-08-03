@@ -219,6 +219,41 @@ public class EmbeddingJob extends BaseEntity {
         return retryCount < maxRetryCount;
     }
 
+    /**
+     * 현재 PROCESSING Claim의 최초 잠금 시각과 소유권은 유지하고 Lease 만료 시각만 연장한다.
+     *
+     * <p>Service가 Job 행 잠금, 현재 Worker·Token과 기존 Lease 유효성을 먼저 검증해야 한다. Entity는
+     * 갱신이 기존 만료 시각을 줄이거나 이미 끝난 Job에 새 소유권처럼 적용되는 것을 마지막으로 방어한다.
+     *
+     * @param renewedAt Lease 갱신 기준 시각
+     * @param renewedLockExpiresAt 새 Lease 만료 시각
+     */
+    public void renewLease(
+        LocalDateTime renewedAt,
+        LocalDateTime renewedLockExpiresAt
+    ) {
+        // 1. 현재 소유권을 가진 처리 중 Job 이외의 종료·대기 상태는 갱신하지 않는다.
+        if (status != EmbeddingJobStatus.PROCESSING) {
+            throw new IllegalStateException("PROCESSING 상태의 Job Lease만 갱신할 수 있습니다.");
+        }
+        // 2. 현재 Lease가 이미 만료됐거나 소유권 시간이 누락된 모순 상태를 갱신으로 숨기지 않는다.
+        if (renewedAt == null
+            || lockedAt == null
+            || lockExpiresAt == null
+            || !lockExpiresAt.isAfter(renewedAt)) {
+            throw new IllegalStateException("유효한 현재 Lease만 갱신할 수 있습니다.");
+        }
+        // 3. 새 만료 시각은 갱신 기준 이후이며 기존 만료 시각을 실제로 연장해야 한다.
+        if (renewedLockExpiresAt == null
+            || !renewedLockExpiresAt.isAfter(renewedAt)
+            || !renewedLockExpiresAt.isAfter(lockExpiresAt)) {
+            throw new IllegalArgumentException("새 Lease 만료 시각은 현재 Lease보다 늦어야 합니다.");
+        }
+
+        // 4. lockedAt, Worker와 Claim Token은 같은 Claim 세대의 감사·소유권 정보이므로 보존한다.
+        this.lockExpiresAt = renewedLockExpiresAt;
+    }
+
     public void markFailed(String errorCode, String errorMessage, LocalDateTime failedAt) {
         // 현재 Claim을 보유한 처리 중 Job만 최종 실패로 종결할 수 있다.
         if (status != EmbeddingJobStatus.PROCESSING) {

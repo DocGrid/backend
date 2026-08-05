@@ -36,6 +36,8 @@ public class SecurityConfig {
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 .requestMatchers("/departments").permitAll()
                 .requestMatchers("/auth/signup", "/auth/login").permitAll()
+                // TODO: 임시 permitAll — 다음 이슈에서 McpApiKeyAuthFilter로 교체 예정
+                .requestMatchers("/mcp/**").permitAll()
                 .requestMatchers("/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 
 import java.util.List;
@@ -11,6 +12,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -58,6 +60,69 @@ class DocumentEmbeddingGeneratorTest {
             .containsExactly(20L, 21L);
         assertThat(drafts.get(0).vector()).containsExactly(1.0f, -2.0f);
         assertThat(drafts.get(0).vectorHash()).isEqualTo(VECTOR_HASH);
+    }
+
+    @Test
+    @DisplayName("Chunk가 설정 크기보다 많으면 Batch를 순서대로 나누고 Draft 순서를 보존한다")
+    void generate_splitsChunksAndPreservesDraftOrder() {
+        DocumentEmbeddingGenerator generator = generator(2);
+        given(embeddingClient.embedBatch(List.of("첫 번째", "두 번째"), 2))
+            .willReturn(response(item(0, 1.0f, 0.0f), item(1, 2.0f, 0.0f)));
+        given(embeddingClient.embedBatch(List.of("세 번째"), 2))
+            .willReturn(response(item(0, 3.0f, 0.0f)));
+
+        List<DocumentEmbeddingDraft> drafts = generator.generate(work(
+            chunk(20L, 0, "첫 번째"),
+            chunk(21L, 1, "두 번째"),
+            chunk(22L, 2, "세 번째")
+        ));
+
+        InOrder callOrder = inOrder(embeddingClient);
+        callOrder.verify(embeddingClient).embedBatch(List.of("첫 번째", "두 번째"), 2);
+        callOrder.verify(embeddingClient).embedBatch(List.of("세 번째"), 2);
+        assertThat(drafts)
+            .extracting(DocumentEmbeddingDraft::chunkId)
+            .containsExactly(20L, 21L, 22L);
+        assertThat(drafts)
+            .extracting(draft -> draft.vector()[0])
+            .containsExactly(1.0f, 2.0f, 3.0f);
+    }
+
+    @Test
+    @DisplayName("응답 모델이 Job 고정 모델과 다르면 Vector를 Draft로 만들지 않는다")
+    void generate_rejectsModelMismatch() {
+        DocumentEmbeddingGenerator generator = generator(2);
+        given(embeddingClient.embedBatch(List.of("첫 번째"), 2))
+            .willReturn(new EmbedBatchServerResponse(
+                "different-model",
+                List.of(item(0, 1.0f, 0.0f))
+            ));
+
+        assertThatThrownBy(() -> generator.generate(work(chunk(20L, 0, "첫 번째"))))
+            .isInstanceOfSatisfying(DocGridException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT));
+    }
+
+    @Test
+    @DisplayName("두 번째 Batch가 실패하면 뒤 Batch를 호출하지 않는다")
+    void generate_stopsAfterBatchFailure() {
+        DocumentEmbeddingGenerator generator = generator(1);
+        given(embeddingClient.embedBatch(List.of("첫 번째"), 1))
+            .willReturn(response(item(0, 1.0f, 0.0f)));
+        given(embeddingClient.embedBatch(List.of("두 번째"), 1))
+            .willThrow(new DocGridException(ErrorCode.EMBEDDING_SERVER_UNAVAILABLE));
+
+        assertThatThrownBy(() -> generator.generate(work(
+            chunk(20L, 0, "첫 번째"),
+            chunk(21L, 1, "두 번째"),
+            chunk(22L, 2, "세 번째")
+        )))
+            .isInstanceOfSatisfying(DocGridException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(ErrorCode.EMBEDDING_SERVER_UNAVAILABLE));
+
+        then(embeddingClient).should(never()).embedBatch(List.of("세 번째"), 1);
     }
 
     @Test

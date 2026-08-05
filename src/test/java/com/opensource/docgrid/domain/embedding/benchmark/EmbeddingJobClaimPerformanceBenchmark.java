@@ -66,7 +66,7 @@ import com.zaxxer.hikari.HikariPoolMXBean;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 실제 OpenSQL에서 Embedding Job Claim 처리량과 자원 경합의 재현 가능한 기준선을 수집하는 Benchmark.
+ * PostgreSQL 17과 pgvector 0.8.1에서 Embedding Job Claim 처리량과 자원 경합의 기준선을 수집하는 Benchmark.
  *
  * <p>Spring이 관리하는 실제 Claim Service를 Worker 수별로 동시에 호출해 Transaction Commit을 포함한
  * 호출 지연과 Queue 소진 시간을 측정한다. Production 코드를 변경하지 않고 Hikari Pool과 PostgreSQL
@@ -90,6 +90,8 @@ class EmbeddingJobClaimPerformanceBenchmark {
     private static final String RESULT_PREFIX = "CLAIM_PERFORMANCE_RESULT";
     private static final String MEDIAN_PREFIX = "CLAIM_PERFORMANCE_MEDIAN";
     private static final String ENVIRONMENT_PREFIX = "CLAIM_PERFORMANCE_ENV";
+    private static final String EXPECTED_POSTGRES_VERSION_PREFIX = "17.";
+    private static final String EXPECTED_PGVECTOR_VERSION = "0.8.1";
 
     private static final int WARM_UP_WORKER_COUNT = 10;
     private static final int WARM_UP_JOB_COUNT = positiveIntegerProperty(
@@ -218,12 +220,13 @@ class EmbeddingJobClaimPerformanceBenchmark {
             .as("PostgreSQL 대기 Session을 구분할 Worker Application Name이 적용되어야 한다")
             .isEqualTo(WORKER_APPLICATION_NAME);
         assertThat(jdbcTemplate.queryForObject("SHOW server_version", String.class))
-            .as("설계 기준 OpenSQL PostgreSQL 14.6 환경이어야 한다")
-            .startsWith("14.6");
+            .as("설계 기준 PostgreSQL 17 환경이어야 한다")
+            .startsWith(EXPECTED_POSTGRES_VERSION_PREFIX);
         assertThat(jdbcTemplate.queryForObject(
             "SELECT extversion FROM pg_extension WHERE extname = 'vector'",
             String.class
-        )).as("pgvector Extension이 준비되어야 한다").isNotBlank();
+        )).as("설계 기준 pgvector 0.8.1 Extension이 준비되어야 한다")
+            .isEqualTo(EXPECTED_PGVECTOR_VERSION);
 
         HikariDataSource hikariDataSource = hikariDataSource();
         assertThat(hikariDataSource.getMaximumPoolSize()).isEqualTo(DB_CONNECTION_POOL_SIZE);
@@ -851,7 +854,7 @@ class EmbeddingJobClaimPerformanceBenchmark {
             "SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()",
             Boolean.class
         ));
-        fingerprint.put("configuredSslMode", environmentValue("DB_SSLMODE", "require"));
+        fingerprint.put("configuredSslMode", environmentValue("DB_SSLMODE", "disable"));
         fingerprint.put("javaVersion", System.getProperty("java.version"));
         fingerprint.put("jvm", ManagementFactory.getRuntimeMXBean().getVmName());
         fingerprint.put("jvmMaxHeapBytes", Runtime.getRuntime().maxMemory());

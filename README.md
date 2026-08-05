@@ -2,17 +2,22 @@
 
 ## Local DB
 
-로컬 개발 DB는 Docker Compose로 실행합니다. 기본 DB 이미지는 OpenSQL-PG 호환 이미지인 `tmaxopensql/postgres:14.6`입니다.
+로컬 개발 DB는 Docker Compose로 실행합니다. 기본 이미지는 PostgreSQL 17과 pgvector 0.8.1을
+함께 제공하는 `pgvector/pgvector:0.8.1-pg17`입니다.
 
 ```bash
 cp .env.example .env
-docker pull tmaxopensql/postgres:14.6
-docker compose up -d
+docker compose pull postgres
+docker compose up -d postgres
 docker compose ps
 ./gradlew bootRun --args='--spring.profiles.active=local'
 ```
 
-DB 기본 접속 정보는 `localhost:55432`, database `app`, user `app`, password `local_password`입니다.
+DB 기본 접속 정보는 `localhost:55432`, database `app`, user `app`입니다. 로컬 기본
+`DB_SSLMODE`는 `disable`이며 실제 비밀번호와 운영 접속정보는 환경변수로 주입합니다.
+
+PostgreSQL 17은 `docgrid_postgres17_data` 전용 볼륨을 사용합니다. 기존 PostgreSQL 14
+`opensql_data` 볼륨을 재사용하거나 자동 삭제하지 않습니다.
 
 자세한 내용은 [docs/local-db.md](docs/local-db.md)를 참고하세요.
 

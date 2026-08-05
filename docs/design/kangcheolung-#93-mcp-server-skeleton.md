@@ -168,11 +168,12 @@ MCP 인증(F-MCP-07, API 키 방식)은 다음 이슈에서 구현하므로, 이
           "required":["query"]
         }
       }
-      // get_document_detail, get_indexing_status 도 동일하게 정상 반환됨
     ]
   }
 }
 ```
+
+(`get_document_detail`, `get_indexing_status`도 동일하게 정상 반환됨 — 지면상 `search_documents`만 발췌)
 
 애플리케이션 로그에서도 `Registered tools: 3`을 확인했다. 도구 3종의 `name`/`description`/`inputSchema`(필수값 포함)가 어노테이션 메타데이터로부터 정확히 자동 생성됨을 실제 데이터로 증명했다 — 이 이슈의 목적이었던 "SDK 연동 리스크 검증"이 해소됐다.
 
@@ -207,9 +208,12 @@ SDK 연동이 이 프로젝트에서 처음이라 검증되지 않은 리스크�
 
 ## 남은 이슈 / TODO
 
+### 이번 이슈에서 반영 완료
+
+- **`@McpTool`의 `annotations` 속성**: 최초 구현에서는 미설정 상태라 `tools/list` 응답에 `readOnlyHint: false`, `destructiveHint: true`가 기본값으로 나갔다. 이 3개 도구는 전부 조회 전용(read-only)인데 반대로 선언돼 있어 MCP 클라이언트가 불필요한 승인(approval) UX를 붙일 수 있다는 점을 CodeRabbit 리뷰로도 재확인해, `@McpTool(..., annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false))`를 도구 3개 모두에 명시했다.
+
 ### 다음 이슈에서 반영 필요
 
-- **`@McpTool`의 `annotations` 속성 미설정**: 현재 `tools/list` 응답에 `readOnlyHint: false`, `destructiveHint: true`가 기본값으로 나간다. 이 3개 도구는 전부 조회 전용(read-only)인데 반대로 선언되어 있어, MCP 클라이언트가 불필요한 승인(approval) UX를 붙일 수 있다. 실제 로직을 구현하는 이슈(search_documents / detail+status)에서 `@McpTool(..., annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false))`로 명시할 것.
 - **`CallToolResult` 명시적 사용 필요**: `VALIDATION_ERROR`/`PERMISSION_DENIED` 같은 에러를 `isError=true`로 표현하려면 단순 `String` 반환의 자동 래핑으로는 부족할 가능성이 높다 — `CallToolResult.builder().isError(true)...`를 명시적으로 써야 하는지 실제 로직 구현 시 확인.
 - **`/mcp/**` permitAll 제거**: 인증 인프라 이슈에서 `McpApiKeyAuthFilter`로 교체.
 

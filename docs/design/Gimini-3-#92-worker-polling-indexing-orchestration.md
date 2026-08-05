@@ -178,6 +178,7 @@ Attempt가 시작된 뒤 발생한 오류만 현재 Attempt ID로 협력적 실�
 
 다음 오류는 이미 현재 실행의 권한을 잃었음을 뜻하므로 실패 보고를 시도하지 않는다.
 
+- EMBEDDING_JOB_NOT_FOUND
 - EMBEDDING_JOB_NOT_PROCESSING
 - EMBEDDING_JOB_OWNERSHIP_INVALID
 - EMBEDDING_JOB_LEASE_EXPIRED

@@ -9,6 +9,11 @@ spring:
     multipart:
       max-file-size: 10MB
       max-request-size: 11MB
+  task:
+    scheduling:
+      pool:
+        # DB Claim 지연이 Worker Heartbeat와 Lease 복구 실행을 막지 않도록 세 작업을 분리한다.
+        size: 3
 
 document:
   upload:

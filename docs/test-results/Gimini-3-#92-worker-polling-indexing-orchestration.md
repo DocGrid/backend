@@ -13,7 +13,16 @@
 `local-opensql` 컨테이너와 `opensql_data` 공유 볼륨은 변경하지 않았다. 검증 종료 후 작업 전용
 컨테이너와 볼륨은 삭제했으며, 운영 Secret은 사용하거나 기록하지 않았다.
 
-## 2. 전체 정규 테스트
+## 2. Swagger/OpenAPI 수동 검증
+
+- 결과: 해당 없음
+- 근거: 이번 변경은 Worker 내부 Scheduler, 실행 Service와 설정만 추가하며 Controller, 요청·응답 DTO,
+  Endpoint 및 OpenAPI 계약을 변경하지 않는다.
+
+따라서 Swagger에서 호출할 신규·변경 API가 없으며, Worker 내부 실행 계약은 아래 자동 테스트와 실제
+PostgreSQL 동시성 테스트로 검증했다.
+
+## 3. 전체 정규 테스트
 
 실행 명령의 환경 값은 Placeholder로 대체한다.
 
@@ -38,7 +47,7 @@ test suites=87 tests=576 failures=0 errors=0 skipped=0
 기본 `test` Task에서 Worker 등록·Heartbeat·상태 관리, Polling Scheduler, 실행 슬롯, 파이프라인,
 Lease 갱신, 실패 보고, 종료 절차와 기존 도메인 회귀 테스트를 함께 검증했다.
 
-## 3. PostgreSQL 동시성 검증
+## 4. PostgreSQL 동시성 검증
 
 실행:
 
@@ -76,7 +85,7 @@ test suites=3 tests=10 failures=0 errors=0 skipped=0
 | 활성 실행의 Lease 갱신이 원래 만료 시각의 복구를 차단 | 통과 |
 | Lease 갱신 중단 후 동시 복구가 Job을 정확히 한 번만 재예약 | 통과 |
 
-## 4. 표준 빌드
+## 5. 표준 빌드
 
 동일한 격리 DB와 테스트 전용 인증 설정에서 다음 명령을 실행했다.
 
@@ -86,7 +95,7 @@ test suites=3 tests=10 failures=0 errors=0 skipped=0
 
 결과: `BUILD SUCCESSFUL`. Compile, Test, Check, Boot JAR 및 JAR 생성 단계가 모두 성공했다.
 
-## 5. 확인된 불변식
+## 6. 확인된 불변식
 
 - 여러 Worker가 같은 대기 Job을 조회해도 PostgreSQL Claim은 한 Worker에만 귀속된다.
 - 한 Worker가 소유하는 PROCESSING Job 수는 로컬 실행 슬롯 수를 넘지 않는다.
@@ -96,7 +105,7 @@ test suites=3 tests=10 failures=0 errors=0 skipped=0
 - 성공·재시도·최종 실패 경로에서 Lease 갱신과 실행 슬롯은 정리된다.
 - 종료 요청 후 새 Polling은 시작되지 않고, 대기 중인 실행은 제한 시간 정책에 따라 정리된다.
 
-## 6. 환경 진단 기록과 제한 사항
+## 7. 환경 진단 기록과 제한 사항
 
 - 기존 공유 OpenSQL 볼륨은 이미지가 기대하는 내부 Role과 초기화 상태가 달라 사용할 수 없었다.
   공유 데이터를 수정하지 않고 별도 작업 전용 컨테이너와 볼륨으로 전환했다.

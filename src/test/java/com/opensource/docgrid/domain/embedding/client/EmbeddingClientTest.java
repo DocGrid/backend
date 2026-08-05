@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doReturn;
 
+import java.util.List;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,6 +20,8 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
 import com.opensource.docgrid.domain.embedding.dto.response.EmbedServerResponse;
+import com.opensource.docgrid.domain.embedding.dto.response.EmbedBatchItemResponse;
+import com.opensource.docgrid.domain.embedding.dto.response.EmbedBatchServerResponse;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
@@ -71,6 +75,86 @@ class EmbeddingClientTest {
             .willThrow(new ResourceAccessException("Connection refused"));
 
         assertThatThrownBy(() -> embeddingClient.embed("검색어"))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMBEDDING_SERVER_UNAVAILABLE);
+    }
+
+    @Test
+    @DisplayName("Batch 정상 응답: 모델과 요청 순서가 검증된 결과를 반환한다")
+    void embedBatch_returnsValidatedResponse() {
+        EmbedBatchServerResponse response = new EmbedBatchServerResponse(
+            "BAAI/bge-m3",
+            List.of(
+                new EmbedBatchItemResponse(0, new float[]{0.1f, 0.2f}),
+                new EmbedBatchItemResponse(1, new float[]{0.3f, 0.4f})
+            )
+        );
+        given(responseSpec.body(EmbedBatchServerResponse.class)).willReturn(response);
+
+        EmbedBatchServerResponse result = embeddingClient.embedBatch(List.of("첫 번째", "두 번째"), 16);
+
+        assertThat(result.model()).isEqualTo("BAAI/bge-m3");
+        assertThat(result.embeddings())
+            .extracting(EmbedBatchItemResponse::index)
+            .containsExactly(0, 1);
+    }
+
+    @Test
+    @DisplayName("Batch 빈 응답: 외부 서버 응답이 null이면 정합성 오류로 거부한다")
+    void embedBatch_rejectsNullResponse() {
+        given(responseSpec.body(EmbedBatchServerResponse.class)).willReturn(null);
+
+        assertThatThrownBy(() -> embeddingClient.embedBatch(List.of("본문"), 16))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT);
+    }
+
+    @Test
+    @DisplayName("Batch 모델 누락: 빈 모델 식별자는 정합성 오류로 거부한다")
+    void embedBatch_rejectsBlankModel() {
+        given(responseSpec.body(EmbedBatchServerResponse.class))
+            .willReturn(new EmbedBatchServerResponse(
+                " ",
+                List.of(new EmbedBatchItemResponse(0, new float[]{0.1f}))
+            ));
+
+        assertThatThrownBy(() -> embeddingClient.embedBatch(List.of("본문"), 16))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT);
+    }
+
+    @Test
+    @DisplayName("Batch 개수 불일치: 요청과 다른 결과 개수는 정합성 오류로 거부한다")
+    void embedBatch_rejectsCountMismatch() {
+        given(responseSpec.body(EmbedBatchServerResponse.class))
+            .willReturn(new EmbedBatchServerResponse("BAAI/bge-m3", List.of()));
+
+        assertThatThrownBy(() -> embeddingClient.embedBatch(List.of("본문"), 16))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT);
+    }
+
+    @Test
+    @DisplayName("Batch 순서 불일치: 요청 위치와 다른 Index는 정합성 오류로 거부한다")
+    void embedBatch_rejectsIndexMismatch() {
+        given(responseSpec.body(EmbedBatchServerResponse.class))
+            .willReturn(new EmbedBatchServerResponse(
+                "BAAI/bge-m3",
+                List.of(new EmbedBatchItemResponse(1, new float[]{0.1f}))
+            ));
+
+        assertThatThrownBy(() -> embeddingClient.embedBatch(List.of("본문"), 16))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT);
+    }
+
+    @Test
+    @DisplayName("Batch 서버 장애: RestClientException을 서비스 사용 불가 오류로 변환한다")
+    void embedBatch_throwsWhenServerUnavailable() {
+        given(responseSpec.body(EmbedBatchServerResponse.class))
+            .willThrow(new ResourceAccessException("Connection refused"));
+
+        assertThatThrownBy(() -> embeddingClient.embedBatch(List.of("본문"), 16))
             .isInstanceOf(DocGridException.class)
             .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMBEDDING_SERVER_UNAVAILABLE);
     }

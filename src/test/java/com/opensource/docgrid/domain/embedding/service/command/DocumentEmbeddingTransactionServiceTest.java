@@ -343,6 +343,39 @@ class DocumentEmbeddingTransactionServiceTest {
         EmbeddingWork changedModelWork = new EmbeddingWork(
             VERSION_ID,
             99L,
+            EmbeddingModelFixture.MODEL_NAME,
+            EmbeddingModelFixture.DIMENSION,
+            work(chunks).chunks()
+        );
+
+        assertThatThrownBy(() -> service.complete(
+            JOB_ID,
+            ATTEMPT_ID,
+            WORKER_ID,
+            CLAIM_TOKEN,
+            changedModelWork,
+            List.of(draft(chunks.get(0), 0.1f))
+        ))
+            .isInstanceOfSatisfying(DocGridException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT));
+
+        then(documentChunkRepository).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("준비 Snapshot의 Model Name이 현재 Job 고정 Model과 다르면 Chunk를 다시 읽지 않는다")
+    void complete_rejectsChangedModelName() {
+        prepareEntities(DocumentVersionStatus.EMBEDDING);
+        List<DocumentChunk> chunks = List.of(chunk(0, "본문"));
+        given(embeddingJobRepository.findByIdForUpdate(JOB_ID)).willReturn(Optional.of(embeddingJob));
+        given(embeddingJobAttemptRepository.findByEmbeddingJobIdAndClaimToken(JOB_ID, CLAIM_TOKEN))
+            .willReturn(Optional.of(attempt));
+        given(documentVersionRepository.findByIdForUpdate(VERSION_ID)).willReturn(Optional.of(documentVersion));
+        EmbeddingWork changedModelWork = new EmbeddingWork(
+            VERSION_ID,
+            MODEL_ID,
+            "different-model",
             EmbeddingModelFixture.DIMENSION,
             work(chunks).chunks()
         );
@@ -436,6 +469,7 @@ class DocumentEmbeddingTransactionServiceTest {
         return new EmbeddingWork(
             VERSION_ID,
             MODEL_ID,
+            EmbeddingModelFixture.MODEL_NAME,
             EmbeddingModelFixture.DIMENSION,
             chunks.stream()
                 .map(chunk -> new ChunkSnapshot(

@@ -109,6 +109,7 @@ public class DocumentEmbeddingTransactionService {
         return PreparationResult.work(new EmbeddingWork(
             documentVersion.getId(),
             embeddingModel.getId(),
+            embeddingModel.getModelName(),
             embeddingModel.getDimension(),
             chunks.stream()
                 .map(chunk -> new ChunkSnapshot(
@@ -188,6 +189,7 @@ public class DocumentEmbeddingTransactionService {
         EmbeddingModel embeddingModel = embeddingJob.getEmbeddingModel();
         if (embeddingModel == null
             || embeddingModel.getId() == null
+            || !StringUtils.hasText(embeddingModel.getModelName())
             || embeddingModel.getDimension() <= 0) {
             throw new DocGridException(ErrorCode.EMBEDDING_MODEL_NOT_CONFIGURED);
         }
@@ -243,6 +245,7 @@ public class DocumentEmbeddingTransactionService {
         if (preparedWork == null
             || !Objects.equals(preparedWork.documentVersionId(), documentVersion.getId())
             || !Objects.equals(preparedWork.embeddingModelId(), embeddingModel.getId())
+            || !Objects.equals(preparedWork.modelName(), embeddingModel.getModelName())
             || preparedWork.dimension() != embeddingModel.getDimension()) {
             throw new DocGridException(ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT);
         }
@@ -385,6 +388,7 @@ public class DocumentEmbeddingTransactionService {
     public record EmbeddingWork(
         Long documentVersionId,
         Long embeddingModelId,
+        String modelName,
         int dimension,
         List<ChunkSnapshot> chunks
     ) {

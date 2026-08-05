@@ -27,6 +27,10 @@ out/
 !**/src/test/**/out/
 .DS_Store
 
+### Python ###
+__pycache__/
+*.pyc
+
 ### NetBeans ###
 /nbproject/private/
 /nbbuild/

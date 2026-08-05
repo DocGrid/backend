@@ -14,7 +14,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 인덱싱 Worker의 실행 여부, Heartbeat, DEAD 판정, Job Lease와 만료 복구를 바인딩하는 설정 클래스.
+ * 인덱싱 Worker의 실행 여부, Polling, 동시 실행, Heartbeat와 Job Lease 생명주기를 바인딩하는 설정 클래스.
  *
  * <p>{@code indexing.worker} 환경 설정을 타입 안전한 {@link Duration}으로 제공하고, 애플리케이션 시작
  * 단계에서 서로 모순되거나 0 이하인 시간 설정을 차단한다.
@@ -38,9 +38,20 @@ public class IndexingWorkerProperties {
     @NotNull
     private Duration deadThreshold = Duration.ofSeconds(30);
 
+    // 등록된 Worker가 실행 슬롯을 확인하고 새 Job을 찾는 주기다.
+    @NotNull
+    private Duration pollingInterval = Duration.ofSeconds(1);
+
+    @Min(1)
+    private int maxConcurrency = 2;
+
     // Claim 후 Worker가 소유권을 유지하는 기본 시간이다. 만료 복구는 후속 처리에서 사용한다.
     @NotNull
     private Duration leaseDuration = Duration.ofMinutes(5);
+
+    // 활성 실행은 Lease 만료 전에 이 주기로 소유권을 갱신한다.
+    @NotNull
+    private Duration leaseRenewalInterval = Duration.ofMinutes(1);
 
     // 만료 Lease 복구 작업의 실행 주기와 한 번에 조회할 최대 Job 수다.
     @NotNull
@@ -56,6 +67,10 @@ public class IndexingWorkerProperties {
     @NotNull
     private Duration retryMaxDelay = Duration.ofMinutes(5);
 
+    // 종료 시 신규 Claim을 막은 뒤 활성 실행이 스스로 끝나기를 기다리는 최대 시간이다.
+    @NotNull
+    private Duration shutdownGracePeriod = Duration.ofSeconds(30);
+
     /**
      * Heartbeat가 양수이고 DEAD 기준보다 짧은지 검증한다.
      */
@@ -69,6 +84,16 @@ public class IndexingWorkerProperties {
     }
 
     /**
+     * 빈 작업 조회가 Busy Loop가 되지 않도록 Polling 주기가 양수인지 검증한다.
+     */
+    @AssertTrue(message = "Job Polling 주기는 0보다 커야 합니다.")
+    public boolean isPollingIntervalValid() {
+        return pollingInterval != null
+            && !pollingInterval.isZero()
+            && !pollingInterval.isNegative();
+    }
+
+    /**
      * 발급 즉시 만료되는 Lease가 만들어지지 않도록 Lease 기간이 양수인지 검증한다.
      */
     @AssertTrue(message = "Lease 기간은 0보다 커야 합니다.")
@@ -76,6 +101,18 @@ public class IndexingWorkerProperties {
         return leaseDuration != null
             && !leaseDuration.isZero()
             && !leaseDuration.isNegative();
+    }
+
+    /**
+     * 활성 Job이 만료 전에 갱신될 수 있도록 갱신 주기가 양수이고 Lease 기간보다 짧은지 검증한다.
+     */
+    @AssertTrue(message = "Lease 갱신 주기는 0보다 크고 Lease 기간보다 짧아야 합니다.")
+    public boolean isLeaseRenewalIntervalValid() {
+        return leaseRenewalInterval != null
+            && leaseDuration != null
+            && !leaseRenewalInterval.isZero()
+            && !leaseRenewalInterval.isNegative()
+            && leaseRenewalInterval.compareTo(leaseDuration) < 0;
     }
 
     /**
@@ -98,5 +135,14 @@ public class IndexingWorkerProperties {
             && !retryInitialDelay.isZero()
             && !retryInitialDelay.isNegative()
             && retryMaxDelay.compareTo(retryInitialDelay) >= 0;
+    }
+
+    /**
+     * 즉시 종료는 허용하되 음수 대기 시간은 Executor 종료 계약으로 사용할 수 없으므로 차단한다.
+     */
+    @AssertTrue(message = "Worker 종료 유예 시간은 0보다 작을 수 없습니다.")
+    public boolean isShutdownGracePeriodValid() {
+        return shutdownGracePeriod != null
+            && !shutdownGracePeriod.isNegative();
     }
 }

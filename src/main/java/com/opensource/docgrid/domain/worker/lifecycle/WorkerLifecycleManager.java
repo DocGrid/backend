@@ -10,6 +10,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import com.opensource.docgrid.domain.worker.config.IndexingWorkerProperties;
@@ -18,6 +20,11 @@ import com.opensource.docgrid.domain.worker.service.command.WorkerNodeCommandSer
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * 애플리케이션 실행 인스턴스를 Worker Node로 등록하고 Heartbeat·Job 실행에 현재 Worker ID를 제공한다.
+ *
+ * <p>종료 시 활성 Job Executor와 Lease 갱신이 먼저 정리된 뒤 Worker를 STOPPED로 기록한다.
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -58,6 +65,7 @@ public class WorkerLifecycleManager {
         );
     }
 
+    @Order(Ordered.LOWEST_PRECEDENCE)
     @EventListener(ContextClosedEvent.class)
     public void stopWorker() {
         Long registeredWorkerId = workerId.getAndSet(null);

@@ -3,6 +3,7 @@ package com.opensource.docgrid.domain.embedding.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -35,6 +36,8 @@ import org.springframework.web.client.RestClient;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 import com.opensource.docgrid.domain.embedding.client.EmbeddingClient;
 import com.opensource.docgrid.domain.embedding.dto.request.CreateDocumentEmbeddingsRequest;
+import com.opensource.docgrid.domain.embedding.dto.response.EmbedBatchItemResponse;
+import com.opensource.docgrid.domain.embedding.dto.response.EmbedBatchServerResponse;
 import com.opensource.docgrid.domain.embedding.service.DocumentEmbeddingService;
 import com.opensource.docgrid.domain.embedding.service.DocumentEmbeddingService.EmbeddingResult;
 import com.opensource.docgrid.global.exception.DocGridException;
@@ -71,6 +74,7 @@ class DocumentEmbeddingIntegrationTest {
     static void configureEmbedding(DynamicPropertyRegistry registry) {
         registry.add("TEST_DB_SCHEMA", () -> TEST_SCHEMA);
         registry.add("jwt.secret", () -> "docgrid-embedding-integration-test-secret-key-2026");
+        registry.add("embedding.document.batch-size", () -> 2);
     }
 
     @BeforeEach
@@ -113,7 +117,7 @@ class DocumentEmbeddingIntegrationTest {
         assertThat(replayed.response()).isEqualTo(created.response());
         assertThat(created.response().embeddingCount()).isEqualTo(3);
         assertThat(created.response().versionStatus()).isEqualTo(DocumentVersionStatus.EMBEDDING);
-        assertThat(embeddingClient.callCount()).isEqualTo(3);
+        assertThat(embeddingClient.callCount()).isEqualTo(2);
 
         assertThat(jdbcTemplate.queryForList("""
             SELECT document_id, document_version_id, embedding_model_id, dimension, status,
@@ -143,12 +147,12 @@ class DocumentEmbeddingIntegrationTest {
     }
 
     @Test
-    @DisplayName("두 번째 Chunk 외부 호출이 실패하면 Embedding 행을 하나도 저장하지 않는다")
+    @DisplayName("두 번째 Batch 외부 호출이 실패하면 Embedding 행을 하나도 저장하지 않는다")
     void createEmbeddings_externalFailureLeavesNoPartialRows() {
         ExecutionContext context = insertExecution();
         CreateDocumentEmbeddingsRequest request =
             new CreateDocumentEmbeddingsRequest(context.workerId(), CLAIM_TOKEN);
-        embeddingClient.failOnText("두 번째");
+        embeddingClient.failOnText("세 번째");
 
         assertThatThrownBy(() ->
             documentEmbeddingService.createEmbeddings(context.jobId(), context.attemptId(), request))
@@ -196,7 +200,7 @@ class DocumentEmbeddingIntegrationTest {
         assertThat(results).filteredOn(result -> !result.created()).hasSize(1);
         assertThat(results).extracting(result -> result.response().embeddingCount()).containsOnly(3);
         assertThat(embeddingCount(context.versionId())).isEqualTo(3);
-        assertThat(embeddingClient.callCount()).isEqualTo(6);
+        assertThat(embeddingClient.callCount()).isEqualTo(4);
         assertThat(eventCount(context.jobId(), "EMBEDDING_STARTED")).isOne();
     }
 
@@ -337,7 +341,7 @@ class DocumentEmbeddingIntegrationTest {
     }
 
     /**
-     * Text별 1024차원 Vector를 만들고 실패 지점과 두 요청의 동시 진입 Barrier를 제어한다.
+     * Batch별 1024차원 Vector를 만들고 실패 지점과 두 요청의 동시 진입 Barrier를 제어한다.
      */
     static class DeterministicEmbeddingClient extends EmbeddingClient {
 
@@ -351,14 +355,14 @@ class DocumentEmbeddingIntegrationTest {
         }
 
         @Override
-        public float[] embed(String text) {
+        public EmbedBatchServerResponse embedBatch(List<String> texts, int batchSize) {
             calls.incrementAndGet();
-            if (text.equals(failureText)) {
+            if (texts.contains(failureText)) {
                 throw new DocGridException(ErrorCode.EMBEDDING_SERVER_UNAVAILABLE);
             }
 
             CyclicBarrier currentBarrier = barrier;
-            if (currentBarrier != null && text.equals(barrierText)) {
+            if (currentBarrier != null && texts.contains(barrierText)) {
                 try {
                     currentBarrier.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
                 } catch (Exception exception) {
@@ -366,10 +370,15 @@ class DocumentEmbeddingIntegrationTest {
                 }
             }
 
-            float[] vector = new float[VECTOR_DIMENSION];
-            vector[0] = text.hashCode();
-            vector[1] = text.length();
-            return vector;
+            List<EmbedBatchItemResponse> embeddings = new ArrayList<>(texts.size());
+            for (int index = 0; index < texts.size(); index++) {
+                String text = texts.get(index);
+                float[] vector = new float[VECTOR_DIMENSION];
+                vector[0] = text.hashCode();
+                vector[1] = text.length();
+                embeddings.add(new EmbedBatchItemResponse(index, vector));
+            }
+            return new EmbedBatchServerResponse("BAAI/bge-m3", embeddings);
         }
 
         int callCount() {

@@ -343,6 +343,7 @@ class DocumentEmbeddingTransactionServiceTest {
         EmbeddingWork changedModelWork = new EmbeddingWork(
             VERSION_ID,
             99L,
+            EmbeddingModelFixture.MODEL_NAME,
             EmbeddingModelFixture.DIMENSION,
             work(chunks).chunks()
         );
@@ -436,6 +437,7 @@ class DocumentEmbeddingTransactionServiceTest {
         return new EmbeddingWork(
             VERSION_ID,
             MODEL_ID,
+            EmbeddingModelFixture.MODEL_NAME,
             EmbeddingModelFixture.DIMENSION,
             chunks.stream()
                 .map(chunk -> new ChunkSnapshot(

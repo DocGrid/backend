@@ -1,6 +1,0 @@
-pg_owner: docgrid
-pg_group: docgrid
-pg_superuser: docgrid
-pg_superuser_password: docgrid1234
-pg_database: postgres
-use_system_user: false

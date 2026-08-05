@@ -40,3 +40,6 @@ out/
 ### Environment ###
 .env
 .env.properties
+
+# 공급사 설치 파일과 라이선스는 Repository 외부에 보관한다.
+/.local-vendor/

@@ -209,5 +209,5 @@ Volume인데 Extension이 없다면 초기화 Log를 확인한다. 기존 Postgr
 
 ## 11. 관련 문서
 
-- [상세 설계](design/Gimini-3-#97-postgresql17-pgvector-local-environment.md)
+- [상세 설계](design/Gimini-3-%2397-postgresql17-pgvector-local-environment.md)
 - [GitHub Issue #97](https://github.com/DocGrid/backend/issues/97)

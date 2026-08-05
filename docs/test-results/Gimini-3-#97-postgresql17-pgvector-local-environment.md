@@ -149,6 +149,16 @@ BUILD SUCCESSFUL in 19s
 
 기본 Test Task는 `benchmark`, `minio-integration`, `claim-concurrency` Tag를 제외한다.
 
+### 5.3 Swagger 수동 검증
+
+결과: 적용 제외
+
+- 이 작업은 Controller, Request/Response DTO, API 경로 및 Swagger 설정을 변경하지 않는다.
+- 검증 대상은 PostgreSQL 17 실행 환경, Flyway/Hibernate Schema, Vector Index와 Claim
+  Benchmark 환경 계약이다.
+- API 계약이 변경되는 작업에는 Swagger 수동 호출 결과를 자동 테스트 결과와 함께 기록해야 하지만,
+  이번 DB 실행 환경 전환은 해당 예외 기준에 해당한다.
+
 ## 6. Claim 동시성 통합 테스트
 
 ```bash

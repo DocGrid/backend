@@ -8,10 +8,13 @@
 ```bash
 cp .env.example .env
 docker compose pull postgres
-docker compose up -d postgres
-docker compose ps
+docker compose up -d --wait --wait-timeout 60 postgres
+docker compose ps postgres
 ./gradlew bootRun --args='--spring.profiles.active=local'
 ```
+
+`docker compose up --wait`가 PostgreSQL의 `healthy` 상태를 확인한 뒤에만 Application을
+기동한다.
 
 DB 기본 접속 정보는 `localhost:55432`, database `app`, user `app`입니다. 로컬 기본
 `DB_SSLMODE`는 `disable`이며 실제 비밀번호와 운영 접속정보는 환경변수로 주입합니다.

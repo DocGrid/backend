@@ -161,8 +161,14 @@ DB Runtime과 개발 환경만 교체한다.
 ~~~bash
 docker compose config
 git status --short --ignored
-rg '14\.6|pgsql-14|opensql_data|linux/amd64' docker-compose.yml docker README.md src/main src/test
+if rg '14\.6|pgsql-14|opensql_data|linux/amd64' docker-compose.yml docker src/main src/test; then
+  echo '금지된 PostgreSQL 14 또는 Architecture 고정 설정이 남아 있습니다.' >&2
+  exit 1
+fi
 ~~~
+
+README의 기존 볼륨 보존 경고는 의도적으로 `opensql_data`를 언급하므로 활성 설정 검사 대상에서
+제외한다.
 
 ### 11.2 Database 검증
 

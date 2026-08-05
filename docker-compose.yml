@@ -1,10 +1,7 @@
 services:
   postgres:
-    build:
-      context: ./docker/opensql
-      dockerfile: Dockerfile
-    platform: linux/amd64
-    container_name: local-opensql
+    image: pgvector/pgvector:0.8.1-pg17
+    container_name: docgrid-postgres17
     environment:
       POSTGRES_DB: ${DB_NAME:-app}
       POSTGRES_USER: ${DB_USER:-app}
@@ -12,14 +9,14 @@ services:
     ports:
       - "${DB_PORT:-55432}:5432"
     volumes:
-      - opensql_data:/var/lib/pgsql
-      - ./docker/opensql/vars.yml:/tmp/settings/vars/vars.yml:ro
+      - postgres17-data:/var/lib/postgresql/data
+      - ./docker/postgres/init/001-enable-vector.sql:/docker-entrypoint-initdb.d/001-enable-vector.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "/usr/pgsql-14/bin/pg_isready -U app -d app"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 90s
+      start_period: 30s
     networks:
       - docgrid-local
 
@@ -81,8 +78,8 @@ networks:
   docgrid-local:
 
 volumes:
-  opensql_data:
-    name: opensql_data
+  postgres17-data:
+    name: docgrid_postgres17_data
   minio-data:
   huggingface-cache:
   ollama-data:

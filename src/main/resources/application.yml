@@ -9,6 +9,14 @@ spring:
     multipart:
       max-file-size: 10MB
       max-request-size: 11MB
+  ai:
+    mcp:
+      server:
+        name: docgrid-mcp-server
+        protocol: STREAMABLE
+        type: SYNC
+        annotation-scanner:
+          enabled: true
 
 document:
   upload:

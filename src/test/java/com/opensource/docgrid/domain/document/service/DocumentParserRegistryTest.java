@@ -46,6 +46,6 @@ class DocumentParserRegistryTest {
     void constructor_throwsWhenParserRegistrationIsDuplicated() {
         assertThatThrownBy(() -> new DocumentParserRegistry(List.of(textDocumentParser, textDocumentParser)))
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("TXT");
+            .hasMessageContaining("중복");
     }
 }

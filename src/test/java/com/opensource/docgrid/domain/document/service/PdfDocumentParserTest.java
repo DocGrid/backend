@@ -62,6 +62,13 @@ class PdfDocumentParserTest {
     }
 
     @Test
+    @DisplayName("Page가 하나도 없는 PDF면 빈 문서 오류가 발생한다")
+    void parseDocument_throwsWhenPdfHasNoPage() throws IOException {
+        // Page 자체가 없으면 OCR로도 복구할 수 없으므로 스캔 PDF와 다른 오류로 구분해야 한다.
+        assertError(pdfWithPages(), ErrorCode.DOCUMENT_CONTENT_EMPTY);
+    }
+
+    @Test
     @DisplayName("Password 보호 PDF면 암호화 문서 오류가 발생한다")
     void parseDocument_throwsWhenPdfIsEncrypted() throws IOException {
         assertError(encryptedPdf(), ErrorCode.DOCUMENT_PDF_ENCRYPTED);

@@ -151,7 +151,8 @@ class EmbeddingJobManualRetryServiceTest {
         assertThat(embeddingJob.getLockExpiresAt()).isNull();
         assertThat(embeddingJob.getFailedAt()).isNull();
         assertThat(embeddingJob.getNextRetryAt()).isNull();
-        // Retry 이력은 감사 대상이므로 삭제하지 않고, 추가 실행 1회만 부여한다.
+        // Retry 이력은 감사 대상이므로 삭제하지 않는다. 자동 재시도 여유를 남기지 않으므로 이번
+        // 재처리 실행이 다시 실패하면 재예약 없이 곧바로 최종 실패로 종결된다.
         assertThat(embeddingJob.getRetryCount()).isEqualTo(3);
         assertThat(embeddingJob.hasRemainingRetries()).isFalse();
     }

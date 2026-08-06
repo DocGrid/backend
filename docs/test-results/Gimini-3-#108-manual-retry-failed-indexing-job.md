@@ -34,8 +34,13 @@ BUILD SUCCESSFUL
 tests=653 failures=0 errors=0 skipped=0
 ```
 
-수동 재처리 추가 전 기준 Test 수는 646개였고, 이번 작업으로 단위 13개, 통합 8개, Controller 7개가
-추가되어 653개가 됐다.
+같은 명령을 `develop`(`e1bd2d2`)에서 실행한 기준 Test 수는 625개이며, 이번 작업으로 단위 13개, 통합
+8개, Controller 7개가 추가되어 653개가 됐다.
+
+```text
+develop  : tests=625 failures=0 errors=0
+feature  : tests=653 failures=0 errors=0   (625 + 28)
+```
 
 ## 3. 단위 검증
 
@@ -45,8 +50,7 @@ tests=653 failures=0 errors=0 skipped=0
 |---|---|---|
 | Chunk가 있는 최종 실패 Job | `CHUNKED` 재개, 문서 `INDEXING` | 통과 |
 | Chunk가 없는 최종 실패 Job | `UPLOADED` 재개 | 통과 |
-| 재처리 후 소유권 | Worker·Token·Lease·`failed_at` 모두 `null` | 통과 |
-| 재시도 이력 | `retry_count = 3` 유지, 잔여 재시도 없음 | 통과 |
+| 재처리 후 소유권과 재시도 이력 | Worker·Token·Lease·`failed_at` 모두 `null`, `retry_count = 3` 유지, 잔여 자동 재시도 없음 | 통과 |
 | 감사 Event | `MANUAL_RETRY` 1건, Claim Token 미포함 | 통과 |
 | 이전 `INDEXED` Version 존재 | 문서 상태·현재 포인터 보존 | 통과 |
 | Job 없음 | `EMBEDDING_JOB_NOT_FOUND` | 통과 |

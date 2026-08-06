@@ -5,9 +5,11 @@ import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
+import com.opensource.docgrid.domain.document.enums.DocumentType;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
@@ -18,9 +20,23 @@ import com.opensource.docgrid.global.exception.ErrorCode;
  * 줄바꿈 정규화와 공백 전용 문서 거부만 수행한다. Markdown 문법과 그 밖의 공백은 보존한다.
  */
 @Component
-public class TextDocumentParser {
+public class TextDocumentParser implements DocumentContentParser {
 
     private static final char BYTE_ORDER_MARK = '\uFEFF';
+    private static final Set<DocumentType> SUPPORTED_TYPES = Set.of(DocumentType.TXT, DocumentType.MD);
+
+    @Override
+    public Set<DocumentType> supportedTypes() {
+        return SUPPORTED_TYPES;
+    }
+
+    /**
+     * 기존 TXT·Markdown Canonical Text를 단일 Segment 문서로 변환한다.
+     */
+    @Override
+    public ParsedDocument parseDocument(byte[] content) {
+        return ParsedDocument.single(parse(content));
+    }
 
     /**
      * 원본 Byte를 Canonical Text로 변환한다.

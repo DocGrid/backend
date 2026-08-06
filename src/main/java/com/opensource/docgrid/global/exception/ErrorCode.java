@@ -112,6 +112,21 @@ public enum ErrorCode {
         "DOCUMENT-PARSING-004",
         "문서 원본 파일 정보를 확인할 수 없습니다."
     ),
+    DOCUMENT_PDF_ENCRYPTED(
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        "DOCUMENT-PARSING-005",
+        "암호화된 PDF 문서는 처리할 수 없습니다."
+    ),
+    DOCUMENT_OCR_REQUIRED(
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        "DOCUMENT-PARSING-006",
+        "PDF에서 텍스트를 찾을 수 없어 OCR 처리가 필요합니다."
+    ),
+    DOCUMENT_PARSING_FAILED(
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        "DOCUMENT-PARSING-007",
+        "문서 내용을 읽을 수 없습니다."
+    ),
     DOCUMENT_CHUNKS_INCONSISTENT(
         HttpStatus.INTERNAL_SERVER_ERROR,
         "DOCUMENT-CHUNK-001",

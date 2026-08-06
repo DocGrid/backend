@@ -48,7 +48,7 @@ class DocumentParsingServiceTest {
 
     @Mock private DocumentChunkTransactionService transactionService;
     @Mock private FileStorageService fileStorageService;
-    @Mock private TextDocumentParser textDocumentParser;
+    @Mock private DocumentParserRegistry documentParserRegistry;
     @Mock private FixedSizeChunker fixedSizeChunker;
 
     private DocumentParsingService service;
@@ -59,7 +59,7 @@ class DocumentParsingServiceTest {
         service = new DocumentParsingService(
             transactionService,
             fileStorageService,
-            textDocumentParser,
+            documentParserRegistry,
             fixedSizeChunker
         );
         request = new CreateDocumentChunksRequest(WORKER_ID, CLAIM_TOKEN);
@@ -73,9 +73,11 @@ class DocumentParsingServiceTest {
         ChunkResult expected = new ChunkResult(response(), true);
         given(transactionService.prepare(JOB_ID, ATTEMPT_ID, WORKER_ID, CLAIM_TOKEN))
             .willReturn(new PreparationResult(snapshot, null));
-        given(fileStorageService.read(STORED_FILE)).willReturn("본문".getBytes(StandardCharsets.UTF_8));
-        given(textDocumentParser.parse(any(byte[].class))).willReturn("본문");
-        given(fixedSizeChunker.chunk("본문")).willReturn(drafts);
+        byte[] content = "본문".getBytes(StandardCharsets.UTF_8);
+        ParsedDocument parsedDocument = ParsedDocument.single("본문");
+        given(fileStorageService.read(STORED_FILE)).willReturn(content);
+        given(documentParserRegistry.parse(DocumentType.TXT, content)).willReturn(parsedDocument);
+        given(fixedSizeChunker.chunk(parsedDocument)).willReturn(drafts);
         given(transactionService.complete(
             JOB_ID,
             ATTEMPT_ID,
@@ -88,11 +90,11 @@ class DocumentParsingServiceTest {
         ChunkResult result = service.createChunks(JOB_ID, ATTEMPT_ID, request);
 
         assertThat(result).isSameAs(expected);
-        InOrder order = inOrder(transactionService, fileStorageService, textDocumentParser, fixedSizeChunker);
+        InOrder order = inOrder(transactionService, fileStorageService, documentParserRegistry, fixedSizeChunker);
         order.verify(transactionService).prepare(JOB_ID, ATTEMPT_ID, WORKER_ID, CLAIM_TOKEN);
         order.verify(fileStorageService).read(STORED_FILE);
-        order.verify(textDocumentParser).parse(any(byte[].class));
-        order.verify(fixedSizeChunker).chunk("본문");
+        order.verify(documentParserRegistry).parse(DocumentType.TXT, content);
+        order.verify(fixedSizeChunker).chunk(parsedDocument);
         order.verify(transactionService).complete(
             JOB_ID, ATTEMPT_ID, WORKER_ID, CLAIM_TOKEN, VERSION_ID, drafts
         );
@@ -109,7 +111,7 @@ class DocumentParsingServiceTest {
 
         assertThat(result).isSameAs(replay);
         then(fileStorageService).shouldHaveNoInteractions();
-        then(textDocumentParser).shouldHaveNoInteractions();
+        then(documentParserRegistry).shouldHaveNoInteractions();
         then(fixedSizeChunker).shouldHaveNoInteractions();
         then(transactionService).should(never()).complete(any(), any(), any(), any(), any(), any());
     }
@@ -123,7 +125,7 @@ class DocumentParsingServiceTest {
         assertThatThrownBy(() -> service.createChunks(JOB_ID, ATTEMPT_ID, request))
             .isInstanceOf(IllegalStateException.class);
 
-        then(textDocumentParser).shouldHaveNoInteractions();
+        then(documentParserRegistry).shouldHaveNoInteractions();
         then(fixedSizeChunker).shouldHaveNoInteractions();
         then(transactionService).should(never()).complete(any(), any(), any(), any(), any(), any());
     }
@@ -134,7 +136,8 @@ class DocumentParsingServiceTest {
         givenWorkPreparation();
         byte[] content = "본문".getBytes(StandardCharsets.UTF_8);
         given(fileStorageService.read(STORED_FILE)).willReturn(content);
-        given(textDocumentParser.parse(content)).willThrow(new IllegalArgumentException("parse"));
+        given(documentParserRegistry.parse(DocumentType.TXT, content))
+            .willThrow(new IllegalArgumentException("parse"));
 
         assertThatThrownBy(() -> service.createChunks(JOB_ID, ATTEMPT_ID, request))
             .isInstanceOf(IllegalArgumentException.class);

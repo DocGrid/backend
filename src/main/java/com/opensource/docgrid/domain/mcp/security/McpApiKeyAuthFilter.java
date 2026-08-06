@@ -86,8 +86,10 @@ public class McpApiKeyAuthFilter extends OncePerRequestFilter {
         }
 
         // 인증 성공/실패 여부와 무관하게 항상 다음 필터로 요청을 넘긴다.
-        // 인증 실패(SecurityContext가 비어있음)에 대한 최종 차단(401)은
-        // 이 필터가 아니라 SecurityConfig의 anyRequest().authenticated()가 처리한다.
+        // 인증 실패(SecurityContext가 비어있음)에 대한 최종 차단은 이 필터가 아니라
+        // SecurityConfig의 anyRequest().authenticated()가 처리한다. 커스텀 AuthenticationEntryPoint가
+        // 없어 Spring Security 기본 동작(Http403ForbiddenEntryPoint)에 따라 403으로 응답한다 —
+        // 이는 이 필터만의 동작이 아니라 앱 전체 미인증 요청에 이미 적용되는 기존 동작이다.
         filterChain.doFilter(request, response);
     }
 

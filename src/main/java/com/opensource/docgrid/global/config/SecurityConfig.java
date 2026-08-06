@@ -14,6 +14,8 @@ import org.springframework.web.cors.CorsConfigurationSource;
 
 import com.opensource.docgrid.domain.auth.jwt.JwtAuthenticationFilter;
 import com.opensource.docgrid.domain.auth.jwt.JwtProvider;
+import com.opensource.docgrid.domain.mcp.security.McpApiKeyAuthFilter;
+import com.opensource.docgrid.domain.mcp.service.command.McpAccessTokenCommandService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -24,6 +26,7 @@ public class SecurityConfig {
 
     private final CorsConfigurationSource corsConfigurationSource;
     private final JwtProvider jwtProvider;
+    private final McpAccessTokenCommandService mcpAccessTokenCommandService;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -36,12 +39,18 @@ public class SecurityConfig {
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 .requestMatchers("/departments").permitAll()
                 .requestMatchers("/auth/signup", "/auth/login").permitAll()
-                // TODO: 임시 permitAll — 다음 이슈에서 McpApiKeyAuthFilter로 교체 예정
-                .requestMatchers("/mcp/**").permitAll()
                 .requestMatchers("/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )
-            .addFilterBefore(new JwtAuthenticationFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class);
+            /*
+             * UsernamePasswordAuthenticationFilter는 위치 기준점(앵커)일 뿐이며,
+             * 실제 목적은 두 필터가 최종 인증 판정(authorizeHttpRequests)보다 먼저
+             * SecurityContext를 채워두는 것이다. 각자 다른 경로만 처리하고 나머지는 스킵:
+             *   - JwtAuthenticationFilter  → 웹 로그인(JWT), /mcp/tokens 등 일반 API 담당
+             *   - McpApiKeyAuthFilter      → Claude Desktop API 키, /mcp 경로만 담당
+             */
+            .addFilterBefore(new JwtAuthenticationFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(new McpApiKeyAuthFilter(mcpAccessTokenCommandService), UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

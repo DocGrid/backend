@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import com.opensource.docgrid.domain.auth.jwt.JwtProvider;
+import com.opensource.docgrid.domain.mcp.service.command.McpAccessTokenCommandService;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 import com.opensource.docgrid.domain.document.service.DocumentParsingService;
 import com.opensource.docgrid.domain.document.service.command.DocumentChunkTransactionService.ChunkResult;
@@ -106,6 +107,7 @@ class IndexingJobAdminControllerTest {
     @MockitoBean private DocumentIndexingFailureService documentIndexingFailureService;
     @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
     @MockitoBean private JwtProvider jwtProvider;
+    @MockitoBean private McpAccessTokenCommandService mcpAccessTokenCommandService;
     @MockitoBean private CorsConfigurationSource corsConfigurationSource;
 
     @Test

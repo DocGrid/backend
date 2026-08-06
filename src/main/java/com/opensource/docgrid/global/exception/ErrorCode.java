@@ -210,6 +210,18 @@ public enum ErrorCode {
         "EMBEDDING-JOB-007",
         "동일한 Embedding Job Attempt에 다른 실패 내용이 이미 기록되었습니다."
     ),
+    // 처리 중이거나 자동 재시도가 예정된 Job과 중복 수동 재처리 요청을 함께 거부할 때 사용한다.
+    EMBEDDING_JOB_MANUAL_RETRY_NOT_ALLOWED(
+        HttpStatus.CONFLICT,
+        "EMBEDDING-JOB-008",
+        "최종 실패한 Embedding Job만 수동으로 재처리할 수 있습니다."
+    ),
+    // Job 상태는 최종 실패지만 대상 문서나 Version이 재처리 조건을 만족하지 않는 경우 사용한다.
+    EMBEDDING_JOB_MANUAL_RETRY_TARGET_INVALID(
+        HttpStatus.CONFLICT,
+        "EMBEDDING-JOB-009",
+        "현재 문서 상태에서는 Embedding Job을 수동으로 재처리할 수 없습니다."
+    ),
 
     // EMBEDDING MODEL
     EMBEDDING_MODEL_NOT_CONFIGURED(

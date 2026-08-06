@@ -14,5 +14,6 @@ public enum IndexingEventType {
     INDEXED,
     LEASE_EXPIRED,
     FAILED,
-    RETRY
+    RETRY,
+    MANUAL_RETRY
 }

@@ -23,6 +23,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.opensource.docgrid.domain.document.dto.response.CurrentVersionStatusResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentStatusResponse;
@@ -60,8 +61,12 @@ class DocGridMcpToolsTest {
     @Mock
     private DocumentQueryService documentQueryService;
 
-    // 실제 앱의 Spring 관리 ObjectMapper 빈과 동일하게 JavaTimeModule을 등록한다 (LocalDateTime 직렬화에 필요)
-    private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+    // 실제 앱의 Spring 관리 ObjectMapper 빈과 동일하게 구성한다: JavaTimeModule 등록 + 날짜를 타임스탬프 배열이
+    // 아닌 ISO 문자열로 직렬화 (Spring Boot의 Jackson 자동 설정 기본값과 동일하게 맞추지 않으면
+    // LocalDateTime이 [2026,8,6,10,0] 같은 배열로 직렬화돼 실제 앱 동작과 달라진다)
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     @BeforeEach
     void setUpAuthentication() {
@@ -154,9 +159,11 @@ class DocGridMcpToolsTest {
         String result = docGridMcpTools.getDocumentDetail(1L);
 
         // Then
-        assertThat(result).contains("\"title\":\"테스트 문서\"")
+        assertThat(result).contains("\"documentId\":1")
+                .contains("\"title\":\"테스트 문서\"")
                 .contains("\"currentVersionNo\":3")
-                .contains("\"status\":\"INDEXED\"");
+                .contains("\"status\":\"INDEXED\"")
+                .contains("\"updatedAt\":\"2026-08-06T10:00:00\"");
     }
 
     @Test

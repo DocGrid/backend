@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.charset.StandardCharsets;
 
+import com.opensource.docgrid.domain.document.enums.DocumentType;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -44,6 +46,19 @@ class TextDocumentParserTest {
 
         assertThat(parser.parse(source.getBytes(StandardCharsets.UTF_8)))
             .isEqualTo("첫 줄\n둘째 줄\n셋째 줄\uFEFF");
+    }
+
+    @Test
+    @DisplayName("TXT와 Markdown 형식을 단일 Segment Parsed Document로 변환한다")
+    void parseDocument_wrapsCanonicalTextAsSingleSegment() {
+        ParsedDocument result = parser.parseDocument("본문\r\n둘째 줄".getBytes(StandardCharsets.UTF_8));
+
+        assertThat(parser.supportedTypes()).containsExactlyInAnyOrder(DocumentType.TXT, DocumentType.MD);
+        assertThat(result.segments()).singleElement().satisfies(segment -> {
+            assertThat(segment.text()).isEqualTo("본문\n둘째 줄");
+            assertThat(segment.pageNo()).isNull();
+            assertThat(segment.sectionTitle()).isNull();
+        });
     }
 
     @Test

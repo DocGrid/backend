@@ -50,6 +50,10 @@ public class DocumentChunkTransactionService {
 
     private static final Set<String> TXT_CONTENT_TYPES = Set.of("text/plain");
     private static final Set<String> MARKDOWN_CONTENT_TYPES = Set.of("text/plain", "text/markdown");
+    private static final Set<String> PDF_CONTENT_TYPES = Set.of("application/pdf");
+    private static final Set<String> DOCX_CONTENT_TYPES = Set.of(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    );
     private static final String PARSE_STARTED_MESSAGE = "Document Version 텍스트 파싱을 시작했습니다.";
     private static final String CHUNKED_MESSAGE = "Document Version Chunk 저장을 완료했습니다.";
 
@@ -229,6 +233,12 @@ public class DocumentChunkTransactionService {
         }
         if (documentType == DocumentType.MD) {
             return MARKDOWN_CONTENT_TYPES;
+        }
+        if (documentType == DocumentType.PDF) {
+            return PDF_CONTENT_TYPES;
+        }
+        if (documentType == DocumentType.DOCX) {
+            return DOCX_CONTENT_TYPES;
         }
         return Set.of();
     }

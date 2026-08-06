@@ -39,6 +39,12 @@ class WorkerIndexingFailureClassifierTest {
     void classify_mapsNonRetryableFailures() {
         assertThat(classifier.classify(new DocGridException(ErrorCode.DOCUMENT_CONTENT_EMPTY))
             .failureType()).isEqualTo(IndexingFailureType.DOCUMENT_CONTENT_INVALID);
+        assertThat(classifier.classify(new DocGridException(ErrorCode.DOCUMENT_OCR_REQUIRED))
+            .failureType()).isEqualTo(IndexingFailureType.DOCUMENT_CONTENT_INVALID);
+        assertThat(classifier.classify(new DocGridException(ErrorCode.DOCUMENT_PDF_ENCRYPTED))
+            .failureType()).isEqualTo(IndexingFailureType.DOCUMENT_CONTENT_INVALID);
+        assertThat(classifier.classify(new DocGridException(ErrorCode.DOCUMENT_PARSING_FAILED))
+            .failureType()).isEqualTo(IndexingFailureType.DOCUMENT_CONTENT_INVALID);
         assertThat(classifier.classify(new DocGridException(ErrorCode.EMBEDDING_VECTOR_INVALID))
             .failureType()).isEqualTo(IndexingFailureType.EMBEDDING_RESULT_INVALID);
         assertThat(classifier.classify(new DocGridException(ErrorCode.DOCUMENT_CHUNKS_INCONSISTENT))

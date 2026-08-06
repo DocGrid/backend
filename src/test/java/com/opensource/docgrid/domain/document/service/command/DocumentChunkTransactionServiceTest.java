@@ -134,6 +134,24 @@ class DocumentChunkTransactionServiceTest {
     }
 
     @Test
+    @DisplayName("PDF와 DOCX Content-Type을 파싱 준비 단계에서 허용한다")
+    void prepare_acceptsPdfAndDocxContentTypes() {
+        prepareEntities(DocumentType.PDF, DocumentVersionStatus.UPLOADED);
+        givenValidContext();
+
+        PreparationResult pdfResult = service.prepare(JOB_ID, ATTEMPT_ID, WORKER_ID, CLAIM_TOKEN);
+
+        assertThat(pdfResult.fileSnapshot().documentType()).isEqualTo(DocumentType.PDF);
+
+        prepareEntities(DocumentType.DOCX, DocumentVersionStatus.UPLOADED);
+        givenValidContext();
+
+        PreparationResult docxResult = service.prepare(JOB_ID, ATTEMPT_ID, WORKER_ID, CLAIM_TOKEN);
+
+        assertThat(docxResult.fileSnapshot().documentType()).isEqualTo(DocumentType.DOCX);
+    }
+
+    @Test
     @DisplayName("CHUNKED Version은 기존 Chunk 수를 반환하고 외부 Snapshot을 만들지 않는다")
     void prepare_replaysCompletedChunks() {
         prepareEntities(DocumentType.TXT, DocumentVersionStatus.CHUNKED);
@@ -168,7 +186,7 @@ class DocumentChunkTransactionServiceTest {
     @Test
     @DisplayName("지원하지 않는 Document Type은 Storage 작업 전에 거부한다")
     void prepare_rejectsUnsupportedDocumentType() {
-        prepareEntities(DocumentType.PDF, DocumentVersionStatus.UPLOADED);
+        prepareEntities(DocumentType.HTML, DocumentVersionStatus.UPLOADED);
         givenValidContext();
 
         assertThatThrownBy(() -> service.prepare(JOB_ID, ATTEMPT_ID, WORKER_ID, CLAIM_TOKEN))
@@ -264,9 +282,9 @@ class DocumentChunkTransactionServiceTest {
 
         FileObject fileObject = FileObject.builder()
             .bucketName("bucket")
-            .objectKey("source.txt")
-            .originalFilename("source.txt")
-            .contentType(documentType == DocumentType.MD ? "text/markdown" : "text/plain")
+            .objectKey("source." + extension(documentType))
+            .originalFilename("source." + extension(documentType))
+            .contentType(contentType(documentType))
             .fileSize(6L)
             .fileHash("hash")
             .storageProvider(StorageProvider.MINIO)
@@ -299,6 +317,26 @@ class DocumentChunkTransactionServiceTest {
             .startedAt(NOW.minusMinutes(1))
             .build();
         ReflectionTestUtils.setField(attempt, "id", ATTEMPT_ID);
+    }
+
+    private String extension(DocumentType documentType) {
+        return switch (documentType) {
+            case PDF -> "pdf";
+            case DOCX -> "docx";
+            case MD -> "md";
+            case HTML -> "html";
+            default -> "txt";
+        };
+    }
+
+    private String contentType(DocumentType documentType) {
+        return switch (documentType) {
+            case PDF -> "application/pdf";
+            case DOCX -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            case MD -> "text/markdown";
+            case HTML -> "text/html";
+            default -> "text/plain";
+        };
     }
 
     private DocumentChunkDraft draft(int index, String text, int start, int end) {

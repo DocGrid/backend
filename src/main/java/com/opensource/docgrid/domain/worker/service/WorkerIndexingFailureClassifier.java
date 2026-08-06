@@ -29,7 +29,10 @@ public class WorkerIndexingFailureClassifier {
     private static final Set<ErrorCode> DOCUMENT_CONTENT_ERRORS = EnumSet.of(
         ErrorCode.UNSUPPORTED_DOCUMENT_TYPE,
         ErrorCode.DOCUMENT_CONTENT_EMPTY,
-        ErrorCode.DOCUMENT_TEXT_DECODING_FAILED
+        ErrorCode.DOCUMENT_TEXT_DECODING_FAILED,
+        ErrorCode.DOCUMENT_PDF_ENCRYPTED,
+        ErrorCode.DOCUMENT_OCR_REQUIRED,
+        ErrorCode.DOCUMENT_PARSING_FAILED
     );
     private static final Set<ErrorCode> EMBEDDING_RESULT_ERRORS = EnumSet.of(
         ErrorCode.EMBEDDING_DIMENSION_MISMATCH,

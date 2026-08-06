@@ -106,12 +106,12 @@ DB Transaction 경계는 변경하지 않는다.
 
 ```java
 public interface DocumentContentParser {
-    DocumentType supportedType();
+    Set<DocumentType> supportedTypes();
     ParsedDocument parseDocument(byte[] content);
 }
 ```
 
-- `supportedType`: Registry Key로 사용하는 단일 문서 형식
+- `supportedTypes`: Registry Key로 사용하는 문서 형식 집합. 같은 Byte 계약을 공유하는 TXT·MD Parser는 두 형식을 함께 등록
 - `parseDocument`: 원본 Byte를 DB나 Storage에 의존하지 않는 불변 파싱 결과로 변환
 
 Parser는 Chunk 크기, Overlap, 영속화와 Worker 소유권을 알지 않는다.

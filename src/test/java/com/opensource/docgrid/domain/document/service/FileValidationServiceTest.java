@@ -47,6 +47,29 @@ class FileValidationServiceTest {
     }
 
     @Test
+    @DisplayName("PDF 확장자와 Content-Type 조합을 허용한다")
+    void validate_succeeds_forPdf() {
+        ValidatedFile result = fileValidationService.validate(
+            file("guide.PDF", "application/pdf", "%PDF".getBytes())
+        );
+
+        assertThat(result.extension()).isEqualTo("pdf");
+        assertThat(result.documentType()).isEqualTo(DocumentType.PDF);
+    }
+
+    @Test
+    @DisplayName("DOCX 확장자와 OOXML Content-Type 조합을 허용한다")
+    void validate_succeeds_forDocx() {
+        ValidatedFile result = fileValidationService.validate(file(
+            "guide.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            new byte[] {1}
+        ));
+
+        assertThat(result.documentType()).isEqualTo(DocumentType.DOCX);
+    }
+
+    @Test
     @DisplayName("빈 파일이면 예외가 발생한다")
     void validate_throws_when_fileIsEmpty() {
         assertError(file("empty.txt", "text/plain", ""), ErrorCode.EMPTY_FILE);
@@ -65,7 +88,7 @@ class FileValidationServiceTest {
     @Test
     @DisplayName("지원하지 않는 확장자면 예외가 발생한다")
     void validate_throws_when_extensionIsUnsupported() {
-        assertError(file("sample.pdf", "application/pdf", "pdf"), ErrorCode.UNSUPPORTED_FILE_EXTENSION);
+        assertError(file("sample.doc", "application/msword", "doc"), ErrorCode.UNSUPPORTED_FILE_EXTENSION);
     }
 
     @Test
@@ -73,6 +96,13 @@ class FileValidationServiceTest {
     void validate_throws_when_contentTypeIsUnsupported() {
         assertError(file("sample.md", "application/octet-stream", "md"),
             ErrorCode.UNSUPPORTED_FILE_CONTENT_TYPE);
+        assertError(file("sample.pdf", "application/octet-stream", "pdf"),
+            ErrorCode.UNSUPPORTED_FILE_CONTENT_TYPE);
+        assertError(file(
+            "sample.docx",
+            "application/pdf",
+            "docx"
+        ), ErrorCode.UNSUPPORTED_FILE_CONTENT_TYPE);
     }
 
     @Test
@@ -89,7 +119,11 @@ class FileValidationServiceTest {
     }
 
     private MockMultipartFile file(String filename, String contentType, String content) {
-        return new MockMultipartFile("file", filename, contentType, content.getBytes());
+        return file(filename, contentType, content.getBytes());
+    }
+
+    private MockMultipartFile file(String filename, String contentType, byte[] content) {
+        return new MockMultipartFile("file", filename, contentType, content);
     }
 
     private void assertError(MockMultipartFile file, ErrorCode errorCode) {

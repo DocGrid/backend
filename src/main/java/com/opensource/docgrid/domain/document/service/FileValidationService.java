@@ -21,7 +21,15 @@ public class FileValidationService {
 
     private static final Map<String, Set<String>> ALLOWED_CONTENT_TYPES = Map.of(
         "txt", Set.of("text/plain"),
-        "md", Set.of("text/markdown", "text/plain")
+        "md", Set.of("text/markdown", "text/plain"),
+        "pdf", Set.of("application/pdf"),
+        "docx", Set.of("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    );
+    private static final Map<String, DocumentType> DOCUMENT_TYPES = Map.of(
+        "txt", DocumentType.TXT,
+        "md", DocumentType.MD,
+        "pdf", DocumentType.PDF,
+        "docx", DocumentType.DOCX
     );
 
     private final DocumentUploadProperties documentUploadProperties;
@@ -46,7 +54,7 @@ public class FileValidationService {
             throw new DocGridException(ErrorCode.UNSUPPORTED_FILE_CONTENT_TYPE);
         }
 
-        DocumentType documentType = extension.equals("txt") ? DocumentType.TXT : DocumentType.MD;
+        DocumentType documentType = DOCUMENT_TYPES.get(extension);
         return new ValidatedFile(originalFilename, extension, contentType, file.getSize(), documentType);
     }
 

@@ -14,6 +14,11 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -177,6 +182,74 @@ class DocumentVersionUploadIntegrationTest {
             .store(any(InputStream.class), anyLong(), anyString(), anyString());
     }
 
+    @Test
+    @DisplayName("같은 문서에 새 버전을 동시에 올려도 살아 있는 Embedding Job은 하나만 남는다")
+    void upload_createsSingleLiveJob_when_twoVersionsUploadedConcurrently() throws Exception {
+        given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
+            .willAnswer(invocation -> new StoredFile("test-bucket", "documents/test/" + UUID.randomUUID()));
+        DocumentUploadResponse initial = createIndexedDocument("concurrent-base");
+        // v1은 인덱싱을 마친 상태이므로 이전 Job을 종료 상태로 두고 새 Job만 살아 있게 만든다.
+        jdbcTemplate.update(
+            "UPDATE embedding_jobs SET status = 'INDEXED' WHERE document_version_id = ?",
+            initial.documentVersionId()
+        );
+        CyclicBarrier startBarrier = new CyclicBarrier(2);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        List<UploadOutcome> outcomes;
+        try {
+            List<Future<UploadOutcome>> futures = List.of(
+                executor.submit(() -> uploadAfterBarrier(initial.documentId(), "concurrent-A", startBarrier)),
+                executor.submit(() -> uploadAfterBarrier(initial.documentId(), "concurrent-B", startBarrier))
+            );
+            outcomes = List.of(futures.get(0).get(10, TimeUnit.SECONDS), futures.get(1).get(10, TimeUnit.SECONDS));
+        } finally {
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+
+        // Document 행 잠금과 진행 중 Version 부분 Unique Index가 함께 두 번째 요청을 되돌린다.
+        assertThat(outcomes).filteredOn(UploadOutcome::succeeded).hasSize(1);
+        assertThat(outcomes).filteredOn(outcome -> !outcome.succeeded())
+            .extracting(UploadOutcome::errorCode)
+            .containsExactly(ErrorCode.DOCUMENT_VERSION_IN_PROGRESS);
+        assertThat(countBy(
+            "SELECT COUNT(*) FROM document_versions WHERE document_id = ?",
+            initial.documentId()
+        )).isEqualTo(2);
+        assertThat(countBy("""
+            SELECT COUNT(*)
+            FROM document_versions
+            WHERE document_id = ?
+              AND status IN ('UPLOADED', 'PARSING', 'CHUNKED', 'EMBEDDING')
+            """, initial.documentId())).isOne();
+        assertThat(countBy("""
+            SELECT COUNT(*)
+            FROM embedding_jobs job
+            JOIN document_versions version ON version.id = job.document_version_id
+            WHERE version.document_id = ?
+              AND job.status IN ('PENDING', 'PROCESSING')
+            """, initial.documentId())).isOne();
+    }
+
+    private UploadOutcome uploadAfterBarrier(
+        Long documentId,
+        String content,
+        CyclicBarrier startBarrier
+    ) throws Exception {
+        startBarrier.await(10, TimeUnit.SECONDS);
+        try {
+            documentVersionUploadFacade.upload(userId, documentId, versionRequest(content, content + ".txt"));
+            return new UploadOutcome(true, null);
+        } catch (DocGridException exception) {
+            return new UploadOutcome(false, exception.getErrorCode());
+        }
+    }
+
+    private Integer countBy(String sql, Long documentId) {
+        return jdbcTemplate.queryForObject(sql, Integer.class, documentId);
+    }
+
     private DocumentUploadResponse createIndexedDocument(String content) {
         DocumentUploadRequest request = new DocumentUploadRequest(
             new MockMultipartFile("file", "initial.txt", "text/plain", content.getBytes()),
@@ -195,5 +268,11 @@ class DocumentVersionUploadIntegrationTest {
         return new DocumentVersionUploadRequest(
             new MockMultipartFile("file", filename, "text/plain", content.getBytes())
         );
+    }
+
+    /**
+     * 동시 새 버전 업로드 한 건의 성공 여부와 거부 사유 코드.
+     */
+    private record UploadOutcome(boolean succeeded, ErrorCode errorCode) {
     }
 }

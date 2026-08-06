@@ -125,7 +125,7 @@ protected void doFilterInternal(HttpServletRequest request, HttpServletResponse 
 
 기존 `JwtAuthenticationFilter`와 완전히 같은 패턴(`OncePerRequestFilter` 상속, `authentication.setDetails(userId)`로 `SecurityContext`에 저장)을 미러링했다. 다른 점은 `shouldNotFilter()`로 정확히 `/mcp` 경로에만 스코프를 제한했다는 것 — `/mcp/tokens`는 이 필터를 타지 않고 기존 `JwtAuthenticationFilter`가 처리한다.
 
-**주의**: 인증 실패(토큰 없음/무효) 시 이 필터가 직접 401을 반환하지 않는다. `SecurityContext`를 그냥 비워둔 채 다음 필터로 넘기고, 최종 차단은 `SecurityConfig`의 `anyRequest().authenticated()`가 처리한다 — 기존 `JwtAuthenticationFilter`와 동일한 방식이라 앱 전체에서 인증 실패 처리 방식이 일관된다.
+**주의**: 인증 실패(토큰 없음/무효) 시 이 필터가 직접 응답을 만들지 않는다. `SecurityContext`를 그냥 비워둔 채 다음 필터로 넘기고, 최종 차단은 `SecurityConfig`의 `anyRequest().authenticated()`가 처리한다 — 기존 `JwtAuthenticationFilter`와 동일한 방식이라 앱 전체에서 인증 실패 처리 방식이 일관된다. 실제로 로컬에서 curl로 확인한 결과 **403**이 반환된다(아래 "에러 케이스" 참고) — 커스텀 `AuthenticationEntryPoint`가 없어 Spring Security 기본 동작(`Http403ForbiddenEntryPoint`)이 적용되기 때문이며, `/mcp`만의 특이 동작이 아니라 이 앱 전체(`/collections` 등 다른 보호된 엔드포인트도 동일)에 이미 있던 기존 동작이다.
 
 ---
 
@@ -195,11 +195,13 @@ Authorization: Bearer {JWT}
 
 | 상황 | 코드 | 처리 |
 | --- | --- | --- |
-| JWT 없음/만료 | `UNAUTHORIZED` (401) | 기존 `JwtAuthenticationFilter` + `anyRequest().authenticated()`가 컨트롤러 진입 전 차단 |
+| JWT 없음/만료 | 없음 — **403** | `JwtAuthenticationFilter`가 `SecurityContext`를 못 채움 → `anyRequest().authenticated()`가 컨트롤러 진입 전 차단 (Spring Security 기본 `Http403ForbiddenEntryPoint`, 커스텀 엔트리포인트 없음) |
 | 존재하지 않는 tokenId 폐기 | `NOT_FOUND` (404) | `McpAccessTokenCommandService.revoke()` |
 | 다른 사용자의 토큰 폐기 시도 | `PERMISSION_DENIED` (403) | 소유자 검증 |
 | 이미 폐기된 토큰 재폐기 | 없음(200, 멱등) | 기존 `revokedAt` 그대로 반환 |
-| `/mcp` 요청에 API 키 없음/무효/폐기됨 | `UNAUTHORIZED` (401) | `McpApiKeyAuthFilter`가 `SecurityContext` 비워둠 → `anyRequest().authenticated()`가 차단 |
+| `/mcp` 요청에 API 키 없음/무효/폐기됨 | 없음 — **403** | `McpApiKeyAuthFilter`가 `SecurityContext` 비워둠 → `anyRequest().authenticated()`가 동일한 기본 엔트리포인트로 차단 |
+
+**검증 완료(2026-08-06, 로컬)**: `POST /mcp/tokens`(인증 없음), `POST /mcp`(API 키 없음/무효) 전부 실제로 curl로 확인한 결과 403 반환. 원래 명세서(F-MCP-07)엔 "UNAUTHORIZED" 에러코드로 기술돼 있었으나, `ErrorCode.UNAUTHORIZED`(401)는 `CurrentUserArgumentResolver`처럼 컨트롤러 진입 이후 코드에서 직접 던질 때만 적용되고, Spring Security 필터 체인 단계에서 걸러지는 미인증 요청(이번 케이스 전부 포함)에는 적용되지 않는다. 이 불일치는 `/mcp`만의 문제가 아니라 앱 전체에 이미 있던 기존 동작이라 이 PR 범위에서 고치지 않았다 — `AuthenticationEntryPoint`를 커스텀하려면 앱 전체 보안 설정에 영향을 주므로 별도 이슈로 다뤄야 한다.
 
 ---
 
@@ -235,6 +237,7 @@ API 키 인증 자체에는 호출 빈도 제한이 없다. F-MCP-08(Rate Limiti
 - `DocGridMcpTools`의 도구 핸들러에서 `SecurityContextHolder`로부터 userId를 꺼내 쓰는 연결부 — search_documents 이슈에서 구현
 - Rate Limiting — 별도 이슈
 - Claude Desktop에 실제로 발급된 키를 등록해 `/mcp` 호출이 인증되는지 end-to-end 확인 — 마지막 Claude Desktop 연동 검증 이슈에서 진행
+- **(앱 전체 범위, 이번 PR 밖)** 미인증 요청이 401이 아니라 403으로 응답하는 기존 동작 — 커스텀 `AuthenticationEntryPoint` 도입 여부는 MCP 블록이 아니라 `SecurityConfig` 전체 차원에서 별도로 논의 필요
 
 ### 다음 단계
 

@@ -35,7 +35,9 @@ public class DocumentUploadController {
 
     @Operation(
         summary = "문서 업로드 접수",
-        description = "TXT 또는 Markdown 원본 파일을 저장하고 비동기 인덱싱 작업을 생성합니다. 파싱과 임베딩은 수행하지 않습니다."
+        description = "TXT, Markdown, PDF 또는 DOCX 원본 파일을 저장하고 비동기 인덱싱 작업을 생성합니다. "
+            + "파싱과 임베딩은 수행하지 않습니다. 확장자와 Content-Type이 함께 맞아야 하며, "
+            + "구형 DOC 형식은 지원하지 않습니다."
     )
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<DocumentUploadResponse>> upload(

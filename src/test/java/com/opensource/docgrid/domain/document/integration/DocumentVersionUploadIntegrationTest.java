@@ -185,34 +185,49 @@ class DocumentVersionUploadIntegrationTest {
     @Test
     @DisplayName("같은 문서에 새 버전을 동시에 올려도 살아 있는 Embedding Job은 하나만 남는다")
     void upload_createsSingleLiveJob_when_twoVersionsUploadedConcurrently() throws Exception {
+        String suffix = UUID.randomUUID().toString();
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
             .willAnswer(invocation -> new StoredFile("test-bucket", "documents/test/" + UUID.randomUUID()));
-        DocumentUploadResponse initial = createIndexedDocument("concurrent-base");
+        DocumentUploadResponse initial = createIndexedDocument("concurrent-base-" + suffix);
         // v1은 인덱싱을 마친 상태이므로 이전 Job을 종료 상태로 두고 새 Job만 살아 있게 만든다.
         jdbcTemplate.update(
             "UPDATE embedding_jobs SET status = 'INDEXED' WHERE document_version_id = ?",
             initial.documentVersionId()
         );
-        CyclicBarrier startBarrier = new CyclicBarrier(2);
+        reset(fileStorageService);
+
+        // 저장 단계는 쓰기 Transaction 직전이므로, 여기서 두 요청을 함께 붙잡아야 둘 다 Commit 전에
+        // 같은 Document 행을 두고 실제로 경합한다. 호출 전에만 맞추면 순차 실행으로도 통과할 수 있다.
+        CyclicBarrier storageBarrier = new CyclicBarrier(2);
+        given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
+            .willAnswer(invocation -> {
+                storageBarrier.await(10, TimeUnit.SECONDS);
+                return new StoredFile("test-bucket", "documents/test/" + UUID.randomUUID());
+            });
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
         List<UploadOutcome> outcomes;
         try {
             List<Future<UploadOutcome>> futures = List.of(
-                executor.submit(() -> uploadAfterBarrier(initial.documentId(), "concurrent-A", startBarrier)),
-                executor.submit(() -> uploadAfterBarrier(initial.documentId(), "concurrent-B", startBarrier))
+                executor.submit(() -> upload(initial.documentId(), "concurrent-A-" + suffix)),
+                executor.submit(() -> upload(initial.documentId(), "concurrent-B-" + suffix))
             );
-            outcomes = List.of(futures.get(0).get(10, TimeUnit.SECONDS), futures.get(1).get(10, TimeUnit.SECONDS));
+            outcomes = List.of(futures.get(0).get(15, TimeUnit.SECONDS), futures.get(1).get(15, TimeUnit.SECONDS));
         } finally {
             executor.shutdownNow();
             assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
         }
 
+        // Barrier가 풀렸다는 것은 두 요청이 모두 Commit 전 상태로 저장 단계에 함께 도달했다는 뜻이다.
+        verify(fileStorageService, times(2))
+            .store(any(InputStream.class), anyLong(), anyString(), anyString());
         // Document 행 잠금과 진행 중 Version 부분 Unique Index가 함께 두 번째 요청을 되돌린다.
         assertThat(outcomes).filteredOn(UploadOutcome::succeeded).hasSize(1);
         assertThat(outcomes).filteredOn(outcome -> !outcome.succeeded())
             .extracting(UploadOutcome::errorCode)
             .containsExactly(ErrorCode.DOCUMENT_VERSION_IN_PROGRESS);
+        // 되돌아간 요청은 이미 올린 후보 Object를 정리하고 어떤 행도 남기지 않는다.
+        verify(fileStorageService, times(1)).delete(any(StoredFile.class));
         assertThat(countBy(
             "SELECT COUNT(*) FROM document_versions WHERE document_id = ?",
             initial.documentId()
@@ -232,12 +247,7 @@ class DocumentVersionUploadIntegrationTest {
             """, initial.documentId())).isOne();
     }
 
-    private UploadOutcome uploadAfterBarrier(
-        Long documentId,
-        String content,
-        CyclicBarrier startBarrier
-    ) throws Exception {
-        startBarrier.await(10, TimeUnit.SECONDS);
+    private UploadOutcome upload(Long documentId, String content) {
         try {
             documentVersionUploadFacade.upload(userId, documentId, versionRequest(content, content + ".txt"));
             return new UploadOutcome(true, null);

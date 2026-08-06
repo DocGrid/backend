@@ -20,7 +20,7 @@ Issue 2(#96)에서 `SecurityContext`에 userId를 채워는 넣었지만 실제�
 
 로그인 → API 키 발급 → `/mcp` 핸드셰이크 → `tools/call`까지 curl로 전체 플로우를 태우고, 핸들러 안에서 `Thread.currentThread().getName()`과 `SecurityContextHolder.getContext().getAuthentication()`을 임시로 찍어봤다.
 
-```
+```text
 thread=http-nio-8080-exec-10
 auth=UsernamePasswordAuthenticationToken [Principal=mcp-client, Authenticated=true, Details=1, ...]
 ```

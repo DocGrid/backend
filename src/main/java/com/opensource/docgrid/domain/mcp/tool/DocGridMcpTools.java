@@ -33,7 +33,8 @@ public class DocGridMcpTools {
     public String searchDocuments(
             @McpToolParam(description = "검색어", required = true) String query,
             @McpToolParam(description = "반환할 최대 결과 수 (기본 5, 1~20)", required = false) Integer topK) {
-        // 1. 입력 검증 — 타입/필수값은 SDK가 이미 처리, 여기서는 비즈니스 규칙(길이/범위)만 확인
+        // 1. 입력 검증 — SDK는 required(필수값)를 강제하지 않음이 실측으로 확인됨 (query=null로 그대로 호출됨)
+        //    → null/blank 여부와 비즈니스 규칙(길이/범위)을 전부 여기서 직접 검증한다
         validateSearchInput(query, topK);
 
         // 2. McpApiKeyAuthFilter가 SecurityContext에 저장해둔 사용자 식별

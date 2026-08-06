@@ -104,6 +104,35 @@ class FixedSizeChunkerTest {
     }
 
     @Test
+    @DisplayName("Segment 경계를 넘지 않고 Page·Section Metadata와 전역 Offset을 복사한다")
+    void chunk_preservesSegmentBoundariesAndMetadata() {
+        ParsedDocument parsedDocument = new ParsedDocument(List.of(
+            new ParsedDocumentSegment("abcde", 1, null, "{\"source\":\"pdf\"}"),
+            new ParsedDocumentSegment("wxyz", null, "Section B", null)
+        ));
+
+        List<DocumentChunkDraft> drafts = chunker.chunk(parsedDocument);
+
+        assertThat(drafts)
+            .extracting(
+                DocumentChunkDraft::chunkIndex,
+                DocumentChunkDraft::chunkText,
+                DocumentChunkDraft::charStart,
+                DocumentChunkDraft::charEnd
+            )
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple(0, "abcd", 0, 4),
+                org.assertj.core.groups.Tuple.tuple(1, "de", 3, 5),
+                org.assertj.core.groups.Tuple.tuple(2, "wxyz", 6, 10)
+            );
+        assertThat(drafts.subList(0, 2)).allSatisfy(draft -> {
+            assertThat(draft.pageNo()).isEqualTo(1);
+            assertThat(draft.metadataJson()).isEqualTo("{\"source\":\"pdf\"}");
+        });
+        assertThat(drafts.get(2).sectionTitle()).isEqualTo("Section B");
+    }
+
+    @Test
     @DisplayName("같은 Text는 같은 Draft와 Hash를 만들고 한 글자 차이는 Hash를 바꾼다")
     void chunk_isDeterministic() {
         List<DocumentChunkDraft> first = chunker.chunk("abcdefgh");

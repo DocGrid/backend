@@ -15,7 +15,7 @@ import com.opensource.docgrid.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 두 개의 짧은 DB Transaction 사이에서 원본 읽기, Text 파싱과 Chunk 계산을 조정한다.
+ * 두 개의 짧은 DB Transaction 사이에서 원본 읽기, 형식별 파싱과 Chunk 계산을 조정한다.
  *
  * <p>이 Service 자체에는 Transaction을 적용하지 않아 MinIO I/O와 CPU 계산 중 DB 행 잠금이
  * 유지되지 않게 한다. 외부 구간에는 불변 Snapshot과 Draft만 전달하고 JPA Entity는 전달하지 않는다.
@@ -26,7 +26,7 @@ public class DocumentParsingService {
 
     private final DocumentChunkTransactionService transactionService;
     private final FileStorageService fileStorageService;
-    private final TextDocumentParser textDocumentParser;
+    private final DocumentParserRegistry documentParserRegistry;
     private final FixedSizeChunker fixedSizeChunker;
 
     /**
@@ -55,10 +55,13 @@ public class DocumentParsingService {
             return preparation.replayResult();
         }
 
-        // 3. Transaction 밖에서 MinIO 읽기, 엄격한 UTF-8 파싱과 결정적 Chunk 계산을 수행한다.
+        // 3. Transaction 밖에서 원본을 읽고 문서 형식별 Segment 파싱과 결정적 Chunk 계산을 수행한다.
         byte[] content = fileStorageService.read(preparation.fileSnapshot().storedFile());
-        String canonicalText = textDocumentParser.parse(content);
-        List<DocumentChunkDraft> drafts = fixedSizeChunker.chunk(canonicalText);
+        ParsedDocument parsedDocument = documentParserRegistry.parse(
+            preparation.fileSnapshot().documentType(),
+            content
+        );
+        List<DocumentChunkDraft> drafts = fixedSizeChunker.chunk(parsedDocument);
         if (drafts.isEmpty()) {
             throw new DocGridException(ErrorCode.DOCUMENT_CHUNKS_INCONSISTENT);
         }

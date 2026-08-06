@@ -203,7 +203,7 @@ class DocumentChunkTransactionServiceTest {
     void complete_savesChunkSetAndMarksChunked() {
         prepareEntities(DocumentType.TXT, DocumentVersionStatus.PARSING);
         givenValidContext();
-        List<DocumentChunkDraft> drafts = List.of(draft(0, "본문", 0, 2));
+        List<DocumentChunkDraft> drafts = List.of(draftWithSource());
 
         ChunkResult result = service.complete(
             JOB_ID,
@@ -225,6 +225,9 @@ class DocumentChunkTransactionServiceTest {
         assertThat(saved.getDocumentVersion()).isSameAs(documentVersion);
         assertThat(saved.getChunkIndex()).isZero();
         assertThat(saved.getChunkText()).isEqualTo("본문");
+        assertThat(saved.getPageNo()).isEqualTo(2);
+        assertThat(saved.getSectionTitle()).isEqualTo("Section");
+        assertThat(saved.getMetadataJson()).isEqualTo("{\"source\":\"pdf\"}");
         assertThat(saved.getContentHash()).hasSize(64);
 
         ArgumentCaptor<IndexingEvent> eventCaptor = ArgumentCaptor.forClass(IndexingEvent.class);
@@ -350,6 +353,20 @@ class DocumentChunkTransactionServiceTest {
             null,
             "26e4a23eec4241e034f1b4631f0222f1895847637c35e77687d5945f75edb42c",
             null
+        );
+    }
+
+    private DocumentChunkDraft draftWithSource() {
+        return new DocumentChunkDraft(
+            0,
+            "본문",
+            1,
+            0,
+            2,
+            2,
+            "Section",
+            "26e4a23eec4241e034f1b4631f0222f1895847637c35e77687d5945f75edb42c",
+            "{\"source\":\"pdf\"}"
         );
     }
 }

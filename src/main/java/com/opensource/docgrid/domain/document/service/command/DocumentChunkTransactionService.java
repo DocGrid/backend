@@ -40,8 +40,8 @@ import lombok.RequiredArgsConstructor;
  * Document Chunk 생성의 준비와 완료 단계를 각각 짧은 DB Transaction으로 수행한다.
  *
  * <p>두 단계 모두 Job을 먼저, Version을 다음 순서로 잠그고 현재 소유권·Attempt를 검증한다.
- * 준비 단계는 외부 작업용 Snapshot을 만들며, 완료 단계는 Chunk Set·CHUNKED 상태·이벤트를
- * 원자적으로 저장한다.
+ * 준비 단계는 형식별 외부 파싱용 Snapshot을 만들며, 완료 단계는 Page·Section Metadata를 포함한
+ * Chunk Set·CHUNKED 상태·이벤트를 원자적으로 저장한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -297,6 +297,8 @@ public class DocumentChunkTransactionService {
             || draft.tokenCount() < 0
             || draft.charStart() < 0
             || draft.charEnd() <= draft.charStart()
+            || (draft.pageNo() != null && draft.pageNo() <= 0)
+            || (draft.sectionTitle() != null && draft.sectionTitle().length() > 500)
             || !StringUtils.hasText(draft.contentHash())
             || !draft.contentHash().matches("[0-9a-f]{64}")) {
             throw new DocGridException(ErrorCode.DOCUMENT_CHUNKS_INCONSISTENT);

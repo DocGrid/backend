@@ -8,6 +8,11 @@ import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.opensource.docgrid.domain.document.entity.Document;
+import com.opensource.docgrid.domain.document.repository.DocumentRepository;
+import com.opensource.docgrid.domain.document.service.query.DocumentQueryService;
+import com.opensource.docgrid.domain.mcp.dto.response.DocumentDetailResponse;
+import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.search.dto.SearchOutcome;
 import com.opensource.docgrid.domain.search.dto.request.SearchRequest;
 import com.opensource.docgrid.domain.search.service.SearchFacade;
@@ -25,6 +30,9 @@ public class DocGridMcpTools {
     private static final int MAX_TOP_K = 20;
 
     private final SearchFacade searchFacade;
+    private final DocumentRepository documentRepository;
+    private final PermissionQueryService permissionQueryService;
+    private final DocumentQueryService documentQueryService;
     private final ObjectMapper objectMapper;
 
     @McpTool(name = "search_documents",
@@ -52,18 +60,52 @@ public class DocGridMcpTools {
         annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false))
     public String getDocumentDetail(
             @McpToolParam(description = "문서 ID", required = true) Long documentId) {
-        // TODO: PermissionQueryService + DocumentQueryService 연동 (다음 이슈에서 구현)
-        return "not implemented";
+        // 1. documentId 필수 확인 (SDK가 required를 강제하지 않으므로 직접 검증)
+        requireDocumentId(documentId);
+
+        // 2. McpApiKeyAuthFilter가 SecurityContext에 저장해둔 사용자 식별
+        Long userId = currentUserId();
+
+        // 3. 권한 확인 — false면 문서 존재 여부를 노출하지 않기 위해 조회 전에 차단
+        if (!permissionQueryService.canReadDocument(userId, documentId)) {
+            throw new DocGridException(ErrorCode.PERMISSION_DENIED);
+        }
+
+        // 4. 문서 조회 — title/status/currentVersion/updatedAt은 Document 엔티티에 이미 있어 직접 사용
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
+
+        Integer currentVersionNo = document.getCurrentVersion() != null
+                ? document.getCurrentVersion().getVersionNo()
+                : null;
+        DocumentDetailResponse response = new DocumentDetailResponse(
+                document.getId(), document.getTitle(), currentVersionNo,
+                document.getStatus(), document.getUpdatedAt()
+        );
+
+        // 5. JSON으로 직렬화
+        return toJson(response);
     }
 
     @McpTool(name = "get_indexing_status",
-        description = "특정 문서 또는 버전의 인덱싱 상태(PENDING/PROCESSING/INDEXED/FAILED)를 조회한다.",
+        description = "특정 문서의 인덱싱 상태(PENDING/PROCESSING/INDEXED/FAILED)를 조회한다.",
         annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false))
     public String getIndexingStatus(
-            @McpToolParam(description = "문서 ID", required = false) Long documentId,
-            @McpToolParam(description = "버전 ID", required = false) Long versionId) {
-        // TODO: PermissionQueryService + DocumentQueryService 연동 (다음 이슈에서 구현)
-        return "not implemented";
+            @McpToolParam(description = "문서 ID", required = true) Long documentId) {
+        // 1. documentId 필수 확인
+        requireDocumentId(documentId);
+
+        // 2. 사용자 식별
+        Long userId = currentUserId();
+
+        // 3. 상태 조회 — DocumentQueryService.getDocumentStatus가 내부에서 권한체크까지 수행 (그대로 재사용)
+        return toJson(documentQueryService.getDocumentStatus(userId, documentId));
+    }
+
+    private void requireDocumentId(Long documentId) {
+        if (documentId == null) {
+            throw new DocGridException(ErrorCode.INVALID_PARAMETER, "documentId는 필수입니다.");
+        }
     }
 
     private void validateSearchInput(String query, Integer topK) {

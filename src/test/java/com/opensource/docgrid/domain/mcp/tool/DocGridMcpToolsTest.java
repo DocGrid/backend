@@ -3,10 +3,13 @@ package com.opensource.docgrid.domain.mcp.tool;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,8 +20,20 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.opensource.docgrid.domain.document.dto.response.CurrentVersionStatusResponse;
+import com.opensource.docgrid.domain.document.dto.response.DocumentStatusResponse;
+import com.opensource.docgrid.domain.document.entity.Document;
+import com.opensource.docgrid.domain.document.entity.DocumentVersion;
+import com.opensource.docgrid.domain.document.enums.DocumentStatus;
+import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
+import com.opensource.docgrid.domain.document.repository.DocumentRepository;
+import com.opensource.docgrid.domain.document.service.query.DocumentQueryService;
+import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.search.dto.SearchOutcome;
 import com.opensource.docgrid.domain.search.dto.request.SearchRequest;
 import com.opensource.docgrid.domain.search.dto.response.SearchResponse;
@@ -37,12 +52,27 @@ class DocGridMcpToolsTest {
     @Mock
     private SearchFacade searchFacade;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    @Mock
+    private DocumentRepository documentRepository;
+
+    @Mock
+    private PermissionQueryService permissionQueryService;
+
+    @Mock
+    private DocumentQueryService documentQueryService;
+
+    // 실제 앱의 Spring 관리 ObjectMapper 빈과 동일하게 구성한다: JavaTimeModule 등록 + 날짜를 타임스탬프 배열이
+    // 아닌 ISO 문자열로 직렬화 (Spring Boot의 Jackson 자동 설정 기본값과 동일하게 맞추지 않으면
+    // LocalDateTime이 [2026,8,6,10,0] 같은 배열로 직렬화돼 실제 앱 동작과 달라진다)
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     @BeforeEach
     void setUpAuthentication() {
         // ObjectMapper는 실제 직렬화 결과를 검증해야 하므로 목이 아닌 실제 인스턴스를 사용한다
-        docGridMcpTools = new DocGridMcpTools(searchFacade, objectMapper);
+        docGridMcpTools = new DocGridMcpTools(
+                searchFacade, documentRepository, permissionQueryService, documentQueryService, objectMapper);
 
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken("mcp-client", null, List.of());
@@ -115,5 +145,115 @@ class DocGridMcpToolsTest {
         assertThatThrownBy(() -> docGridMcpTools.searchDocuments("query", 5))
                 .isInstanceOf(DocGridException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UNAUTHORIZED);
+    }
+
+    @Test
+    @DisplayName("정상 케이스: 권한이 있으면 문서 상세 정보가 JSON으로 반환된다")
+    void getDocumentDetail_returnsJson_whenValid() {
+        // Given
+        Document document = createDocument();
+        given(permissionQueryService.canReadDocument(USER_ID, 1L)).willReturn(true);
+        given(documentRepository.findById(1L)).willReturn(Optional.of(document));
+
+        // When
+        String result = docGridMcpTools.getDocumentDetail(1L);
+
+        // Then
+        assertThat(result).contains("\"documentId\":1")
+                .contains("\"title\":\"테스트 문서\"")
+                .contains("\"currentVersionNo\":3")
+                .contains("\"status\":\"INDEXED\"")
+                .contains("\"updatedAt\":\"2026-08-06T10:00:00\"");
+    }
+
+    @Test
+    @DisplayName("예외 케이스: documentId가 없으면 INVALID_PARAMETER 예외가 발생한다")
+    void getDocumentDetail_throws_when_documentIdNull() {
+        assertThatThrownBy(() -> docGridMcpTools.getDocumentDetail(null))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_PARAMETER);
+    }
+
+    @Test
+    @DisplayName("예외 케이스: 권한이 없으면 PERMISSION_DENIED 예외가 발생한다")
+    void getDocumentDetail_throws_when_permissionDenied() {
+        given(permissionQueryService.canReadDocument(USER_ID, 1L)).willReturn(false);
+
+        assertThatThrownBy(() -> docGridMcpTools.getDocumentDetail(1L))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PERMISSION_DENIED);
+    }
+
+    @Test
+    @DisplayName("예외 케이스: 문서가 없으면 DOCUMENT_NOT_FOUND 예외가 발생한다")
+    void getDocumentDetail_throws_when_documentNotFound() {
+        given(permissionQueryService.canReadDocument(USER_ID, 1L)).willReturn(true);
+        given(documentRepository.findById(1L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> docGridMcpTools.getDocumentDetail(1L))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DOCUMENT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("예외 케이스: 인증 정보가 없으면 UNAUTHORIZED 예외가 발생한다")
+    void getDocumentDetail_throws_when_unauthenticated() {
+        SecurityContextHolder.clearContext();
+
+        assertThatThrownBy(() -> docGridMcpTools.getDocumentDetail(1L))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UNAUTHORIZED);
+    }
+
+    @Test
+    @DisplayName("정상 케이스: DocumentQueryService 결과가 JSON으로 반환된다")
+    void getIndexingStatus_returnsJson_whenValid() {
+        // Given
+        DocumentStatusResponse response = new DocumentStatusResponse(
+                1L, DocumentStatus.INDEXED,
+                new CurrentVersionStatusResponse(3, DocumentVersionStatus.INDEXED),
+                null
+        );
+        given(documentQueryService.getDocumentStatus(USER_ID, 1L)).willReturn(response);
+
+        // When
+        String result = docGridMcpTools.getIndexingStatus(1L);
+
+        // Then
+        assertThat(result).contains("\"documentStatus\":\"INDEXED\"")
+                .contains("\"versionNo\":3");
+    }
+
+    @Test
+    @DisplayName("예외 케이스: documentId가 없으면 INVALID_PARAMETER 예외가 발생한다")
+    void getIndexingStatus_throws_when_documentIdNull() {
+        assertThatThrownBy(() -> docGridMcpTools.getIndexingStatus(null))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_PARAMETER);
+    }
+
+    @Test
+    @DisplayName("예외 케이스: 인증 정보가 없으면 UNAUTHORIZED 예외가 발생한다")
+    void getIndexingStatus_throws_when_unauthenticated() {
+        SecurityContextHolder.clearContext();
+
+        assertThatThrownBy(() -> docGridMcpTools.getIndexingStatus(1L))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UNAUTHORIZED);
+    }
+
+    private Document createDocument() {
+        Document document = Document.builder()
+                .title("테스트 문서")
+                .status(DocumentStatus.INDEXED)
+                .build();
+        ReflectionTestUtils.setField(document, "id", 1L);
+        ReflectionTestUtils.setField(document, "updatedAt", LocalDateTime.of(2026, 8, 6, 10, 0));
+
+        DocumentVersion currentVersion = DocumentVersion.builder()
+                .versionNo(3)
+                .build();
+        ReflectionTestUtils.setField(document, "currentVersion", currentVersion);
+        return document;
     }
 }

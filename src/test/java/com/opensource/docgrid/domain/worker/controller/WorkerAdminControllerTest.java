@@ -24,6 +24,7 @@ import com.opensource.docgrid.domain.worker.enums.WorkerStatus;
 import com.opensource.docgrid.domain.worker.fixture.WorkerNodeFixture;
 import com.opensource.docgrid.domain.worker.service.query.WorkerNodeQueryService;
 import com.opensource.docgrid.domain.auth.jwt.JwtProvider;
+import com.opensource.docgrid.domain.mcp.service.command.McpAccessTokenCommandService;
 import com.opensource.docgrid.global.config.SecurityConfig;
 
 @WebMvcTest(WorkerAdminController.class)
@@ -44,6 +45,9 @@ class WorkerAdminControllerTest {
 
     @MockitoBean
     private JwtProvider jwtProvider;
+
+    @MockitoBean
+    private McpAccessTokenCommandService mcpAccessTokenCommandService;
 
     @MockitoBean
     private CorsConfigurationSource corsConfigurationSource;

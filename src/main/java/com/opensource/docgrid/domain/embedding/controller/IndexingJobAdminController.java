@@ -23,6 +23,7 @@ import com.opensource.docgrid.domain.embedding.dto.response.DocumentChunksRespon
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentEmbeddingsResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingCompletionResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingFailureResponse;
+import com.opensource.docgrid.domain.embedding.dto.response.ManualRetriedIndexingJobResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.RenewedEmbeddingJobLeaseResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.StartedEmbeddingJobAttemptResponse;
 import com.opensource.docgrid.domain.document.service.DocumentParsingService;
@@ -35,6 +36,7 @@ import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttem
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttemptService.StartResult;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobClaimService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobLeaseService;
+import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobManualRetryService;
 import com.opensource.docgrid.global.common.response.ApiResponse;
 import com.opensource.docgrid.global.common.response.ErrorResponse;
 import com.opensource.docgrid.global.common.response.ResponseUtils;
@@ -50,10 +52,10 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * 관리자용 Embedding Job Claim·Lease 갱신, Attempt 시작과 문서 Chunk·Embedding·인덱싱 완료·실패
- * 실행을 HTTP API로 제공한다.
+ * 실행 및 최종 실패 Job 수동 재처리를 HTTP API로 제공한다.
  *
- * <p>HTTP 입력 검증과 성공 상태 변환만 담당한다. Job Claim 및 현재 소유권 기반 파이프라인 단계의
- * Transaction·외부 호출·동시성 규칙은 각 Service에 위임한다.
+ * <p>HTTP 입력 검증과 성공 상태 변환만 담당한다. Job Claim 및 현재 소유권 기반 파이프라인 단계와
+ * 수동 재처리의 Transaction·외부 호출·동시성 규칙은 각 Service에 위임한다.
  */
 @Tag(name = "Admin - Indexing Job", description = "관리자 전용 인덱싱 Job 제어 API")
 @Validated
@@ -69,6 +71,7 @@ public class IndexingJobAdminController {
     private final DocumentEmbeddingService documentEmbeddingService;
     private final DocumentIndexingCompletionService documentIndexingCompletionService;
     private final DocumentIndexingFailureService documentIndexingFailureService;
+    private final EmbeddingJobManualRetryService embeddingJobManualRetryService;
 
     @Operation(
         summary = "PENDING Job Claim",
@@ -464,5 +467,52 @@ public class IndexingJobAdminController {
     ) {
         // 최초 실패와 멱등 재생 모두 같은 Attempt 기반 실패 응답을 200 OK로 반환한다.
         return ResponseUtils.ok(documentIndexingFailureService.fail(jobId, attemptId, request));
+    }
+
+    @Operation(
+        summary = "최종 실패 Job 수동 재처리",
+        description = "자동 재시도를 모두 마치고 최종 실패한 Job만 즉시 Claim 가능한 PENDING 상태로 되돌립니다. "
+            + "처리 중이거나 자동 재시도가 예정된 Job과 이미 재처리된 Job의 중복 요청은 409로 거부합니다. "
+            + "이미 저장된 Chunk가 있으면 파싱을 생략하고 임베딩 단계부터 다시 시작하며, "
+            + "현재 검색 가능한 이전 Version과 기존 Attempt 이력, 재시도 횟수는 그대로 유지합니다. "
+            + "재시도 횟수는 초기화하지 않으므로 이번 재처리가 다시 실패하면 곧바로 최종 실패로 종료됩니다."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "수동 재처리 성공"
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "Job ID 형식 오류",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "403",
+            description = "인증되지 않았거나 ADMIN 권한 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "Embedding Job 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409",
+            description = "최종 실패 Job이 아니거나 최신 Version·문서 상태가 재처리 조건을 만족하지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "500",
+            description = "Version 또는 Document 종료 데이터 불일치",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        )
+    })
+    @PostMapping(value = "/{jobId}/retry", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ApiResponse<ManualRetriedIndexingJobResponse>> retryIndexingJob(
+        @PathVariable @Positive Long jobId
+    ) {
+        // Service가 Job → Version → Document 잠금과 대상 검증 및 Queue 복귀를 한 Transaction으로 처리한다.
+        return ResponseUtils.ok(embeddingJobManualRetryService.retry(jobId));
     }
 }

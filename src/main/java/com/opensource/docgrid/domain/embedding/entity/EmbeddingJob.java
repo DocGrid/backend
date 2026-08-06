@@ -254,6 +254,34 @@ public class EmbeddingJob extends BaseEntity {
         this.lockExpiresAt = renewedLockExpiresAt;
     }
 
+    /**
+     * 최종 실패로 종결된 Job을 관리자 요청으로 다시 Queue에 복귀시킨다.
+     *
+     * <p>자동 재시도는 남은 횟수가 있는 PROCESSING Job만 되돌리므로 FAILED Job을 다시 처리할 수 있는
+     * 경로는 이 메서드뿐이다. 호출 Service가 Job 행 잠금과 대상 Version·Document 조건을 먼저
+     * 검증해야 하며, Entity는 종결되지 않은 Job이 수동 재처리로 소유권을 잃는 것을 마지막으로 방어한다.
+     *
+     * <p>retryCount와 마지막 오류 Snapshot은 그대로 두므로 수동 재처리는 추가 실행 1회만 부여하고,
+     * 다시 실패하면 자동 재시도 없이 최종 실패로 종결된다.
+     */
+    public void requeueForManualRetry() {
+        // 1. 처리 중이거나 이미 Queue에 있는 Job의 소유권과 진행 상태를 덮어쓰지 않는다.
+        if (status != EmbeddingJobStatus.FAILED) {
+            throw new IllegalStateException("FAILED 상태의 Job만 수동으로 재처리할 수 있습니다.");
+        }
+
+        // 2. 지연 없이 다음 Claim 후보가 되도록 Queue 상태로 되돌리고 종결 시각을 제거한다.
+        this.status = EmbeddingJobStatus.PENDING;
+        this.nextRetryAt = null;
+        this.failedAt = null;
+
+        // 3. 실패 당시 감사용으로 남아 있던 소유권을 해제해 과거 Token이 다시 사용되지 않게 한다.
+        this.lockedByWorker = null;
+        this.claimToken = null;
+        this.lockedAt = null;
+        this.lockExpiresAt = null;
+    }
+
     public void markFailed(String errorCode, String errorMessage, LocalDateTime failedAt) {
         // 현재 Claim을 보유한 처리 중 Job만 최종 실패로 종결할 수 있다.
         if (status != EmbeddingJobStatus.PROCESSING) {

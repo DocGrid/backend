@@ -14,6 +14,7 @@ import com.opensource.docgrid.domain.embedding.enums.EmbeddingStatus;
  * <p>생성 Transaction은 Version·Model 단위 저장 개수로 부분 저장을 구분한다. 완료 Transaction은
  * Vector를 Java Heap으로 역직렬화하지 않고 DB 집계로 관계·차원·Hash 불변식을 검증하고,
  * 이전 현재 Version 또는 최종 실패한 Version의 ACTIVE Set을 STALE로 일괄 전환한다.
+ * 수동 재처리 Transaction은 다시 생성할 대상 Version의 Set만 삭제한다.
  */
 public interface EmbeddingRepository extends JpaRepository<Embedding, Long> {
 
@@ -46,6 +47,21 @@ public interface EmbeddingRepository extends JpaRepository<Embedding, Long> {
     int markActiveAsStaleByDocumentVersionId(
         @Param("documentVersionId") Long documentVersionId
     );
+
+    /**
+     * 수동 재처리로 다시 인덱싱할 Version의 Embedding 행을 한 SQL로 제거한다.
+     *
+     * <p>최종 실패 시 이미 STALE로 전환돼 검색에서 제외된 행만 대상이 되며, 남겨두면 재처리가
+     * Version·Model 단위 Embedding 개수 불변식 검증에서 차단된다. Chunk Set은 삭제하지 않는다.
+     *
+     * @return 실제 삭제된 행 수
+     */
+    @Modifying(flushAutomatically = true)
+    @Query(value = """
+        DELETE FROM embeddings
+        WHERE document_version_id = :documentVersionId
+        """, nativeQuery = true)
+    int deleteByDocumentVersionId(@Param("documentVersionId") Long documentVersionId);
 
     /**
      * 대상 Chunk Set과 연결됐거나 대상 Version으로 역정규화된 Model 행 중 완료 불변식 위반 수를 계산한다.

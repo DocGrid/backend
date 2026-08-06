@@ -36,6 +36,7 @@ import com.opensource.docgrid.domain.embedding.dto.response.DocumentChunksRespon
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentEmbeddingsResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingCompletionResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingFailureResponse;
+import com.opensource.docgrid.domain.embedding.dto.response.ManualRetriedIndexingJobResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.RenewedEmbeddingJobLeaseResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.StartedEmbeddingJobAttemptResponse;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
@@ -48,13 +49,15 @@ import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttem
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttemptService.StartResult;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobClaimService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobLeaseService;
+import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobManualRetryService;
 import com.opensource.docgrid.domain.worker.enums.AttemptStatus;
 import com.opensource.docgrid.global.config.SecurityConfig;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
 /**
- * 관리자용 Job Claim, Attempt 시작과 Document Chunk·Embedding 생성·인덱싱 완료·실패 API 계약을 검증한다.
+ * 관리자용 Job Claim, Attempt 시작과 Document Chunk·Embedding 생성·인덱싱 완료·실패 및 최종 실패 Job
+ * 수동 재처리 API 계약을 검증한다.
  *
  * <p>각 API의 최초 생성·멱등 재생·Validation·비즈니스 오류 및 ADMIN Security 동작을
  * 실제 Service 실행 없이 Controller 경계에서 확인한다.
@@ -71,6 +74,7 @@ class IndexingJobAdminControllerTest {
     private static final String EMBEDDINGS_URL = "/admin/indexing-jobs/10/attempts/100/embeddings";
     private static final String COMPLETE_URL = "/admin/indexing-jobs/10/attempts/100/complete";
     private static final String FAIL_URL = "/admin/indexing-jobs/10/attempts/100/fail";
+    private static final String RETRY_URL = "/admin/indexing-jobs/10/retry";
     private static final Long JOB_ID = 10L;
     private static final Long ATTEMPT_ID = 100L;
     private static final Long WORKER_ID = 1L;
@@ -105,6 +109,7 @@ class IndexingJobAdminControllerTest {
     @MockitoBean private DocumentEmbeddingService documentEmbeddingService;
     @MockitoBean private DocumentIndexingCompletionService documentIndexingCompletionService;
     @MockitoBean private DocumentIndexingFailureService documentIndexingFailureService;
+    @MockitoBean private EmbeddingJobManualRetryService embeddingJobManualRetryService;
     @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
     @MockitoBean private JwtProvider jwtProvider;
     @MockitoBean private McpAccessTokenCommandService mcpAccessTokenCommandService;
@@ -679,6 +684,77 @@ class IndexingJobAdminControllerTest {
             .andExpect(status().isForbidden());
     }
 
+    @Test
+    @DisplayName("ADMIN 사용자의 수동 재처리 요청은 재개 지점을 담은 200을 반환한다")
+    void retryIndexingJob_returnsOkWithoutSensitiveFields() throws Exception {
+        given(embeddingJobManualRetryService.retry(JOB_ID)).willReturn(createManualRetryResponse());
+
+        mockMvc.perform(post(RETRY_URL)
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.jobId").value(JOB_ID))
+            .andExpect(jsonPath("$.data.status").value("PENDING"))
+            .andExpect(jsonPath("$.data.documentId").value(3))
+            .andExpect(jsonPath("$.data.documentVersionId").value(5))
+            .andExpect(jsonPath("$.data.documentVersionStatus").value("CHUNKED"))
+            .andExpect(jsonPath("$.data.retryCount").value(3))
+            .andExpect(jsonPath("$.data.maxRetryCount").value(3))
+            .andExpect(jsonPath("$.data.requeuedAt").value("2026-08-06T15:00:00"))
+            .andExpect(jsonPath("$.data.claimToken").doesNotExist())
+            .andExpect(jsonPath("$.data.errorMessage").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Job ID가 양수가 아닌 수동 재처리 요청은 400을 반환한다")
+    void retryIndexingJob_returnsBadRequest_when_jobIdIsNotPositive() throws Exception {
+        mockMvc.perform(post("/admin/indexing-jobs/0/retry")
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("COMMON-002"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("manualRetryBusinessErrors")
+    @DisplayName("수동 재처리 비즈니스 오류를 정의된 HTTP 상태와 코드로 반환한다")
+    void retryIndexingJob_returnsDefinedError(
+        ErrorCode errorCode,
+        int expectedStatus,
+        String expectedCode
+    ) throws Exception {
+        given(embeddingJobManualRetryService.retry(JOB_ID))
+            .willThrow(new DocGridException(errorCode));
+
+        mockMvc.perform(post(RETRY_URL)
+                .with(user("admin").roles("ADMIN")))
+            .andExpect(status().is(expectedStatus))
+            .andExpect(jsonPath("$.code").value(expectedCode));
+    }
+
+    @Test
+    @DisplayName("일반 사용자와 미인증 사용자는 수동 재처리를 요청할 수 없다")
+    void retryIndexingJob_returnsForbidden_withoutAdminRole() throws Exception {
+        mockMvc.perform(post(RETRY_URL)
+                .with(user("user").roles("USER")))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post(RETRY_URL))
+            .andExpect(status().isForbidden());
+    }
+
+    private static Stream<Arguments> manualRetryBusinessErrors() {
+        return Stream.of(
+            Arguments.of(ErrorCode.EMBEDDING_JOB_NOT_FOUND, 404, "EMBEDDING-JOB-001"),
+            Arguments.of(ErrorCode.EMBEDDING_JOB_MANUAL_RETRY_NOT_ALLOWED, 409, "EMBEDDING-JOB-008"),
+            Arguments.of(ErrorCode.EMBEDDING_JOB_MANUAL_RETRY_TARGET_INVALID, 409, "EMBEDDING-JOB-009"),
+            Arguments.of(
+                ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT,
+                500,
+                "DOCUMENT-INDEXING-004"
+            )
+        );
+    }
+
     private static Stream<Arguments> invalidAttemptRequests() {
         return Stream.of(
             Arguments.of("Job ID가 양수가 아님", "/admin/indexing-jobs/0/attempts", VALID_ATTEMPT_BODY),
@@ -980,6 +1056,19 @@ class IndexingJobAdminControllerTest {
             DocumentVersionStatus.INDEXED,
             LocalDateTime.of(2026, 7, 31, 16, 0),
             8_421L
+        );
+    }
+
+    private ManualRetriedIndexingJobResponse createManualRetryResponse() {
+        return new ManualRetriedIndexingJobResponse(
+            JOB_ID,
+            EmbeddingJobStatus.PENDING,
+            3L,
+            5L,
+            DocumentVersionStatus.CHUNKED,
+            3,
+            3,
+            LocalDateTime.of(2026, 8, 6, 15, 0)
         );
     }
 

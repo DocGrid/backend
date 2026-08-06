@@ -37,7 +37,8 @@ import lombok.NoArgsConstructor;
  * index: document_id, file_object_id, status에 대한 조회 인덱스.
  *
  * <p>주의사항: 파이프라인 상태는 UPLOADED -> PARSING -> CHUNKED -> EMBEDDING -> INDEXED 순으로 전이되며,
- * 실패 시 FAILED로 전이된다.
+ * 실패 시 FAILED로 전이된다. FAILED에서 벗어나는 유일한 경로는 관리자 수동 재처리이며, 이때만
+ * UPLOADED 또는 CHUNKED 재개 지점으로 되돌아간다.
  */
 @Getter
 @Entity
@@ -152,6 +153,28 @@ public class DocumentVersion extends BaseEntity {
         }
         this.status = DocumentVersionStatus.INDEXED;
         this.indexedAt = indexedAt;
+    }
+
+    /**
+     * 최종 실패한 Version을 수동 재처리가 다시 진행할 수 있는 재개 지점으로 되돌린다.
+     *
+     * <p>파이프라인 각 단계는 Version 상태로 재개 지점을 판단하므로, 이미 저장된 Chunk Set이 있으면
+     * CHUNKED로 되돌려 파싱을 생략하고 없으면 UPLOADED로 되돌려 파싱부터 다시 수행한다.
+     * 실제 Chunk 존재 여부 판단은 호출 Service가 담당한다.
+     *
+     * @param resumeStatus 재개 지점이 될 UPLOADED 또는 CHUNKED 상태
+     */
+    public void reopenFailedForRetry(DocumentVersionStatus resumeStatus) {
+        // 1. 검색 중이거나 처리 중인 Version이 재처리로 이전 단계로 되돌아가지 않게 한다.
+        if (status != DocumentVersionStatus.FAILED) {
+            throw new IllegalStateException("FAILED 상태의 문서 버전만 재처리로 되돌릴 수 있습니다.");
+        }
+        // 2. 저장된 Chunk·Embedding Set과 어긋나는 중간 단계로는 재개할 수 없다.
+        if (resumeStatus != DocumentVersionStatus.UPLOADED
+            && resumeStatus != DocumentVersionStatus.CHUNKED) {
+            throw new IllegalArgumentException("재처리 재개 지점은 UPLOADED 또는 CHUNKED만 가능합니다.");
+        }
+        this.status = resumeStatus;
     }
 
     public void markFailed() {

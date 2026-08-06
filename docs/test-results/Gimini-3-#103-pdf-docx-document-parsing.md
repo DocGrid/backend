@@ -35,7 +35,7 @@ WHERE extname = 'vector';
 
 ### 3.1 업로드
 
-검증한 조합:
+단위 테스트로 검증한 조합:
 
 | Extension | Content-Type | 결과 |
 | --- | --- | --- |
@@ -47,6 +47,8 @@ WHERE extname = 'vector';
 
 TXT·Markdown의 기존 확장자와 Content-Type 조합도 단위 테스트로 함께 확인했다.
 
+수동 검증 결과는 아래 8절에 기록한다.
+
 ### 3.2 PDF
 
 메모리 PDF Fixture로 다음 계약을 검증했다.
@@ -54,6 +56,7 @@ TXT·Markdown의 기존 확장자와 Content-Type 조합도 단위 테스트로 
 - 두 Page의 Text와 1-based Page Number 보존
 - Text가 없는 Page를 건너뛰고 다음 Page의 원래 번호 보존
 - 전체 Page에 검색 가능한 Text가 없으면 `DOCUMENT-PARSING-006`
+- Page가 하나도 없으면 `DOCUMENT-PARSING-002` (이슈 #110에서 회귀 테스트 추가)
 - Password 보호 PDF면 `DOCUMENT-PARSING-005`
 - 손상된 PDF면 `DOCUMENT-PARSING-007`
 
@@ -153,7 +156,103 @@ Could not resolve placeholder 'JWT_SECRET'
 Repository 설정에 Secret을 기록하지 않고 일회성 Test 값을 Process 환경에 주입했다. 두 실패는
 PDF·DOCX Parser 또는 PostgreSQL Schema 회귀가 아니며, 설정 보정 후 전체 Test가 통과했다.
 
-## 8. OCR 판정
+## 8. Swagger 수동 검증
+
+이 절은 이슈 #110에서 사후 보완했다. 검증일은 2026-08-06이며, 앞선 자동 테스트와 같은 Build를
+로컬에서 기동해 수행했다.
+
+### 8.1 검증 환경
+
+- 애플리케이션: 로컬 `bootRun`, `local` Profile, `http://localhost:8080`
+- Swagger UI: `GET /swagger-ui/index.html` → `200`
+- OpenAPI 문서: `GET /v3/api-docs`에 `POST /api/documents`(`multipart/form-data`, `DocumentUploadRequest`) 노출 확인
+- 데이터베이스: 기존 개발 Schema를 사용하지 않고 일회용 Schema를 만들어 Flyway 37개 Migration 적용 후 검증 종료 시 삭제
+- Object Storage: 검증 전용 임시 Bucket 사용 후 삭제
+- 계정: 검증 전용 임시 사용자로 `POST /auth/signup` → `POST /auth/login`으로 토큰 발급, 실제 값은 기록하지 않음
+
+Swagger UI가 노출하는 것과 동일한 Endpoint·Schema에 같은 `multipart/form-data` 요청을 보내 검증했다.
+UI의 File Picker 조작만 자동화가 어려워 요청 전송에는 CLI를 사용했고, 요청 형식과 응답은 Swagger UI로
+보내는 경우와 동일하다.
+
+### 8.2 정상 케이스
+
+요청:
+
+```text
+POST /api/documents
+Authorization: Bearer <발급 토큰>
+Content-Type: multipart/form-data
+  file=sample.pdf (type=application/pdf)
+  title=issue110 pdf allow
+  visibility=PRIVATE
+```
+
+기대 결과: `201`, 문서·Version·FileObject·Embedding Job 생성, 파싱과 임베딩은 수행하지 않음
+
+실제 결과:
+
+```json
+{
+  "success": true,
+  "status": 201,
+  "data": {
+    "documentId": 5,
+    "documentVersionId": 5,
+    "fileObjectId": 1,
+    "embeddingJobId": 3,
+    "documentStatus": "UPLOADED",
+    "jobStatus": "PENDING"
+  }
+}
+```
+
+DOCX도 `Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document`로 동일하게
+`201`과 `jobStatus = PENDING`을 반환했다.
+
+### 8.3 에러 케이스
+
+요청:
+
+```text
+POST /api/documents
+Authorization: Bearer <발급 토큰>
+Content-Type: multipart/form-data
+  file=sample.doc (type=application/msword)
+  title=issue110 doc reject
+  visibility=PRIVATE
+```
+
+기대 결과: `400`, 지원하지 않는 확장자 오류
+
+실제 결과:
+
+```json
+{
+  "status": 400,
+  "code": "DOCUMENT-FILE-003",
+  "message": "지원하지 않는 파일 확장자입니다.",
+  "method": "POST",
+  "path": "/api/documents",
+  "success": false
+}
+```
+
+### 8.4 전체 조합 결과
+
+| # | Extension | Content-Type | 기대 | 실제 |
+| --- | --- | --- | --- | --- |
+| 1 | `pdf` | `application/pdf` | 201 허용 | `201`, `jobStatus = PENDING` |
+| 2 | `docx` | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | 201 허용 | `201`, `jobStatus = PENDING` |
+| 3 | `pdf` | `application/octet-stream` | 400 거부 | `400`, `DOCUMENT-FILE-004` |
+| 4 | `docx` | `application/pdf` | 400 거부 | `400`, `DOCUMENT-FILE-004` |
+| 5 | `doc` | `application/msword` | 400 거부 | `400`, `DOCUMENT-FILE-003` |
+
+3번과 4번은 확장자만으로 통과하지 않고 Content-Type까지 함께 확인한다는 점을, 5번은 구형 DOC 형식이
+확장자 단계에서 걸러진다는 점을 확인한다. 5개 조합 모두 3.1절의 단위 테스트 결과와 일치했다.
+
+검증에 사용한 PDF·DOCX·DOC 파일은 저장소 밖 임시 경로에서 생성했고 저장소에 추가하지 않았다.
+
+## 9. OCR 판정
 
 이번 구현은 OCR Engine을 포함하지 않는다.
 
@@ -165,11 +264,12 @@ PDF·DOCX Parser 또는 PostgreSQL Schema 회귀가 아니며, 설정 보정 후
 실제 요구사항으로 확정되면 Tesseract를 별도 Process 또는 Container Adapter로 추가하고 Language Pack과
 Native Runtime을 독립 배포하는 방식이 적합하다.
 
-## 9. 최종 판정
+## 10. 최종 판정
 
 | 완료 조건 | 결과 |
 | --- | --- |
 | PDF·DOCX 업로드 조합 | 통과 |
+| Swagger 노출 Endpoint 수동 검증 (정상 2 + 에러 3) | 통과 |
 | PDF Page별 Text·Page Number | 통과 |
 | DOCX Heading·본문·Table·Section Title | 통과 |
 | 암호화·OCR 필요·손상·빈 문서 오류 | 통과 |

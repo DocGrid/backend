@@ -55,7 +55,8 @@ public class FixedSizeChunker {
         // 1. Segment를 따로 Chunking해 PDF Page와 DOCX Section 경계가 한 Chunk에 섞이지 않게 한다.
         for (int index = 0; index < parsedDocument.segments().size(); index++) {
             ParsedDocumentSegment segment = parsedDocument.segments().get(index);
-            appendSegmentChunks(
+            // 2. Chunking이 이미 계산한 Segment의 Code Point 길이를 그대로 받아 같은 Text를 다시 순회하지 않는다.
+            int segmentLength = appendSegmentChunks(
                 drafts,
                 segment.text(),
                 globalOffset,
@@ -65,8 +66,8 @@ public class FixedSizeChunker {
                 settings
             );
 
-            // 2. 개념적 Canonical Text에서 Segment 사이 LF 한 개를 포함해 전역 Offset을 계산한다.
-            globalOffset += segment.text().codePointCount(0, segment.text().length());
+            // 3. 개념적 Canonical Text에서 Segment 사이 LF 한 개를 포함해 전역 Offset을 계산한다.
+            globalOffset += segmentLength;
             if (index < parsedDocument.segments().size() - 1) {
                 globalOffset++;
             }
@@ -74,7 +75,15 @@ public class FixedSizeChunker {
         return List.copyOf(drafts);
     }
 
-    private void appendSegmentChunks(
+    /**
+     * 한 Segment를 Chunk Draft로 나눠 목록에 추가하고 그 Segment의 Code Point 길이를 반환한다.
+     *
+     * <p>호출자가 다음 Segment의 전역 Offset을 계산하려면 같은 길이가 필요하다. 여기서 이미 Code
+     * Point 배열을 만들므로 그 길이를 그대로 돌려주어 호출자가 같은 Text를 다시 순회하지 않게 한다.
+     *
+     * @return Segment의 Code Point 개수, 빈 Segment면 0
+     */
+    private int appendSegmentChunks(
         List<DocumentChunkDraft> drafts,
         String segmentText,
         int globalOffset,
@@ -85,17 +94,17 @@ public class FixedSizeChunker {
     ) {
         int[] codePoints = segmentText.codePoints().toArray();
         if (codePoints.length == 0) {
-            return;
+            return 0;
         }
 
         int step = settings.chunkSize() - settings.overlap();
 
-        // 3. 시작 위치를 Code Point 단위로 이동해 Surrogate Pair 중간 분할을 방지한다.
+        // 1. 시작 위치를 Code Point 단위로 이동해 Surrogate Pair 중간 분할을 방지한다.
         for (int start = 0; start < codePoints.length; start += step) {
             int end = Math.min(start + settings.chunkSize(), codePoints.length);
             String chunkText = new String(codePoints, start, end - start);
 
-            // 4. 문서 전체 Index·Offset과 Segment 출처 Metadata를 같은 Draft에 고정한다.
+            // 2. 문서 전체 Index·Offset과 Segment 출처 Metadata를 같은 Draft에 고정한다.
             drafts.add(new DocumentChunkDraft(
                 drafts.size(),
                 chunkText,
@@ -108,11 +117,12 @@ public class FixedSizeChunker {
                 metadataJson
             ));
 
-            // 5. 마지막 Chunk가 원문 끝에 도달하면 Overlap만 남은 추가 Chunk를 만들지 않는다.
+            // 3. 마지막 Chunk가 원문 끝에 도달하면 Overlap만 남은 추가 Chunk를 만들지 않는다.
             if (end == codePoints.length) {
                 break;
             }
         }
+        return codePoints.length;
     }
 
     private ChunkSettings validatedSettings() {

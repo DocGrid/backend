@@ -1,7 +1,10 @@
 package com.opensource.docgrid.domain.document.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -15,6 +18,13 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +49,8 @@ import com.opensource.docgrid.domain.document.service.command.DocumentChunkTrans
 import com.opensource.docgrid.domain.document.storage.FileStorageService;
 import com.opensource.docgrid.domain.document.storage.StoredFile;
 import com.opensource.docgrid.domain.embedding.dto.request.CreateDocumentChunksRequest;
+import com.opensource.docgrid.global.exception.DocGridException;
+import com.opensource.docgrid.global.exception.ErrorCode;
 
 /**
  * 실제 OpenSQL에서 문서 Chunk 저장의 상태·이벤트·멱등성과 동시 Transaction 수렴을 검증한다.
@@ -176,7 +188,100 @@ class DocumentChunkingIntegrationTest {
         assertThat(eventCount(context.jobId(), "CHUNKED")).isOne();
     }
 
+    @Test
+    @DisplayName("PDF Page Segment를 Page Number와 전역 Offset이 있는 Chunk로 저장한다")
+    void createChunks_persistsPdfPageMetadata() throws IOException {
+        ExecutionContext context = insertExecution(
+            pdfWithPages("abcd", "wxyz"),
+            "pdf",
+            "application/pdf",
+            "PDF"
+        );
+        CreateDocumentChunksRequest request = new CreateDocumentChunksRequest(context.workerId(), CLAIM_TOKEN);
+
+        ChunkResult result = documentParsingService.createChunks(context.jobId(), context.attemptId(), request);
+
+        assertThat(result.response().chunkCount()).isEqualTo(2);
+        List<Map<String, Object>> chunks = jdbcTemplate.queryForList("""
+            SELECT chunk_index, chunk_text, char_start, char_end, page_no, section_title
+            FROM document_chunks
+            WHERE document_version_id = ?
+            ORDER BY chunk_index
+            """, context.versionId());
+        assertThat(chunks).extracting(row -> row.get("chunk_text")).containsExactly("abcd", "wxyz");
+        assertThat(chunks).extracting(row -> row.get("page_no")).containsExactly(1, 2);
+        assertThat(chunks).extracting(row -> row.get("char_start")).containsExactly(0, 5);
+        assertThat(chunks).extracting(row -> row.get("char_end")).containsExactly(4, 9);
+        assertThat(chunks).extracting(row -> row.get("section_title")).containsOnlyNulls();
+    }
+
+    @Test
+    @DisplayName("DOCX Section Segment를 Section Title과 전역 Offset이 있는 Chunk로 저장한다")
+    void createChunks_persistsDocxSectionMetadata() throws IOException {
+        ExecutionContext context = insertExecution(
+            docxWithSections(),
+            "docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "DOCX"
+        );
+        CreateDocumentChunksRequest request = new CreateDocumentChunksRequest(context.workerId(), CLAIM_TOKEN);
+
+        ChunkResult result = documentParsingService.createChunks(context.jobId(), context.attemptId(), request);
+
+        assertThat(result.response().chunkCount()).isEqualTo(2);
+        List<Map<String, Object>> chunks = jdbcTemplate.queryForList("""
+            SELECT chunk_index, chunk_text, char_start, char_end, page_no, section_title
+            FROM document_chunks
+            WHERE document_version_id = ?
+            ORDER BY chunk_index
+            """, context.versionId());
+        assertThat(chunks).extracting(row -> row.get("chunk_text")).containsExactly("A\nbc", "D\nef");
+        assertThat(chunks).extracting(row -> row.get("section_title")).containsExactly("A", "D");
+        assertThat(chunks).extracting(row -> row.get("char_start")).containsExactly(0, 5);
+        assertThat(chunks).extracting(row -> row.get("char_end")).containsExactly(4, 9);
+        assertThat(chunks).extracting(row -> row.get("page_no")).containsOnlyNulls();
+    }
+
+    @Test
+    @DisplayName("Text가 없는 PDF 파싱 실패 시 Chunk를 부분 저장하지 않는다")
+    void createChunks_doesNotPersistChunksWhenPdfRequiresOcr() throws IOException {
+        ExecutionContext context = insertExecution(
+            pdfWithPages((String) null),
+            "pdf",
+            "application/pdf",
+            "PDF"
+        );
+        CreateDocumentChunksRequest request = new CreateDocumentChunksRequest(context.workerId(), CLAIM_TOKEN);
+
+        assertThatThrownBy(() -> documentParsingService.createChunks(context.jobId(), context.attemptId(), request))
+            .isInstanceOfSatisfying(DocGridException.class,
+                exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.DOCUMENT_OCR_REQUIRED));
+
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM document_chunks WHERE document_version_id = ?",
+            Integer.class,
+            context.versionId()
+        )).isZero();
+        assertThat(queryString("SELECT status FROM document_versions WHERE id = ?", context.versionId()))
+            .isEqualTo("PARSING");
+        assertThat(eventCount(context.jobId(), "CHUNKED")).isZero();
+    }
+
     private ExecutionContext insertExecution(String content) {
+        return insertExecution(
+            content.getBytes(StandardCharsets.UTF_8),
+            "txt",
+            "text/plain",
+            "TXT"
+        );
+    }
+
+    private ExecutionContext insertExecution(
+        byte[] contentBytes,
+        String extension,
+        String contentType,
+        String documentType
+    ) {
         String suffix = UUID.randomUUID().toString();
         Long userId = jdbcTemplate.queryForObject("""
             INSERT INTO users (email, password_hash, name, status, created_at, updated_at)
@@ -191,35 +296,44 @@ class DocumentChunkingIntegrationTest {
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """, Long.class, suffix);
-        StoredFile storedFile = new StoredFile("chunk-test-bucket", "source-" + suffix + ".txt");
-        byte[] contentBytes = content.getBytes(StandardCharsets.UTF_8);
+        StoredFile storedFile = new StoredFile(
+            "chunk-test-bucket",
+            "source-" + suffix + "." + extension
+        );
         fileStorage.put(storedFile, contentBytes);
         Long fileObjectId = jdbcTemplate.queryForObject("""
             INSERT INTO file_objects (
                 bucket_name, object_key, original_filename, content_type, file_size, file_hash,
                 storage_provider, uploaded_by, uploaded_at, created_at, updated_at
             )
-            VALUES (?, ?, 'source.txt', 'text/plain', ?, ?, 'MINIO', ?, CURRENT_TIMESTAMP,
+            VALUES (?, ?, ?, ?, ?, ?, 'MINIO', ?, CURRENT_TIMESTAMP,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
-            """, Long.class, storedFile.bucketName(), storedFile.objectKey(), contentBytes.length, suffix, userId);
+            """, Long.class,
+            storedFile.bucketName(),
+            storedFile.objectKey(),
+            "source." + extension,
+            contentType,
+            contentBytes.length,
+            suffix,
+            userId);
         Long documentId = jdbcTemplate.queryForObject("""
             INSERT INTO documents (
                 owner_user_id, title, document_type, source_type, status, visibility, created_at, updated_at
             )
-            VALUES (?, 'Chunk Test Document', 'TXT', 'UPLOAD', 'INDEXING', 'PRIVATE',
+            VALUES (?, 'Chunk Test Document', ?, 'UPLOAD', 'INDEXING', 'PRIVATE',
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
-            """, Long.class, userId);
+            """, Long.class, userId, documentType);
         Long versionId = jdbcTemplate.queryForObject("""
             INSERT INTO document_versions (
                 document_id, file_object_id, version_no, title_snapshot, content_type, status,
                 created_by, created_at, updated_at
             )
-            VALUES (?, ?, 1, 'Chunk Test Version', 'text/plain', 'UPLOADED', ?,
+            VALUES (?, ?, 1, 'Chunk Test Version', ?, 'UPLOADED', ?,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
-            """, Long.class, documentId, fileObjectId, userId);
+            """, Long.class, documentId, fileObjectId, contentType, userId);
         Long embeddingModelId = jdbcTemplate.queryForObject("""
             SELECT id
             FROM embedding_models
@@ -245,6 +359,44 @@ class DocumentChunkingIntegrationTest {
             RETURNING id
             """, Long.class, jobId, workerId, CLAIM_TOKEN);
         return new ExecutionContext(workerId, jobId, attemptId, versionId);
+    }
+
+    private byte[] pdfWithPages(String... pageTexts) throws IOException {
+        try (PDDocument document = new PDDocument()) {
+            for (String pageText : pageTexts) {
+                PDPage page = new PDPage();
+                document.addPage(page);
+                if (pageText != null) {
+                    try (PDPageContentStream contentStream = new PDPageContentStream(document, page)) {
+                        contentStream.beginText();
+                        contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                        contentStream.newLineAtOffset(72, 720);
+                        contentStream.showText(pageText);
+                        contentStream.endText();
+                    }
+                }
+            }
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            document.save(output);
+            return output.toByteArray();
+        }
+    }
+
+    private byte[] docxWithSections() throws IOException {
+        try (XWPFDocument document = new XWPFDocument()) {
+            addSection(document, "A", "bc");
+            addSection(document, "D", "ef");
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            document.write(output);
+            return output.toByteArray();
+        }
+    }
+
+    private void addSection(XWPFDocument document, String title, String body) {
+        XWPFParagraph heading = document.createParagraph();
+        heading.setStyle("Heading1");
+        heading.createRun().setText(title);
+        document.createParagraph().createRun().setText(body);
     }
 
     private String queryString(String sql, Long id) {

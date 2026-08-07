@@ -6,7 +6,7 @@ closes #117
 
 ## 배경
 
-MCP Server 블록의 다섯 번째이자 마지막 기능 이슈. 도구 3종(`search_documents`, `get_document_detail`, `get_indexing_status`)이 모두 완성된 뒤에야 "무엇을 감쌀지"가 확정되는 횡단 관심사 두 가지를 구현한다.
+MCP Server 블록의 마지막 기능 이슈(#93 → #96 → #105 → #113 → #117 순으로 진행). 도구 3종(`search_documents`, `get_document_detail`, `get_indexing_status`)이 모두 완성된 뒤에야 "무엇을 감쌀지"가 확정되는 횡단 관심사 두 가지를 구현한다.
 
 - **Rate Limiting**: AI Agent는 사람과 달리 짧은 시간에 반복 호출을 만들어낼 수 있어 도구별 호출 빈도를 제한한다.
 - **출력 정제**: null 필드 제거, 과도하게 긴 텍스트 truncate, 예상치 못한 예외의 내부 정보 은닉.
@@ -50,7 +50,7 @@ RATE_LIMIT_EXCEEDED(
 );
 ```
 
-이 프로젝트에서 처음 추가하는 MCP 전용 에러코드다. Issue 2~4는 전부 기존 코드(`INVALID_PARAMETER`, `UNAUTHORIZED` 등)를 재사용했지만, "호출 횟수 초과"에 대응하는 기존 코드가 없어 신규 추가했다.
+이 프로젝트에서 처음 추가하는 MCP 전용 에러코드다. #96·#105·#113은 전부 기존 코드(`INVALID_PARAMETER`, `UNAUTHORIZED` 등)를 재사용했지만, "호출 횟수 초과"에 대응하는 기존 코드가 없어 신규 추가했다.
 
 ### McpRateLimiter (신규)
 
@@ -125,12 +125,12 @@ public DocGridMcpTools(..., ObjectMapper objectMapper) {
 
 `search_documents`, `get_document_detail`, `get_indexing_status` 개별 호출과 null 필드 제거(`pageNo`, `processingVersion` 응답에서 사라짐)는 curl로 확인했다. 그러나 **"20회 연속 호출 후 21번째에서 `RATE_LIMIT_EXCEEDED`가 나오는지"를 끝까지 확인하지 못했다** — 검증 도중 이 이슈의 코드와 무관한 사전 버그를 발견해 서버가 반복적으로 멈췄기 때문이다.
 
-#### 발견한 문제: `McpApiKeyAuthFilter`의 DB 커넥션 누수 (Issue 5 코드 아님)
+#### 발견한 문제: `McpApiKeyAuthFilter`의 DB 커넥션 누수 (이 PR #118의 코드 아님)
 
 `/mcp` 요청을 **누적 5회**(도구 종류 무관) 호출하면 그 이후 모든 DB 관련 기능(로그인 포함)이 30초씩 멈추다 실패하는 현상을 발견했다.
 
 **증거 1 — 애플리케이션 로그**:
-```
+```text
 Caused by: java.sql.SQLTransientConnectionException: docgrid-local-db-pool - Connection is not
 available, request timed out after 30006ms (total=5, active=5, idle=0, waiting=0)
 	at com.zaxxer.hikari.pool.HikariPool.createTimeoutException(HikariPool.java:714)
@@ -144,7 +144,7 @@ available, request timed out after 30006ms (total=5, active=5, idle=0, waiting=0
 SELECT pid, state, wait_event, now() - query_start AS duration, left(query, 50)
 FROM pg_stat_activity WHERE datname = 'docgrid' AND pid <> pg_backend_pid();
 ```
-```
+```text
   pid  | state | wait_event |    duration     | query
 -------+-------+------------+------------------+--------
  27839 | idle  | ClientRead | 00:12:42.654485  | COMMIT
@@ -157,7 +157,7 @@ FROM pg_stat_activity WHERE datname = 'docgrid' AND pid <> pg_backend_pid();
 
 **미확정 가설**: `McpApiKeyAuthFilter`가 일반 `@RestController`가 아니라 순수 서블릿 `Filter`에서 `@Transactional` 서비스를 직접 호출하는 구조라, Spring이 평소 컨트롤러 요청 종료 시 자동으로 수행하는 트랜잭션/커넥션 정리가 이 경로에서 누락되는 것이 아닌지 의심된다 — 아직 직접 증명하지 않았다.
 
-**처리 방침**: 이 버그는 Issue 5의 범위가 아니라 Issue 2 코드의 결함이므로, 별도의 버그 수정 이슈로 분리해 새 브랜치에서 다룬다. Issue 5는 유닛 테스트(rate limiter 동시성 포함)로 이미 충분히 검증된 상태로 마무리한다.
+**처리 방침**: 이 버그는 이번 이슈(#117)의 범위가 아니라 #96 코드의 결함이므로, 별도의 버그 수정 이슈로 분리해 새 브랜치에서 다룬다. #117은 유닛 테스트(rate limiter 동시성 포함)로 이미 충분히 검증된 상태로 마무리한다.
 
 ---
 

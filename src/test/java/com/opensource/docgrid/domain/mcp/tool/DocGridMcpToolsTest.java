@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -33,10 +34,12 @@ import com.opensource.docgrid.domain.document.enums.DocumentStatus;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
 import com.opensource.docgrid.domain.document.service.query.DocumentQueryService;
+import com.opensource.docgrid.domain.mcp.security.McpRateLimiter;
 import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.search.dto.SearchOutcome;
 import com.opensource.docgrid.domain.search.dto.request.SearchRequest;
 import com.opensource.docgrid.domain.search.dto.response.SearchResponse;
+import com.opensource.docgrid.domain.search.dto.response.SearchResultItem;
 import com.opensource.docgrid.domain.search.service.SearchFacade;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
@@ -61,6 +64,10 @@ class DocGridMcpToolsTest {
     @Mock
     private DocumentQueryService documentQueryService;
 
+    // 사용자·도구별로 호출 횟수 카운터를 들고 있는 실제 인스턴스를 사용한다(목 아님).
+    // @BeforeEach마다 새로 만들어 테스트 간 카운터가 공유되지 않도록 격리한다.
+    private McpRateLimiter rateLimiter;
+
     // 실제 앱의 Spring 관리 ObjectMapper 빈과 동일하게 구성한다: JavaTimeModule 등록 + 날짜를 타임스탬프 배열이
     // 아닌 ISO 문자열로 직렬화 (Spring Boot의 Jackson 자동 설정 기본값과 동일하게 맞추지 않으면
     // LocalDateTime이 [2026,8,6,10,0] 같은 배열로 직렬화돼 실제 앱 동작과 달라진다)
@@ -71,8 +78,10 @@ class DocGridMcpToolsTest {
     @BeforeEach
     void setUpAuthentication() {
         // ObjectMapper는 실제 직렬화 결과를 검증해야 하므로 목이 아닌 실제 인스턴스를 사용한다
+        rateLimiter = new McpRateLimiter();
         docGridMcpTools = new DocGridMcpTools(
-                searchFacade, documentRepository, permissionQueryService, documentQueryService, objectMapper);
+                searchFacade, documentRepository, permissionQueryService, documentQueryService,
+                rateLimiter, objectMapper);
 
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken("mcp-client", null, List.of());
@@ -148,6 +157,63 @@ class DocGridMcpToolsTest {
     }
 
     @Test
+    @DisplayName("예외 케이스: 분당 20회를 초과하면 RATE_LIMIT_EXCEEDED 예외가 발생한다")
+    void searchDocuments_throws_when_rateLimitExceeded() {
+        SearchOutcome outcome = new SearchOutcome(SearchResponse.empty(1L), List.of(), List.of());
+        given(searchFacade.search(eq(USER_ID), any(SearchRequest.class))).willReturn(outcome);
+
+        for (int i = 0; i < 20; i++) {
+            docGridMcpTools.searchDocuments("query", 5);
+        }
+
+        assertThatThrownBy(() -> docGridMcpTools.searchDocuments("query", 5))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.RATE_LIMIT_EXCEEDED);
+    }
+
+    @Test
+    @DisplayName("예외 케이스: 예상하지 못한 예외는 내부 정보 없이 INTERNAL_SERVER_ERROR로 변환된다")
+    void searchDocuments_throws_INTERNAL_SERVER_ERROR_when_unexpectedExceptionOccurs() {
+        given(searchFacade.search(eq(USER_ID), any(SearchRequest.class)))
+                .willThrow(new RuntimeException("DB 커넥션 풀 고갈 같은 내부 상세 정보"));
+
+        assertThatThrownBy(() -> docGridMcpTools.searchDocuments("query", 5))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INTERNAL_SERVER_ERROR)
+                .hasMessage(ErrorCode.INTERNAL_SERVER_ERROR.getMessage())
+                .satisfies(e -> assertThat(e.getMessage()).doesNotContain("커넥션 풀"));
+    }
+
+    @Test
+    @DisplayName("정상 케이스: chunkText가 1000자를 초과하면 잘려서 반환된다")
+    void searchDocuments_truncatesChunkText_whenTooLong() {
+        String longText = "가".repeat(1200);
+        SearchResultItem item = new SearchResultItem(1, "문서", longText, null, BigDecimal.ONE);
+        SearchOutcome outcome = new SearchOutcome(
+                new SearchResponse(1L, List.of(item), null, List.of()), List.of(), List.of());
+        given(searchFacade.search(eq(USER_ID), any(SearchRequest.class))).willReturn(outcome);
+
+        String result = docGridMcpTools.searchDocuments("query", 5);
+
+        assertThat(result).contains("\"chunkText\":\"" + "가".repeat(1000) + "\"")
+                .doesNotContain("가".repeat(1001));
+    }
+
+    @Test
+    @DisplayName("정상 케이스: chunkText가 1000자 이내면 그대로 반환된다")
+    void searchDocuments_keepsChunkText_whenWithinLimit() {
+        String shortText = "짧은 청크 텍스트";
+        SearchResultItem item = new SearchResultItem(1, "문서", shortText, null, BigDecimal.ONE);
+        SearchOutcome outcome = new SearchOutcome(
+                new SearchResponse(1L, List.of(item), null, List.of()), List.of(), List.of());
+        given(searchFacade.search(eq(USER_ID), any(SearchRequest.class))).willReturn(outcome);
+
+        String result = docGridMcpTools.searchDocuments("query", 5);
+
+        assertThat(result).contains("\"chunkText\":\"" + shortText + "\"");
+    }
+
+    @Test
     @DisplayName("정상 케이스: 권한이 있으면 문서 상세 정보가 JSON으로 반환된다")
     void getDocumentDetail_returnsJson_whenValid() {
         // Given
@@ -206,6 +272,23 @@ class DocGridMcpToolsTest {
     }
 
     @Test
+    @DisplayName("정상 케이스: 현재 버전이 없으면 currentVersionNo 필드 자체가 응답에서 빠진다")
+    void getDocumentDetail_excludesNullField_whenCurrentVersionMissing() {
+        Document document = Document.builder()
+                .title("버전 없는 문서")
+                .status(DocumentStatus.DRAFT)
+                .build();
+        ReflectionTestUtils.setField(document, "id", 1L);
+        ReflectionTestUtils.setField(document, "updatedAt", LocalDateTime.of(2026, 8, 6, 10, 0));
+        given(permissionQueryService.canReadDocument(USER_ID, 1L)).willReturn(true);
+        given(documentRepository.findById(1L)).willReturn(Optional.of(document));
+
+        String result = docGridMcpTools.getDocumentDetail(1L);
+
+        assertThat(result).doesNotContain("currentVersionNo");
+    }
+
+    @Test
     @DisplayName("정상 케이스: DocumentQueryService 결과가 JSON으로 반환된다")
     void getIndexingStatus_returnsJson_whenValid() {
         // Given
@@ -221,7 +304,11 @@ class DocGridMcpToolsTest {
 
         // Then
         assertThat(result).contains("\"documentStatus\":\"INDEXED\"")
-                .contains("\"versionNo\":3");
+                .contains("\"versionNo\":3")
+                // processingVersion이 null이면 응답에서 필드 자체가 빠진다 — DocumentStatusResponse는
+                // 우리 소유 파일이 아니라 @JsonInclude를 못 붙이지만, DocGridMcpTools 전용 ObjectMapper
+                // 복사본 설정으로도 동일하게 적용됨을 확인한다
+                .doesNotContain("processingVersion");
     }
 
     @Test

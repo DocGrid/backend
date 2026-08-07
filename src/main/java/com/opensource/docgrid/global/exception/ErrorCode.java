@@ -252,6 +252,13 @@ public enum ErrorCode {
         HttpStatus.SERVICE_UNAVAILABLE,
         "RAG-001",
         "LLM 서버를 사용할 수 없습니다."
+    ),
+
+    // MCP
+    RATE_LIMIT_EXCEEDED(
+        HttpStatus.TOO_MANY_REQUESTS,
+        "MCP-001",
+        "호출 횟수 제한을 초과했습니다. 잠시 후 다시 시도해 주세요."
     );
 
     private final HttpStatus httpStatus;

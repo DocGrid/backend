@@ -1,39 +1,63 @@
 package com.opensource.docgrid.domain.mcp.tool;
 
+import java.util.List;
+import java.util.function.Function;
+
 import org.springaicommunity.mcp.annotation.McpTool;
 import org.springaicommunity.mcp.annotation.McpToolParam;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
 import com.opensource.docgrid.domain.document.service.query.DocumentQueryService;
 import com.opensource.docgrid.domain.mcp.dto.response.DocumentDetailResponse;
+import com.opensource.docgrid.domain.mcp.security.McpRateLimiter;
 import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.search.dto.SearchOutcome;
 import com.opensource.docgrid.domain.search.dto.request.SearchRequest;
+import com.opensource.docgrid.domain.search.dto.response.SearchResultItem;
 import com.opensource.docgrid.domain.search.service.SearchFacade;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
-import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Component
-@RequiredArgsConstructor
 public class DocGridMcpTools {
 
     private static final int MAX_QUERY_LENGTH = 2000;
     private static final int MIN_TOP_K = 1;
     private static final int MAX_TOP_K = 20;
+    private static final int MAX_CHUNK_TEXT_LENGTH = 1000;
+
+    private static final int SEARCH_RATE_LIMIT_PER_MINUTE = 20;
+    private static final int DOCUMENT_RATE_LIMIT_PER_MINUTE = 30;
 
     private final SearchFacade searchFacade;
     private final DocumentRepository documentRepository;
     private final PermissionQueryService permissionQueryService;
     private final DocumentQueryService documentQueryService;
+    private final McpRateLimiter rateLimiter;
     private final ObjectMapper objectMapper;
+
+    public DocGridMcpTools(SearchFacade searchFacade, DocumentRepository documentRepository,
+            PermissionQueryService permissionQueryService, DocumentQueryService documentQueryService,
+            McpRateLimiter rateLimiter, ObjectMapper objectMapper) {
+        this.searchFacade = searchFacade;
+        this.documentRepository = documentRepository;
+        this.permissionQueryService = permissionQueryService;
+        this.documentQueryService = documentQueryService;
+        this.rateLimiter = rateLimiter;
+        // MCP 응답은 null 필드를 제외한다. 앱 전체가 공유하는 ObjectMapper Bean을 직접 바꾸면
+        // 다른 REST API 응답에도 영향을 주므로, 이 클래스 전용 복사본에만 설정을 적용한다.
+        this.objectMapper = objectMapper.copy().setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
+    }
 
     @McpTool(name = "search_documents",
         description = "사용자 질문과 관련된 문서 chunk를 벡터 검색으로 찾는다. 권한이 있는 문서만 반환된다.",
@@ -41,18 +65,15 @@ public class DocGridMcpTools {
     public String searchDocuments(
             @McpToolParam(description = "검색어", required = true) String query,
             @McpToolParam(description = "반환할 최대 결과 수 (기본 5, 1~20)", required = false) Integer topK) {
-        // 1. 입력 검증 — SDK는 required(필수값)를 강제하지 않음이 실측으로 확인됨 (query=null로 그대로 호출됨)
-        //    → null/blank 여부와 비즈니스 규칙(길이/범위)을 전부 여기서 직접 검증한다
+        // SDK는 required(필수값)를 강제하지 않음이 실측으로 확인됨 (query=null로 그대로 호출됨)
+        // → null/blank 여부와 비즈니스 규칙(길이/범위)을 전부 여기서 직접 검증한다
         validateSearchInput(query, topK);
 
-        // 2. McpApiKeyAuthFilter가 SecurityContext에 저장해둔 사용자 식별
-        Long userId = currentUserId();
-
-        // 3. 검색 실행 — 권한 pre-filter + live check는 SearchFacade 내부에서 수행 (별도 구현 불필요)
-        SearchOutcome outcome = searchFacade.search(userId, new SearchRequest(query, topK, null));
-
-        // 4. MCP 클라이언트가 파싱할 수 있도록 결과를 JSON 문자열로 직렬화 (SDK가 텍스트 콘텐츠로 자동 래핑)
-        return toJson(outcome.response().results());
+        return executeTool("search_documents", SEARCH_RATE_LIMIT_PER_MINUTE, userId -> {
+            // 권한 pre-filter + live check는 SearchFacade 내부에서 수행 (별도 구현 불필요)
+            SearchOutcome outcome = searchFacade.search(userId, new SearchRequest(query, topK, null));
+            return truncateChunkText(outcome.response().results());
+        });
     }
 
     @McpTool(name = "get_document_detail",
@@ -60,31 +81,26 @@ public class DocGridMcpTools {
         annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false))
     public String getDocumentDetail(
             @McpToolParam(description = "문서 ID", required = true) Long documentId) {
-        // 1. documentId 필수 확인 (SDK가 required를 강제하지 않으므로 직접 검증)
         requireDocumentId(documentId);
 
-        // 2. McpApiKeyAuthFilter가 SecurityContext에 저장해둔 사용자 식별
-        Long userId = currentUserId();
+        return executeTool("get_document_detail", DOCUMENT_RATE_LIMIT_PER_MINUTE, userId -> {
+            // 권한 확인 — false면 문서 존재 여부를 노출하지 않기 위해 조회 전에 차단
+            if (!permissionQueryService.canReadDocument(userId, documentId)) {
+                throw new DocGridException(ErrorCode.PERMISSION_DENIED);
+            }
 
-        // 3. 권한 확인 — false면 문서 존재 여부를 노출하지 않기 위해 조회 전에 차단
-        if (!permissionQueryService.canReadDocument(userId, documentId)) {
-            throw new DocGridException(ErrorCode.PERMISSION_DENIED);
-        }
+            // title/status/currentVersion/updatedAt은 Document 엔티티에 이미 있어 직접 사용
+            Document document = documentRepository.findById(documentId)
+                    .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
 
-        // 4. 문서 조회 — title/status/currentVersion/updatedAt은 Document 엔티티에 이미 있어 직접 사용
-        Document document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
-
-        Integer currentVersionNo = document.getCurrentVersion() != null
-                ? document.getCurrentVersion().getVersionNo()
-                : null;
-        DocumentDetailResponse response = new DocumentDetailResponse(
-                document.getId(), document.getTitle(), currentVersionNo,
-                document.getStatus(), document.getUpdatedAt()
-        );
-
-        // 5. JSON으로 직렬화
-        return toJson(response);
+            Integer currentVersionNo = document.getCurrentVersion() != null
+                    ? document.getCurrentVersion().getVersionNo()
+                    : null;
+            return new DocumentDetailResponse(
+                    document.getId(), document.getTitle(), currentVersionNo,
+                    document.getStatus(), document.getUpdatedAt()
+            );
+        });
     }
 
     @McpTool(name = "get_indexing_status",
@@ -92,14 +108,40 @@ public class DocGridMcpTools {
         annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false))
     public String getIndexingStatus(
             @McpToolParam(description = "문서 ID", required = true) Long documentId) {
-        // 1. documentId 필수 확인
         requireDocumentId(documentId);
 
-        // 2. 사용자 식별
-        Long userId = currentUserId();
+        // DocumentQueryService.getDocumentStatus가 내부에서 권한체크까지 수행 (그대로 재사용)
+        return executeTool("get_indexing_status", DOCUMENT_RATE_LIMIT_PER_MINUTE,
+                userId -> documentQueryService.getDocumentStatus(userId, documentId));
+    }
 
-        // 3. 상태 조회 — DocumentQueryService.getDocumentStatus가 내부에서 권한체크까지 수행 (그대로 재사용)
-        return toJson(documentQueryService.getDocumentStatus(userId, documentId));
+    /**
+     * 도구 3종에 공통되는 실행 흐름(사용자 식별 → rate limit → 실행 → 안전한 예외 변환 → JSON 직렬화)을 담당한다.
+     * DocGridException은 이미 안전한 메시지를 담고 있어 그대로 전파하고, 그 외 예상치 못한 예외는
+     * 내부 정보가 클라이언트에 노출되지 않도록 INTERNAL_SERVER_ERROR로 치환한다.
+     */
+    private String executeTool(String toolName, int limitPerMinute, Function<Long, Object> action) {
+        Long userId = currentUserId();
+        rateLimiter.checkLimit(userId, toolName, limitPerMinute);
+
+        try {
+            return toJson(action.apply(userId));
+        } catch (DocGridException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("MCP 도구 실행 중 예상하지 못한 오류 toolName={}", toolName, e);
+            throw new DocGridException(ErrorCode.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    private List<SearchResultItem> truncateChunkText(List<SearchResultItem> items) {
+        return items.stream()
+                .map(item -> item.chunkText() != null && item.chunkText().length() > MAX_CHUNK_TEXT_LENGTH
+                        ? new SearchResultItem(item.rank(), item.documentTitle(),
+                                item.chunkText().substring(0, MAX_CHUNK_TEXT_LENGTH),
+                                item.pageNo(), item.similarityScore())
+                        : item)
+                .toList();
     }
 
     private void requireDocumentId(Long documentId) {
@@ -109,7 +151,6 @@ public class DocGridMcpTools {
     }
 
     private void validateSearchInput(String query, Integer topK) {
-        // SDK가 JSON Schema의 required를 강제하지 않음 — 실측 결과 query=null로 호출부까지 그대로 넘어옴
         if (query == null || query.isBlank()) {
             throw new DocGridException(ErrorCode.INVALID_PARAMETER, "query는 필수입니다.");
         }

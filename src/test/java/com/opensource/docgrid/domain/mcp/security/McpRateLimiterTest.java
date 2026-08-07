@@ -98,4 +98,56 @@ class McpRateLimiterTest {
         assertThat(successCount.get()).isEqualTo(limit);
         assertThat(rejectedCount.get()).isEqualTo(totalCalls - limit);
     }
+
+    @Test
+    @DisplayName("동시성 케이스: 윈도우 만료 경계에서 동시 호출해도 리셋과 증가가 꼬이지 않고 정확히 limit개만 통과한다")
+    void checkLimit_handlesWindowExpiryRace_correctly() throws InterruptedException {
+        // 윈도우 만료 경계를 짧은 시간 안에 재현하기 위해 테스트 전용 생성자로 window를 50ms로 줄인다
+        McpRateLimiter shortWindowLimiter = new McpRateLimiter(50);
+        int limit = 10;
+
+        // 첫 윈도우를 한도까지 채운다
+        for (int i = 0; i < limit; i++) {
+            shortWindowLimiter.checkLimit(1L, "tool", limit);
+        }
+
+        // 윈도우가 만료되도록 대기
+        Thread.sleep(60);
+
+        // 새 윈도우 경계에서 여러 스레드가 동시에 몰린다 —
+        // 리셋과 증가가 하나의 동기화 구역으로 묶여있지 않으면 일부 요청이 리셋 전 카운터로
+        // 증가해 부당하게 거부되거나, 리셋에 의해 증가분이 사라지는 레이스가 발생할 수 있다.
+        int totalCalls = 30;
+        ExecutorService executor = Executors.newFixedThreadPool(totalCalls);
+        CountDownLatch ready = new CountDownLatch(totalCalls);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(totalCalls);
+        AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger rejectedCount = new AtomicInteger(0);
+
+        for (int i = 0; i < totalCalls; i++) {
+            executor.submit(() -> {
+                ready.countDown();
+                try {
+                    start.await();
+                    shortWindowLimiter.checkLimit(1L, "tool", limit);
+                    successCount.incrementAndGet();
+                } catch (DocGridException e) {
+                    rejectedCount.incrementAndGet();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
+
+        ready.await(5, TimeUnit.SECONDS);
+        start.countDown();
+        done.await(5, TimeUnit.SECONDS);
+        executor.shutdown();
+
+        assertThat(successCount.get()).isEqualTo(limit);
+        assertThat(rejectedCount.get()).isEqualTo(totalCalls - limit);
+    }
 }

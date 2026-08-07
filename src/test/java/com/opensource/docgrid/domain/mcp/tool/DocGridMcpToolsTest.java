@@ -64,8 +64,8 @@ class DocGridMcpToolsTest {
     @Mock
     private DocumentQueryService documentQueryService;
 
-    // 상태(카운터)가 없는 순수 로직이라 목 대신 실제 인스턴스를 사용한다. @BeforeEach마다 새로 만들어
-    // 테스트 간 카운터가 공유되지 않는다.
+    // 사용자·도구별로 호출 횟수 카운터를 들고 있는 실제 인스턴스를 사용한다(목 아님).
+    // @BeforeEach마다 새로 만들어 테스트 간 카운터가 공유되지 않도록 격리한다.
     private McpRateLimiter rateLimiter;
 
     // 실제 앱의 Spring 관리 ObjectMapper 빈과 동일하게 구성한다: JavaTimeModule 등록 + 날짜를 타임스탬프 배열이

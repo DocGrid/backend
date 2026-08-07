@@ -121,14 +121,21 @@ public class DocGridMcpTools {
      * 내부 정보가 클라이언트에 노출되지 않도록 INTERNAL_SERVER_ERROR로 치환한다.
      */
     private String executeTool(String toolName, int limitPerMinute, Function<Long, Object> action) {
+        // 1. McpApiKeyAuthFilter가 SecurityContext에 저장해둔 사용자 식별
         Long userId = currentUserId();
+        // 2. 분당 호출 횟수 제한 확인
         rateLimiter.checkLimit(userId, toolName, limitPerMinute);
 
         try {
-            return toJson(action.apply(userId));
+            // 3. 실제 도구 로직 실행
+            Object result = action.apply(userId);
+            // 4. JSON으로 직렬화
+            return toJson(result);
         } catch (DocGridException e) {
+            // 이미 안전한 메시지를 담고 있으므로 그대로 전파
             throw e;
         } catch (Exception e) {
+            // 예상치 못한 예외는 내부 정보가 노출되지 않도록 표준 메시지로 치환
             log.error("MCP 도구 실행 중 예상하지 못한 오류 toolName={}", toolName, e);
             throw new DocGridException(ErrorCode.INTERNAL_SERVER_ERROR);
         }

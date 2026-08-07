@@ -57,26 +57,41 @@ RATE_LIMIT_EXCEEDED(
 ```java
 @Component
 public class McpRateLimiter {
-    private record Window(AtomicInteger count, AtomicLong windowStartMillis) {}
+    private static final class Window {
+        private long windowStartMillis;
+        private int count;
+    }
     private final Map<String, Window> windows = new ConcurrentHashMap<>();
 
     public void checkLimit(Long userId, String toolName, int limitPerMinute) {
         String key = userId + ":" + toolName;
         long now = System.currentTimeMillis();
-        Window window = windows.computeIfAbsent(key, k -> new Window(new AtomicInteger(0), new AtomicLong(now)));
+        Window window = windows.computeIfAbsent(key, k -> new Window(now));
 
-        long windowStart = window.windowStartMillis().get();
-        if (now - windowStart >= WINDOW_MILLIS && window.windowStartMillis().compareAndSet(windowStart, now)) {
-            window.count().set(0);
-        }
-        if (window.count().incrementAndGet() > limitPerMinute) {
-            throw new DocGridException(ErrorCode.RATE_LIMIT_EXCEEDED);
+        synchronized (window) {
+            if (now - window.windowStartMillis >= windowMillis) {
+                window.windowStartMillis = now;
+                window.count = 0;
+            }
+            window.count++;
+            if (window.count > limitPerMinute) {
+                throw new DocGridException(ErrorCode.RATE_LIMIT_EXCEEDED);
+            }
         }
     }
 }
 ```
 
-사용자·도구별(`userId:toolName`)로 분당 고정 윈도우 카운터를 관리한다. 윈도우 만료 감지 시 `compareAndSet`으로 딱 한 스레드만 리셋에 성공하도록 하고, `incrementAndGet()`의 원자성으로 동시 호출에도 정확히 `limitPerMinute`개만 통과함을 보장한다.
+사용자·도구별(`userId:toolName`)로 분당 고정 윈도우 카운터를 관리한다.
+
+**최초 구현의 레이스 컨디션(코드래빗 리뷰로 발견, 수정 완료)**: 최초 버전은 `AtomicInteger`/`AtomicLong`으로 "윈도우 리셋"과 "카운터 증가"를 각각 별도의 원자적 연산으로 처리했다. 이 둘이 하나의 원자적 단위가 아니라서 다음 레이스가 가능했다:
+
+1. 카운터가 한도(20)에 도달, 윈도우가 막 만료됨
+2. 스레드A: 만료를 감지하고 `compareAndSet`으로 windowStart 갱신에 성공 — 아직 `count.set(0)`은 호출 전
+3. 스레드B: 갱신된 windowStart를 보고 "만료 안 됨"으로 판단해 리셋을 건너뜀 → 리셋 전 카운터(20)에 `incrementAndGet()` → 21 → **새 윈도우의 첫 요청인데 부당하게 거부됨**
+4. 스레드A: 뒤늦게 `count.set(0)` 실행 → 스레드B의 증가가 통째로 사라짐
+
+리셋과 증가를 `Window`별 `synchronized` 블록으로 묶어 두 단계를 하나의 원자적 단위로 만들어 해결했다. 이렇게 되면 `Atomic*` 래퍼가 더는 필요 없어(동기화 블록 안에서만 접근하므로) 일반 `long`/`int` 필드로 단순화했다.
 
 ### DocGridMcpTools — executeTool() 공통 래퍼 도입
 
@@ -116,9 +131,9 @@ public DocGridMcpTools(..., ObjectMapper objectMapper) {
 
 ## 실제 검증
 
-### 유닛 테스트 (전체 완료, 673개 통과)
+### 유닛 테스트 (전체 완료, 674개 통과)
 
-- `McpRateLimiterTest` 5개: 제한 이내 통과, 초과 시 예외, 도구별/사용자별 카운터 분리, **50스레드 동시 호출 시 정확히 20개만 통과**(5회 재실행하여 재현성 확인)
+- `McpRateLimiterTest` 6개: 제한 이내 통과, 초과 시 예외, 도구별/사용자별 카운터 분리, **50스레드 동시 호출 시 정확히 20개만 통과**, **윈도우 만료 경계에서 동시 호출해도 정확히 limit개만 통과**(레이스 컨디션 회귀 테스트, 위에서 발견·수정한 버그를 재현) — 전부 5회 재실행하여 재현성 확인
 - `DocGridMcpToolsTest`에 6개 추가: rate limit 초과, 예상치 못한 예외 → `INTERNAL_SERVER_ERROR`로 안전 변환(원본 메시지 미노출 검증), chunkText truncate 적용/미적용, `get_document_detail`/`get_indexing_status` null 필드 제거(후자는 우리가 소유하지 않은 `DocumentStatusResponse`에도 적용됨을 확인)
 
 ### curl 기반 e2e 검증 — 부분적으로만 완료, 발견한 이슈로 미완주
@@ -163,7 +178,7 @@ FROM pg_stat_activity WHERE datname = 'docgrid' AND pid <> pg_backend_pid();
 
 ## 검증 요약
 
-- `./gradlew test`: **673개 테스트 전체 통과, 실패 0개**
+- `./gradlew test`: **674개 테스트 전체 통과, 실패 0개**
 - curl e2e: 도구 3종 개별 호출·null 필드 제거는 확인 완료. rate limit의 20회 초과 시나리오는 위 별도 버그로 인해 끝까지 확인하지 못함 — 버그 수정 후 재검증 필요
 
 ---

@@ -57,11 +57,23 @@ RATE_LIMIT_EXCEEDED(
 ```java
 @Component
 public class McpRateLimiter {
+    private static final long WINDOW_MILLIS = 60_000;
+
     private static final class Window {
         private long windowStartMillis;
         private int count;
     }
     private final Map<String, Window> windows = new ConcurrentHashMap<>();
+    private final long windowMillis;
+
+    public McpRateLimiter() {
+        this(WINDOW_MILLIS);
+    }
+
+    // 테스트에서 윈도우 만료 경계를 짧은 시간 안에 재현할 수 있도록 window 길이를 주입받는다.
+    McpRateLimiter(long windowMillis) {
+        this.windowMillis = windowMillis;
+    }
 
     public void checkLimit(Long userId, String toolName, int limitPerMinute) {
         String key = userId + ":" + toolName;
@@ -69,11 +81,14 @@ public class McpRateLimiter {
         Window window = windows.computeIfAbsent(key, k -> new Window(now));
 
         synchronized (window) {
+            // 1. 윈도우가 만료됐으면 리셋
             if (now - window.windowStartMillis >= windowMillis) {
                 window.windowStartMillis = now;
                 window.count = 0;
             }
+            // 2. 카운터 증가
             window.count++;
+            // 3. 제한 초과 여부 판단
             if (window.count > limitPerMinute) {
                 throw new DocGridException(ErrorCode.RATE_LIMIT_EXCEEDED);
             }
@@ -81,6 +96,8 @@ public class McpRateLimiter {
     }
 }
 ```
+
+패키지 전용 생성자(`McpRateLimiter(long windowMillis)`)는 윈도우 만료 경계 레이스를 짧은 시간 안에 재현하는 테스트(`checkLimit_handlesWindowExpiryRace_correctly`) 전용이며, 운영 코드는 항상 기본 생성자(60초 윈도우)를 사용한다.
 
 사용자·도구별(`userId:toolName`)로 분당 고정 윈도우 카운터를 관리한다.
 
@@ -97,13 +114,21 @@ public class McpRateLimiter {
 
 ```java
 private String executeTool(String toolName, int limitPerMinute, Function<Long, Object> action) {
+    // 1. McpApiKeyAuthFilter가 SecurityContext에 저장해둔 사용자 식별
     Long userId = currentUserId();
+    // 2. 분당 호출 횟수 제한 확인
     rateLimiter.checkLimit(userId, toolName, limitPerMinute);
+
     try {
-        return toJson(action.apply(userId));
+        // 3. 실제 도구 로직 실행
+        Object result = action.apply(userId);
+        // 4. JSON으로 직렬화
+        return toJson(result);
     } catch (DocGridException e) {
+        // 이미 안전한 메시지를 담고 있으므로 그대로 전파
         throw e;
     } catch (Exception e) {
+        // 예상치 못한 예외는 내부 정보가 노출되지 않도록 표준 메시지로 치환
         log.error("MCP 도구 실행 중 예상하지 못한 오류 toolName={}", toolName, e);
         throw new DocGridException(ErrorCode.INTERNAL_SERVER_ERROR);
     }

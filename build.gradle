@@ -52,8 +52,21 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform {
-		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency'
+		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency', 'local-e2e'
 	}
+}
+
+tasks.register('localE2eTest', Test) {
+	group = 'verification'
+	description = '실제 PostgreSQL, MinIO와 BGE-M3를 연결한 로컬 문서 인덱싱 E2E를 실행합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'local-e2e'
+	}
+	// 실제 Worker와 공유 인프라를 쓰는 두 Context가 서로의 Schema·Bucket을 침범하지 않게 직렬 실행한다.
+	maxParallelForks = 1
+	outputs.upToDateWhen { false }
 }
 
 tasks.register('minioIntegrationTest', Test) {

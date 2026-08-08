@@ -52,7 +52,6 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @Tag("integration")
-@Tag("benchmark")
 @Tag("vector-search-performance")
 @ActiveProfiles("test")
 @SpringBootTest

@@ -12,7 +12,7 @@ MCP Server 블록의 마지막 이슈. 지금까지 구현한 MCP 서버(#93 골
 - 앱: IntelliJ에서 `local` 프로파일로 직접 실행 (Spring DevTools 자동 재시작 사용)
 - MCP 클라이언트: **Claude Desktop** + [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) `0.1.37` (로컬 HTTP 서버를 Claude Desktop이 인식하는 stdio 브릿지로 연결)
 - 테스트 계정:
-  - 관리자 계정: `kcw130502@gmail.com` (userId=1, ADMIN, MCP 토큰 발급 주체)
+  - 관리자 계정: `docgrid-admin@example.com` (userId=1, ADMIN, MCP 토큰 발급 주체 — V28 시드 데이터의 로컬 관리자 계정)
   - 권한 테스트용 별도 계정: `other-user@test.com` (userId=2, USER, 직접 회원가입으로 생성)
 - `claude_desktop_config.json` (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 
@@ -42,7 +42,7 @@ MCP Server 블록의 마지막 이슈. 지금까지 구현한 MCP 서버(#93 골
 
 `--debug` 옵션을 잠깐 켜서 확인한 mcp-remote 로그(`~/.mcp-auth/mcp-remote-0.1.37/*_debug.log`) 기준, `initialize` → `notifications/initialized` → `tools/list`/`prompts/list`/`resources/list`가 전부 `"result":"result-present"`로 성공 응답을 받았다.
 
-```
+```text
 [Local→Remote] initialize
 [Remote→Local] 0 {"id":0,"result":"result-present"}
 [Local→Remote] notifications/initialized
@@ -59,7 +59,7 @@ MCP Server 블록의 마지막 이슈. 지금까지 구현한 MCP 서버(#93 골
 ### 2) `search_documents` — 실제 대화
 
 > **사용자**: "DocGrid에서 Spring Boot 관련 문서 검색해줘. 검색 결과 중 하나 골라서 상세 정보도 보여줘."
-
+>
 > **Claude**: 검색 결과, Spring Boot 관련 문서는 "Spring Boot 개발 가이드"(documentId: 1) 하나이고 관련 청크가 2개 나왔어요.
 > - Spring Boot Starter로 의존성 관리 단순화, @SpringBootApplication 어노테이션으로 앱 시작
 > - Spring Boot는 Java 기반 웹 프레임워크, 자동 설정 및 내장 서버로 빠른 개발 지원
@@ -67,7 +67,7 @@ MCP Server 블록의 마지막 이슈. 지금까지 구현한 MCP 서버(#93 골
 ### 3) `get_document_detail` — 실제 대화 (도구 체이닝 성공)
 
 > **사용자**: "DocGrid에서 documentId 1번 문서 상세 정보 보여줘"
-
+>
 > **Claude**: documentId 1번 문서 상세 정보입니다.
 > - 제목: Spring Boot 개발 가이드
 > - 문서 ID: 1
@@ -80,7 +80,7 @@ MCP Server 블록의 마지막 이슈. 지금까지 구현한 MCP 서버(#93 골
 ### 4) `get_indexing_status` — 실제 대화
 
 > **사용자**: "그 문서(documentId 1) 인덱싱 상태도 확인해줘"
-
+>
 > **Claude**: documentId 1번 인덱싱 상태입니다.
 > - 문서 전체 상태: INDEXED
 > - 현재 버전(v1) 상태: INDEXED
@@ -101,7 +101,7 @@ curl -X POST http://localhost:8080/api/documents \
 ```
 
 > **사용자**: "documentId 3번 문서 상세 정보 보여줘"
-
+>
 > **Claude**: documentId 3번은 접근 권한이 없어서 조회가 안 돼요. 다른 문서 ID로 시도해볼까요?
 
 `PermissionQueryService.canReadDocument()`가 조회 전에 먼저 차단해 `PERMISSION_DENIED`가 정상적으로 반환됨을 확인.
@@ -119,7 +119,7 @@ done
 
 결과:
 
-```
+```text
 call 1 ~ call 20: "isError":false
 call 21: "isError":true
 call 22: "isError":true
@@ -196,7 +196,7 @@ securityContextRepository.saveContext(context, request, response);
 
 **증상**: 2번 버그를 고친 뒤 재연결해서 `search_documents`는 성공했는데, 이어서 `get_document_detail`을 호출하니 서버 로그에 아래 예외가 남:
 
-```
+```text
 org.hibernate.LazyInitializationException: Could not initialize proxy [DocumentVersion#1] - no session
     at DocGridMcpTools.lambda$getDocumentDetail$2(DocGridMcpTools.java:107)
 ```
@@ -226,6 +226,8 @@ Document document = documentRepository.findByIdWithCurrentVersion(documentId)
 ---
 
 ## 자동화 테스트 결과
+
+Swagger 수동 테스트는 이번 이슈 범위에 해당 사항 없음 — MCP 도구 3종은 REST 컨트롤러가 아니라 `/mcp` 하나의 엔드포인트로 노출되는 JSON-RPC 프로토콜이라 Swagger UI에 별도 엔드포인트로 나타나지 않는다. 대신 위 "정상 케이스"/"에러 케이스"에 실제 Claude Desktop 대화와 curl 검증을 기록했다.
 
 `./gradlew test`: **709개 테스트 전체 통과, 실패 0개**
 

@@ -11,6 +11,7 @@ import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
 
 /**
@@ -75,6 +76,26 @@ final class LocalE2eDocumentFactory {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             document.write(output);
             return new DocumentPayload(fileName, DOCX_MEDIA_TYPE, title, output.toByteArray());
+        }
+    }
+
+    static ByteArrayResource resource(DocumentPayload payload) {
+        return new NamedByteArrayResource(payload.fileName(), payload.content());
+    }
+
+    /** Multipart Converter가 실제 파일 이름을 Content-Disposition에 기록하게 하는 Memory Resource다. */
+    private static final class NamedByteArrayResource extends ByteArrayResource {
+
+        private final String fileName;
+
+        private NamedByteArrayResource(String fileName, byte[] content) {
+            super(content);
+            this.fileName = fileName;
+        }
+
+        @Override
+        public String getFilename() {
+            return fileName;
         }
     }
 

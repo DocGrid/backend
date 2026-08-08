@@ -115,3 +115,98 @@ tasks.register('claimPerformanceTest', Test) {
 	}
 	outputs.upToDateWhen { false }
 }
+
+def configureOpenSqlDatabase = { Test task ->
+	task.maxParallelForks = 1
+	task.outputs.upToDateWhen { false }
+	task.doFirst {
+		def environmentMappings = [
+			OPENSQL_DB_HOST: 'DB_HOST',
+			OPENSQL_DB_PORT: 'DB_PORT',
+			OPENSQL_DB_NAME: 'DB_NAME',
+			OPENSQL_DB_USER: 'DB_USER',
+			OPENSQL_DB_PASSWORD: 'DB_PASSWORD',
+			OPENSQL_DB_SSLMODE: 'DB_SSLMODE'
+		]
+		environmentMappings.each { sourceName, targetName ->
+			def value = System.getenv(sourceName)
+			if (value == null || value.trim().isEmpty()) {
+				throw new GradleException("필수 공식 OpenSQL 환경 변수가 비어 있습니다: ${sourceName}")
+			}
+			task.environment(targetName, value)
+		}
+		// 공식 접속 정보와 분리된 Test 전용 JWT만 사용하고 값은 Task 출력에 기록하지 않는다.
+		task.environment(
+			'JWT_SECRET',
+			System.getenv('OPENSQL_JWT_SECRET') ?: 'docgrid-opensql-verification-test-secret-key-2026'
+		)
+	}
+}
+
+def openSqlCompatibilityTest = tasks.register('openSqlCompatibilityTest', Test) {
+	group = 'verification'
+	description = '공식 OpenSQL의 Migration, Vector, HNSW와 SKIP LOCKED 호환성을 검증합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'opensql-verification'
+	}
+	configureOpenSqlDatabase(delegate as Test)
+}
+
+def openSqlClaimConcurrencyTest = tasks.register('openSqlClaimConcurrencyTest', Test) {
+	group = 'verification'
+	description = '공식 OpenSQL에서 다중 Worker Claim과 Lease 정합성을 검증합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'claim-concurrency'
+	}
+	configureOpenSqlDatabase(delegate as Test)
+}
+
+def openSqlDocumentE2eTest = tasks.register('openSqlDocumentE2eTest', Test) {
+	group = 'verification'
+	description = '공식 OpenSQL DB와 실제 MinIO·BGE-M3를 연결한 문서 인덱싱 E2E를 실행합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'local-e2e'
+	}
+	configureOpenSqlDatabase(delegate as Test)
+}
+
+def openSqlClaimPerformanceTest = tasks.register('openSqlClaimPerformanceTest', Test) {
+	group = 'verification'
+	description = '공식 OpenSQL에서 Embedding Job Claim 처리량과 경합을 측정합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'claim-performance'
+	}
+	systemProperties System.properties.findAll { key, value ->
+		key.toString().startsWith('claim.performance.')
+	}
+	configureOpenSqlDatabase(delegate as Test)
+}
+
+openSqlClaimConcurrencyTest.configure {
+	mustRunAfter(openSqlCompatibilityTest)
+}
+openSqlDocumentE2eTest.configure {
+	mustRunAfter(openSqlClaimConcurrencyTest)
+}
+openSqlClaimPerformanceTest.configure {
+	mustRunAfter(openSqlDocumentE2eTest)
+}
+
+tasks.register('openSqlVerification') {
+	group = 'verification'
+	description = '공식 OpenSQL 호환성, Claim 정합성, 문서 E2E와 성능 측정을 순서대로 실행합니다.'
+	dependsOn(
+		openSqlCompatibilityTest,
+		openSqlClaimConcurrencyTest,
+		openSqlDocumentE2eTest,
+		openSqlClaimPerformanceTest
+	)
+}

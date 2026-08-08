@@ -41,7 +41,8 @@ import lombok.RequiredArgsConstructor;
 public class McpApiKeyAuthFilter extends OncePerRequestFilter {
 
     // 이 필터가 감시할 유일한 경로. /mcp/tokens 같은 다른 경로는 이 필터와 무관하다.
-    private static final String MCP_ENDPOINT = "/mcp";
+    // WebMvcConfig의 OSIV 제외 경로와 동일한 값을 참조해야 하므로 public으로 공개한다.
+    public static final String MCP_ENDPOINT = "/mcp";
 
     // 실제 토큰 검증 로직(해시 대조, DB 조회)은 여기에 위임한다 — 필터는 인증 "흐름"만 담당.
     private final McpAccessTokenCommandService mcpAccessTokenCommandService;

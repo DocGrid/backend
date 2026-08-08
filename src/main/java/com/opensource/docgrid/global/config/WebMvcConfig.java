@@ -10,6 +10,7 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import com.opensource.docgrid.domain.auth.resolver.CurrentUserArgumentResolver;
+import com.opensource.docgrid.domain.mcp.security.McpApiKeyAuthFilter;
 
 import jakarta.persistence.EntityManagerFactory;
 import lombok.RequiredArgsConstructor;
@@ -33,12 +34,17 @@ public class WebMvcConfig implements WebMvcConfigurer {
     // 없는데도 WebMvcConfigurer 구현체라 스캔 대상이 되므로, 없으면 등록을 건너뛰게 한다.
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        // 1. EntityManagerFactory 조회 (없으면 JPA가 없는 테스트 슬라이스이므로 등록 자체를 건너뜀)
         EntityManagerFactory entityManagerFactory = entityManagerFactoryProvider.getIfAvailable();
+        // 2. 빈이 없으면 즉시 반환
         if (entityManagerFactory == null) {
             return;
         }
+        // 3. OSIV 인터셉터 구성
         OpenEntityManagerInViewInterceptor interceptor = new OpenEntityManagerInViewInterceptor();
         interceptor.setEntityManagerFactory(entityManagerFactory);
-        registry.addWebRequestInterceptor(interceptor).excludePathPatterns("/mcp");
+        // 4. /mcp를 제외한 나머지 경로에만 등록 — McpApiKeyAuthFilter가 판단하는 /mcp 경로와
+        //    동일한 상수를 참조해 두 곳이 서로 다른 경로 문자열로 어긋나지 않게 한다.
+        registry.addWebRequestInterceptor(interceptor).excludePathPatterns(McpApiKeyAuthFilter.MCP_ENDPOINT);
     }
 }

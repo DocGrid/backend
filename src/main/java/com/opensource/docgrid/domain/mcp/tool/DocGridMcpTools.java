@@ -31,6 +31,15 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 public class DocGridMcpTools {
 
+    /*
+     전체 MCP 도구 호출에 공통 적용되는 제약 조건
+        1) query 길이 제한: 2000자
+        2) topK 범위 제한: 1~20
+        3) chunkText 길이 제한: 1000자 (검색 결과 반환 시)
+        4) search_documents 호출 제한: 분당 20회
+        5) get_document_detail 호출 제한: 분당 30회
+        6) get_indexing_status 호출 제한: 분당 30회
+     */
     private static final int MAX_QUERY_LENGTH = 2000;
     private static final int MIN_TOP_K = 1;
     private static final int MAX_TOP_K = 20;
@@ -65,6 +74,7 @@ public class DocGridMcpTools {
     public String searchDocuments(
             @McpToolParam(description = "검색어", required = true) String query,
             @McpToolParam(description = "반환할 최대 결과 수 (기본 5, 1~20)", required = false) Integer topK) {
+
         // SDK는 required(필수값)를 강제하지 않음이 실측으로 확인됨 (query=null로 그대로 호출됨)
         // → null/blank 여부와 비즈니스 규칙(길이/범위)을 전부 여기서 직접 검증한다
         validateSearchInput(query, topK);
@@ -141,6 +151,7 @@ public class DocGridMcpTools {
         }
     }
 
+    // 검색 결과 chunkText가 너무 길면 잘라서 반환 (MCP 도구 호출 시 JSON 응답 크기 제한)
     private List<SearchResultItem> truncateChunkText(List<SearchResultItem> items) {
         return items.stream()
                 .map(item -> item.chunkText() != null && item.chunkText().length() > MAX_CHUNK_TEXT_LENGTH
@@ -151,12 +162,14 @@ public class DocGridMcpTools {
                 .toList();
     }
 
+    // MCP 도구 호출 시 documentId는 필수값이므로 null이면 예외를 던진다. )
     private void requireDocumentId(Long documentId) {
         if (documentId == null) {
             throw new DocGridException(ErrorCode.INVALID_PARAMETER, "documentId는 필수입니다.");
         }
     }
 
+    // search_documents 호출 시 query와 topK를 검증한다. query는 null/blank 불가, 길이 제한, topK는 범위 제한.
     private void validateSearchInput(String query, Integer topK) {
         if (query == null || query.isBlank()) {
             throw new DocGridException(ErrorCode.INVALID_PARAMETER, "query는 필수입니다.");
@@ -171,6 +184,7 @@ public class DocGridMcpTools {
         }
     }
 
+    // SecurityContext에서 현재 인증된 사용자의 ID를 가져온다. 인증 정보가 없거나 ID가 Long이 아니면 UNAUTHORIZED 예외를 던진다.
     private Long currentUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !(authentication.getDetails() instanceof Long userId)) {
@@ -179,6 +193,7 @@ public class DocGridMcpTools {
         return userId;
     }
 
+    // Jackson ObjectMapper를 사용해 객체를 JSON 문자열로 직렬화한다. 실패하면 INTERNAL_SERVER_ERROR 예외를 던진다.
     private String toJson(Object value) {
         try {
             return objectMapper.writeValueAsString(value);

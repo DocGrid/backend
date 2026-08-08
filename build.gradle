@@ -52,7 +52,7 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform {
-		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency', 'local-e2e'
+		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency', 'local-e2e', 'vector-search-performance'
 	}
 }
 
@@ -127,6 +127,28 @@ tasks.register('bgeBatchPerformanceTest', Exec) {
 		layout.buildDirectory.file('reports/bge-m3-batch/bge-m3-batch-latest.json').get().asFile
 	)
 	// 실제 모델과 Docker RSS를 읽는 외부 Benchmark이므로 일반 Test와 Build Cache에서 분리한다.
+	outputs.upToDateWhen { false }
+}
+
+tasks.register('vectorSearchPerformanceTest', Test) {
+	group = 'verification'
+	description = 'PostgreSQL pgvector의 Exact Seq Scan과 HNSW를 데이터 규모별로 비교합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'vector-search-performance'
+	}
+	maxParallelForks = 1
+	systemProperties System.properties.findAll { key, value ->
+		key.toString().startsWith('vector.search.performance.')
+	}
+	if (System.getProperty('vector.search.performance.output') == null) {
+		systemProperty(
+			'vector.search.performance.output',
+			layout.buildDirectory.file('reports/vector-search/exact-vs-hnsw.json').get().asFile.absolutePath
+		)
+	}
+	// 실제 PostgreSQL에 대량 Vector를 적재하는 Benchmark이므로 일반 Test와 Build Cache에서 분리한다.
 	outputs.upToDateWhen { false }
 }
 

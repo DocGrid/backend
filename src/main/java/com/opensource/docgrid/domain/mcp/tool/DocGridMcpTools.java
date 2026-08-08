@@ -155,7 +155,7 @@ public class DocGridMcpTools {
     private List<SearchResultItem> truncateChunkText(List<SearchResultItem> items) {
         return items.stream()
                 .map(item -> item.chunkText() != null && item.chunkText().length() > MAX_CHUNK_TEXT_LENGTH
-                        ? new SearchResultItem(item.rank(), item.documentTitle(),
+                        ? new SearchResultItem(item.rank(), item.documentId(), item.documentTitle(),
                                 item.chunkText().substring(0, MAX_CHUNK_TEXT_LENGTH),
                                 item.pageNo(), item.similarityScore())
                         : item)

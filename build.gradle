@@ -116,6 +116,20 @@ tasks.register('claimPerformanceTest', Test) {
 	outputs.upToDateWhen { false }
 }
 
+tasks.register('bgeBatchPerformanceTest', Exec) {
+	group = 'verification'
+	description = '실제 BGE-M3 HTTP 서버의 Batch Size별 처리량, 지연과 RSS를 측정합니다.'
+	workingDir projectDir
+	commandLine(
+		'python3',
+		'embedding-server/benchmark_batch_size.py',
+		'--output',
+		layout.buildDirectory.file('reports/bge-m3-batch/bge-m3-batch-latest.json').get().asFile
+	)
+	// 실제 모델과 Docker RSS를 읽는 외부 Benchmark이므로 일반 Test와 Build Cache에서 분리한다.
+	outputs.upToDateWhen { false }
+}
+
 def configureOpenSqlDatabase = { Test task ->
 	task.maxParallelForks = 1
 	task.outputs.upToDateWhen { false }

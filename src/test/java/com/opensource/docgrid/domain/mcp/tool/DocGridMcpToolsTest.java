@@ -188,7 +188,7 @@ class DocGridMcpToolsTest {
     @DisplayName("정상 케이스: chunkText가 1000자를 초과하면 잘려서 반환된다")
     void searchDocuments_truncatesChunkText_whenTooLong() {
         String longText = "가".repeat(1200);
-        SearchResultItem item = new SearchResultItem(1, "문서", longText, null, BigDecimal.ONE);
+        SearchResultItem item = new SearchResultItem(1, 10L, "문서", longText, null, BigDecimal.ONE);
         SearchOutcome outcome = new SearchOutcome(
                 new SearchResponse(1L, List.of(item), null, List.of()), List.of(), List.of());
         given(searchFacade.search(eq(USER_ID), any(SearchRequest.class))).willReturn(outcome);
@@ -196,6 +196,7 @@ class DocGridMcpToolsTest {
         String result = docGridMcpTools.searchDocuments("query", 5);
 
         assertThat(result).contains("\"chunkText\":\"" + "가".repeat(1000) + "\"")
+                .contains("\"documentId\":10")
                 .doesNotContain("가".repeat(1001));
     }
 
@@ -203,7 +204,7 @@ class DocGridMcpToolsTest {
     @DisplayName("정상 케이스: chunkText가 1000자 이내면 그대로 반환된다")
     void searchDocuments_keepsChunkText_whenWithinLimit() {
         String shortText = "짧은 청크 텍스트";
-        SearchResultItem item = new SearchResultItem(1, "문서", shortText, null, BigDecimal.ONE);
+        SearchResultItem item = new SearchResultItem(1, 10L, "문서", shortText, null, BigDecimal.ONE);
         SearchOutcome outcome = new SearchOutcome(
                 new SearchResponse(1L, List.of(item), null, List.of()), List.of(), List.of());
         given(searchFacade.search(eq(USER_ID), any(SearchRequest.class))).willReturn(outcome);
@@ -219,7 +220,7 @@ class DocGridMcpToolsTest {
         // Given
         Document document = createDocument();
         given(permissionQueryService.canReadDocument(USER_ID, 1L)).willReturn(true);
-        given(documentRepository.findById(1L)).willReturn(Optional.of(document));
+        given(documentRepository.findByIdWithCurrentVersion(1L)).willReturn(Optional.of(document));
 
         // When
         String result = docGridMcpTools.getDocumentDetail(1L);
@@ -254,7 +255,7 @@ class DocGridMcpToolsTest {
     @DisplayName("예외 케이스: 문서가 없으면 DOCUMENT_NOT_FOUND 예외가 발생한다")
     void getDocumentDetail_throws_when_documentNotFound() {
         given(permissionQueryService.canReadDocument(USER_ID, 1L)).willReturn(true);
-        given(documentRepository.findById(1L)).willReturn(Optional.empty());
+        given(documentRepository.findByIdWithCurrentVersion(1L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> docGridMcpTools.getDocumentDetail(1L))
                 .isInstanceOf(DocGridException.class)
@@ -281,7 +282,7 @@ class DocGridMcpToolsTest {
         ReflectionTestUtils.setField(document, "id", 1L);
         ReflectionTestUtils.setField(document, "updatedAt", LocalDateTime.of(2026, 8, 6, 10, 0));
         given(permissionQueryService.canReadDocument(USER_ID, 1L)).willReturn(true);
-        given(documentRepository.findById(1L)).willReturn(Optional.of(document));
+        given(documentRepository.findByIdWithCurrentVersion(1L)).willReturn(Optional.of(document));
 
         String result = docGridMcpTools.getDocumentDetail(1L);
 

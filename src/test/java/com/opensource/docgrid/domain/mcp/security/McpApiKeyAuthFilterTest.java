@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,7 +17,10 @@ import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
 
 import com.opensource.docgrid.domain.mcp.fixture.McpFixture;
 import com.opensource.docgrid.domain.mcp.service.command.McpAccessTokenCommandService;
@@ -53,6 +57,27 @@ class McpApiKeyAuthFilterTest {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         assertThat(authentication).isNotNull();
         assertThat(authentication.getDetails()).isEqualTo(McpFixture.USER_ID);
+    }
+
+    @Test
+    @DisplayName("정상 케이스: 유효한 API 키 인증 시 SecurityContextRepository에도 저장되어 비동기 재디스패치에서 복원 가능하다")
+    void doFilter_savesSecurityContextToRepository_whenTokenValid() throws Exception {
+        // Given
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/mcp");
+        request.addHeader("Authorization", "Bearer valid-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+        given(mcpAccessTokenCommandService.authenticate("valid-token")).willReturn(Optional.of(McpFixture.USER_ID));
+
+        // When
+        mcpApiKeyAuthFilter.doFilter(request, response, chain);
+
+        // Then — MCP Streamable HTTP의 비동기 재디스패치 시점에 SecurityContextHolderFilter가
+        // 이 저장소에서 컨텍스트를 다시 로드하므로, 같은 request로 재로드해도 복원되는지 확인한다.
+        SecurityContextRepository repository = new RequestAttributeSecurityContextRepository();
+        Supplier<SecurityContext> restored = repository.loadDeferredContext(request);
+        assertThat(restored.get().getAuthentication()).isNotNull();
+        assertThat(restored.get().getAuthentication().getDetails()).isEqualTo(McpFixture.USER_ID);
     }
 
     @Test

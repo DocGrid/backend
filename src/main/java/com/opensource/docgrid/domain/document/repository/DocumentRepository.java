@@ -22,6 +22,11 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     @Query("SELECT d FROM Document d WHERE d.id = :documentId")
     Optional<Document> findByIdForUpdate(@Param("documentId") Long documentId);
 
+    // currentVersion은 LAZY라, OSIV가 꺼진 경로(/mcp)에서 findById만 쓰면
+    // 트랜잭션 종료 후 지연 로딩 시 LazyInitializationException이 난다. JOIN FETCH로 즉시 로딩한다.
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.currentVersion WHERE d.id = :documentId")
+    Optional<Document> findByIdWithCurrentVersion(@Param("documentId") Long documentId);
+
     @Query("""
         SELECT d.id AS documentId,
                d.status AS documentStatus,

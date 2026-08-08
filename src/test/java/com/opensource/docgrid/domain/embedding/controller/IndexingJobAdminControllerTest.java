@@ -50,6 +50,7 @@ import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttem
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobClaimService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobLeaseService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobManualRetryService;
+import com.opensource.docgrid.domain.embedding.service.query.IndexingJobAdminQueryService;
 import com.opensource.docgrid.domain.worker.enums.AttemptStatus;
 import com.opensource.docgrid.global.config.SecurityConfig;
 import com.opensource.docgrid.global.exception.DocGridException;
@@ -110,6 +111,7 @@ class IndexingJobAdminControllerTest {
     @MockitoBean private DocumentIndexingCompletionService documentIndexingCompletionService;
     @MockitoBean private DocumentIndexingFailureService documentIndexingFailureService;
     @MockitoBean private EmbeddingJobManualRetryService embeddingJobManualRetryService;
+    @MockitoBean private IndexingJobAdminQueryService indexingJobAdminQueryService;
     @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
     @MockitoBean private JwtProvider jwtProvider;
     @MockitoBean private McpAccessTokenCommandService mcpAccessTokenCommandService;

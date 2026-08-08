@@ -10,7 +10,7 @@ OpenSQL 17.8이므로 PostgreSQL 호환성만으로 최종 판정할 수 없다.
 고정한다.
 
 ```text
-공식 Host Preflight
+공식 Host 지원 환경 호환성 Preflight
 → Flyway 전체 Migration·Hibernate Validation
 → pgvector·vector(1024)·HNSW·Cosine Operator
 → SKIP LOCKED·Claim·Lease·Retry
@@ -34,7 +34,7 @@ OpenSQL 17.8이므로 PostgreSQL 호환성만으로 최종 판정할 수 없다.
 
 ### 2.1 포함
 
-- 공식 Host OS·Architecture·설치 모드 Preflight Script
+- 공식 Host 지원 OS·Architecture·선언된 설치 모드 Preflight Script
 - 공식 접속 환경 변수의 Fail-fast Validation
 - 공식 DB 전용 Gradle Test Task와 집계 Task
 - Flyway·Schema·Extension·Vector·HNSW Compatibility Test
@@ -76,10 +76,15 @@ OPENSQL_DB_NAME
 OPENSQL_DB_USER
 OPENSQL_DB_PASSWORD
 OPENSQL_DB_SSLMODE
+OPENSQL_MINIO_ENDPOINT
+OPENSQL_MINIO_ACCESS_KEY
+OPENSQL_MINIO_SECRET_KEY
+OPENSQL_EMBEDDING_SERVER_URL
 ```
 
-Gradle은 이를 기존 Test Profile의 `DB_*`로 전달한다. 명령행 Argument나 결과 문서에는 값을 출력하지
-않는다. Password가 없거나 빈 값이면 Connection 시도 전에 실패한다.
+Gradle은 Database 값은 기존 Test Profile의 `DB_*`로, 전체 관통 E2E 값은 MinIO·Embedding Server
+환경 변수로 전달한다. 명령행 Argument나 결과 문서에는 값을 출력하지 않는다. Password·Secret 또는
+외부 Service 주소가 없거나 빈 값이면 Connection 시도 전에 실패한다.
 
 ### 3.3 Schema 격리
 
@@ -91,7 +96,7 @@ Gradle은 이를 기존 Test Profile의 `DB_*`로 전달한다. 명령행 Argume
 
 ## 4. 실행 구조
 
-### 4.1 Host Preflight
+### 4.1 Host 지원 환경 호환성 Preflight
 
 Rocky Host에서 Script를 실행해 다음을 확인한다.
 
@@ -101,7 +106,9 @@ Rocky Host에서 Script를 실행해 다음을 확인한다.
 4. DB 연결 뒤 `server_version`이 `17.8`로 시작한다.
 5. `vector` Extension Version이 `0.8.1`이다.
 
-OS·Architecture가 다르면 로컬 기준선은 실행할 수 있어도 공식 검증은 즉시 실패한다.
+OS·Architecture가 다르면 로컬 기준선은 실행할 수 있어도 공식 검증은 즉시 실패한다. 이 Script만으로
+OpenSQL 제품 식별, License 적용 또는 실제 Single Topology를 판정하지 않고 공급사 설치 기록으로 별도
+확인한다.
 
 ### 4.2 Gradle Task
 

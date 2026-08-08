@@ -7,7 +7,7 @@ Migration, Vector 저장·검색, Worker Claim·Lease, 실제 문서 인덱싱�
 
 | 검증 항목 | 결과 |
 |---|---|
-| Rocky Linux 9.7·x86-64·Single 사전 점검 | PASS |
+| Rocky Linux 9.7·x86-64 지원 환경 호환성 사전 점검 | PASS |
 | OpenSQL PostgreSQL 17.8·pgvector 0.8.1 | PASS |
 | Flyway V1~V35·Hibernate Schema Validation | PASS |
 | `vector(1024)`·Cosine HNSW·`<=>` 검색 | PASS |
@@ -49,7 +49,8 @@ License, 설치 파일, 다운로드 정보, Database 접속 정보와 개인 �
 
 공식 설치기의 Single Mode 설치는 완료됐고 etcd, Patroni와 OpenSQL PostgreSQL이 정상 기동했다.
 검증 Database에는 Runbook의 사전 조건에 따라 관리자가 `vector` Extension을 생성했다. 그 후
-Application 계정으로 실행한 Host Preflight가 다음 조건을 모두 확인했다.
+Application 계정으로 실행한 지원 환경 호환성 Preflight가 다음 조건을 모두 확인했다. OpenSQL 제품,
+License와 실제 Single Topology는 공급사 설치 기록으로 별도 확인했다.
 
 ```text
 OS=Rocky Linux 9.7

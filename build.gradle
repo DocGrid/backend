@@ -143,6 +143,25 @@ def configureOpenSqlDatabase = { Test task ->
 	}
 }
 
+def configureOpenSqlExternalServices = { Test task ->
+	task.doFirst {
+		// 실제 외부 Service 값이 없으면 공식 E2E가 Local 기본값으로 통과하는 것을 차단한다.
+		def environmentMappings = [
+			OPENSQL_MINIO_ENDPOINT: 'MINIO_ENDPOINT',
+			OPENSQL_MINIO_ACCESS_KEY: 'MINIO_ACCESS_KEY',
+			OPENSQL_MINIO_SECRET_KEY: 'MINIO_SECRET_KEY',
+			OPENSQL_EMBEDDING_SERVER_URL: 'EMBEDDING_SERVER_URL'
+		]
+		environmentMappings.each { sourceName, targetName ->
+			def value = System.getenv(sourceName)
+			if (value == null || value.trim().isEmpty()) {
+				throw new GradleException("필수 공식 OpenSQL E2E 환경 변수가 비어 있습니다: ${sourceName}")
+			}
+			task.environment(targetName, value)
+		}
+	}
+}
+
 def openSqlCompatibilityTest = tasks.register('openSqlCompatibilityTest', Test) {
 	group = 'verification'
 	description = '공식 OpenSQL의 Migration, Vector, HNSW와 SKIP LOCKED 호환성을 검증합니다.'
@@ -174,6 +193,7 @@ def openSqlDocumentE2eTest = tasks.register('openSqlDocumentE2eTest', Test) {
 		includeTags 'local-e2e'
 	}
 	configureOpenSqlDatabase(delegate as Test)
+	configureOpenSqlExternalServices(delegate as Test)
 }
 
 def openSqlClaimPerformanceTest = tasks.register('openSqlClaimPerformanceTest', Test) {

@@ -57,18 +57,28 @@ export OPENSQL_DB_HOST=<official-db-host>
 export OPENSQL_DB_PORT=<official-db-port>
 export OPENSQL_DB_NAME=<verification-database>
 export OPENSQL_DB_USER=<verification-user>
-read -s OPENSQL_DB_PASSWORD
+read -r -s OPENSQL_DB_PASSWORD
+printf '\n'
 export OPENSQL_DB_PASSWORD
 export OPENSQL_DB_SSLMODE=require
 export OPENSQL_INSTALL_MODE=single
+export OPENSQL_CONNECT_TIMEOUT_SECONDS=10
+export OPENSQL_MINIO_ENDPOINT=<minio-endpoint>
+export OPENSQL_MINIO_ACCESS_KEY=<minio-access-key>
+read -r -s OPENSQL_MINIO_SECRET_KEY
+printf '\n'
+export OPENSQL_MINIO_SECRET_KEY
+export OPENSQL_EMBEDDING_SERVER_URL=<bge-m3-server-url>
 ```
 
 공식 환경이 TLS를 제공하지 않는 격리 Network라면 공급사 설정을 확인한 뒤 `OPENSQL_DB_SSLMODE`만
-조정한다. Password와 Host 값은 성공 출력에 포함되지 않는다.
+조정한다. 연결 Timeout은 1~30초 정수만 허용한다. Password와 Host 값은 성공 출력에 포함되지 않는다.
 
-## 4. Rocky Host Preflight
+## 4. Rocky Host 호환성 Preflight
 
-이 단계는 Application을 실행하는 macOS가 아니라 OpenSQL이 설치된 Rocky Host에서 수행한다.
+이 단계는 Application을 실행하는 macOS가 아니라 OpenSQL이 설치된 Rocky Host에서 수행한다. Script는
+OS·Architecture·실행자가 선언한 Mode·호환 Version만 확인한다. OpenSQL 제품 식별, License 적용과 실제
+Single Topology는 공급사 설치 기록으로 별도 확인해야 한다.
 
 ```bash
 scripts/opensql/verify-host.sh
@@ -77,8 +87,8 @@ scripts/opensql/verify-host.sh
 정상 출력 예시는 Version과 공개 가능한 환경 정보만 포함한다.
 
 ```text
-OpenSQL 공식 Host preflight 통과
-OS=Rocky Linux 9.7, architecture=x86_64, mode=single
+OpenSQL 지원 환경 호환성 preflight 통과
+OS=Rocky Linux 9.7, architecture=x86_64, declared_mode=single
 server_version=17.8..., pgvector=0.8.1
 ```
 
@@ -215,7 +225,7 @@ Benchmark는 장시간·대량 Data를 사용하므로 공식 측정 시간과 D
 ```sql
 SELECT nspname
 FROM pg_namespace
-WHERE nspname LIKE 'docgrid_opensql_%_test';
+WHERE nspname LIKE 'docgrid\_opensql\_%\_test%' ESCAPE E'\\';
 ```
 
 예상하지 않은 이름이 함께 조회되면 삭제하지 않는다. 공식 결과 보존을 위해 `KEEP_*_SCHEMA=true`를
@@ -227,11 +237,13 @@ WHERE nspname LIKE 'docgrid_opensql_%_test';
 검증할 수 있다. 이 결과는 반드시 `LOCAL BASELINE`으로 표시한다.
 
 ```bash
+read -r -s OPENSQL_DB_PASSWORD
+printf '\n'
+export OPENSQL_DB_PASSWORD
 OPENSQL_DB_HOST=<local-host> \
 OPENSQL_DB_PORT=<local-port> \
 OPENSQL_DB_NAME=<local-database> \
 OPENSQL_DB_USER=<local-user> \
-OPENSQL_DB_PASSWORD=<local-password> \
 OPENSQL_DB_SSLMODE=disable \
 ./gradlew openSqlCompatibilityTest
 ```

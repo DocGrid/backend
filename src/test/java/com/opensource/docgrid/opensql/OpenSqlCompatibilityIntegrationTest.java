@@ -13,6 +13,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import javax.sql.DataSource;
@@ -53,7 +54,9 @@ import lombok.extern.slf4j.Slf4j;
 @DisplayName("공식 OpenSQL 17.8 호환성·Vector 성능 통합 테스트")
 class OpenSqlCompatibilityIntegrationTest {
 
-    private static final String TEST_SCHEMA = "docgrid_opensql_compatibility_test";
+    // 별도 Gradle 실행이 겹쳐도 한 JVM의 Cleanup이 다른 실행의 Schema를 제거하지 않게 격리한다.
+    private static final String TEST_SCHEMA = "docgrid_opensql_compatibility_test_"
+        + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
     private static final String VECTOR_PROBE_TABLE = "opensql_vector_probe";
     private static final String QUEUE_PROBE_TABLE = "opensql_queue_probe";
     private static final String EXPECTED_SERVER_VERSION_PREFIX = "17.8";

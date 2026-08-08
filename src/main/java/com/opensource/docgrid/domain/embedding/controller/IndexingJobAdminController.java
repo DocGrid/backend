@@ -5,6 +5,7 @@ import java.util.Optional;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,6 +19,9 @@ import com.opensource.docgrid.domain.embedding.dto.request.CreateDocumentEmbeddi
 import com.opensource.docgrid.domain.embedding.dto.request.FailDocumentIndexingRequest;
 import com.opensource.docgrid.domain.embedding.dto.request.RenewEmbeddingJobLeaseRequest;
 import com.opensource.docgrid.domain.embedding.dto.request.StartEmbeddingJobAttemptRequest;
+import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingEventResponse;
+import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingJobAttemptResponse;
+import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingJobResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.ClaimedEmbeddingJobResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentChunksResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentEmbeddingsResponse;
@@ -37,8 +41,11 @@ import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobAttem
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobClaimService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobLeaseService;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobManualRetryService;
+import com.opensource.docgrid.domain.embedding.service.query.IndexingJobAdminQueryService;
+import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.global.common.response.ApiResponse;
 import com.opensource.docgrid.global.common.response.ErrorResponse;
+import com.opensource.docgrid.global.common.response.PageResponse;
 import com.opensource.docgrid.global.common.response.ResponseUtils;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -47,17 +54,19 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 관리자용 Embedding Job Claim·Lease 갱신, Attempt 시작과 문서 Chunk·Embedding·인덱싱 완료·실패
- * 실행 및 최종 실패 Job 수동 재처리를 HTTP API로 제공한다.
+ * 관리자용 Embedding Job 목록·상세·Attempt·Event 조회와 Claim·Lease 갱신, Attempt 시작 및 문서
+ * Chunk·Embedding·인덱싱 완료·실패 실행과 최종 실패 Job 수동 재처리를 HTTP API로 제공한다.
  *
  * <p>HTTP 입력 검증과 성공 상태 변환만 담당한다. Job Claim 및 현재 소유권 기반 파이프라인 단계와
  * 수동 재처리의 Transaction·외부 호출·동시성 규칙은 각 Service에 위임한다.
  */
-@Tag(name = "Admin - Indexing Job", description = "관리자 전용 인덱싱 Job 제어 API")
+@Tag(name = "Admin - Indexing Job", description = "관리자 전용 인덱싱 Job 조회·제어 API")
 @Validated
 @RestController
 @RequestMapping("/admin/indexing-jobs")
@@ -72,6 +81,148 @@ public class IndexingJobAdminController {
     private final DocumentIndexingCompletionService documentIndexingCompletionService;
     private final DocumentIndexingFailureService documentIndexingFailureService;
     private final EmbeddingJobManualRetryService embeddingJobManualRetryService;
+    private final IndexingJobAdminQueryService indexingJobAdminQueryService;
+
+    @Operation(
+        summary = "인덱싱 Job 목록 조회",
+        description = "상태, 문서, 현재 소유 Worker 조건으로 인덱싱 Job을 필터링하고 최신 생성 순으로 "
+            + "페이지 조회합니다. Claim Token과 내부 오류 메시지는 반환하지 않습니다."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "인덱싱 Job 목록 조회 성공"
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "필터 또는 페이지 입력 형식 오류",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "403",
+            description = "인증되지 않았거나 ADMIN 권한 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        )
+    })
+    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ApiResponse<PageResponse<AdminIndexingJobResponse>>> getJobs(
+        @RequestParam(required = false) EmbeddingJobStatus status,
+        @RequestParam(required = false) @Positive Long documentId,
+        @RequestParam(required = false) @Positive Long workerId,
+        @RequestParam(defaultValue = "0") @Min(0) int page,
+        @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
+    ) {
+        return ResponseUtils.ok(indexingJobAdminQueryService.getJobs(
+            status,
+            documentId,
+            workerId,
+            page,
+            size
+        ));
+    }
+
+    @Operation(
+        summary = "인덱싱 Job 상세 조회",
+        description = "지정한 Job의 문서·버전·모델·현재 Worker와 Retry·Lease·종결 상태를 조회합니다. "
+            + "Claim Token과 내부 오류 메시지는 반환하지 않습니다."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "인덱싱 Job 상세 조회 성공"
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "Job ID 형식 오류",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "403",
+            description = "인증되지 않았거나 ADMIN 권한 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "Embedding Job 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        )
+    })
+    @GetMapping(value = "/{jobId}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ApiResponse<AdminIndexingJobResponse>> getJob(
+        @PathVariable @Positive Long jobId
+    ) {
+        return ResponseUtils.ok(indexingJobAdminQueryService.getJob(jobId));
+    }
+
+    @Operation(
+        summary = "인덱싱 Job Attempt 이력 조회",
+        description = "지정한 Job의 실행 Attempt를 최근 시도 순으로 페이지 조회합니다. 과거 Claim Token과 "
+            + "내부 오류 메시지는 반환하지 않습니다."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "Attempt 이력 조회 성공"
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "Job ID 또는 페이지 입력 형식 오류",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "403",
+            description = "인증되지 않았거나 ADMIN 권한 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "Embedding Job 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        )
+    })
+    @GetMapping(value = "/{jobId}/attempts", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ApiResponse<PageResponse<AdminIndexingJobAttemptResponse>>> getAttempts(
+        @PathVariable @Positive Long jobId,
+        @RequestParam(defaultValue = "0") @Min(0) int page,
+        @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
+    ) {
+        return ResponseUtils.ok(indexingJobAdminQueryService.getAttempts(jobId, page, size));
+    }
+
+    @Operation(
+        summary = "인덱싱 Job Event 타임라인 조회",
+        description = "지정한 Job의 상태 전이 Event를 최근 발생 순으로 페이지 조회합니다. 내부 Metadata "
+            + "JSON은 반환하지 않습니다."
+    )
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "Event 타임라인 조회 성공"
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "Job ID 또는 페이지 입력 형식 오류",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "403",
+            description = "인증되지 않았거나 ADMIN 권한 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "Embedding Job 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+        )
+    })
+    @GetMapping(value = "/{jobId}/events", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ApiResponse<PageResponse<AdminIndexingEventResponse>>> getEvents(
+        @PathVariable @Positive Long jobId,
+        @RequestParam(defaultValue = "0") @Min(0) int page,
+        @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
+    ) {
+        return ResponseUtils.ok(indexingJobAdminQueryService.getEvents(jobId, page, size));
+    }
 
     @Operation(
         summary = "PENDING Job Claim",

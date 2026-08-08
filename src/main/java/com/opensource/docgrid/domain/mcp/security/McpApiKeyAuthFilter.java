@@ -5,7 +5,10 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -47,6 +50,12 @@ public class McpApiKeyAuthFilter extends OncePerRequestFilter {
     // 실제 토큰 검증 로직(해시 대조, DB 조회)은 여기에 위임한다 — 필터는 인증 "흐름"만 담당.
     private final McpAccessTokenCommandService mcpAccessTokenCommandService;
 
+    // MCP Streamable HTTP는 응답을 비동기 재디스패치로 처리한다. SecurityContextHolder에만
+    // 세팅하면 그 스레드가 끝나는 순간 사라져서, 재디스패치 시점에 SecurityContextHolderFilter가
+    // 빈 컨텍스트를 다시 로드해 AuthorizationDeniedException이 발생한다. 요청 attribute에
+    // 명시적으로 저장해 재디스패치에서도 같은 인증 정보를 복원할 수 있게 한다.
+    private final SecurityContextRepository securityContextRepository = new RequestAttributeSecurityContextRepository();
+
     // true를 반환하면 이 필터를 건너뛴다. 즉 "/mcp가 아닌 요청은 이 필터를 타지 마라"는 뜻.
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -82,7 +91,10 @@ public class McpApiKeyAuthFilter extends OncePerRequestFilter {
                 authentication.setDetails(id);
 
                 // 이 요청이 처리되는 동안 전역적으로 접근 가능한 컨텍스트에 인증 정보를 저장
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                SecurityContext context = SecurityContextHolder.getContext();
+                context.setAuthentication(authentication);
+                // 비동기 재디스패치에서도 복원되도록 요청 attribute에 명시적으로 저장
+                securityContextRepository.saveContext(context, request, response);
             });
         }
 

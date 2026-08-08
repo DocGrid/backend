@@ -62,7 +62,8 @@ embedding:
   server:
     base-url: ${EMBEDDING_SERVER_URL:http://localhost:8000}
   document:
-    batch-size: ${EMBEDDING_DOCUMENT_BATCH_SIZE:16}
+    # 실제 BGE-M3 CPU Benchmark에서 최고 처리량의 98.3%를 유지하면서 Batch 64보다 p95가 47% 낮은 균형점이다.
+    batch-size: ${EMBEDDING_DOCUMENT_BATCH_SIZE:32}
 
 ollama:
   server:

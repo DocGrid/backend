@@ -2,7 +2,11 @@ package com.opensource.docgrid.domain.worker.repository;
 
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import com.opensource.docgrid.domain.worker.entity.EmbeddingJobAttempt;
 
@@ -13,6 +17,27 @@ import com.opensource.docgrid.domain.worker.entity.EmbeddingJobAttempt;
  * 별도의 전역 잠금을 만들지 않는다.
  */
 public interface EmbeddingJobAttemptRepository extends JpaRepository<EmbeddingJobAttempt, Long> {
+
+    /**
+     * 지정 Job의 Attempt를 Worker와 함께 조회하고 호출자가 지정한 고정 정렬·Pagination을 적용한다.
+     */
+    @Query(
+        value = """
+            SELECT attempt
+            FROM EmbeddingJobAttempt attempt
+            LEFT JOIN FETCH attempt.workerNode worker
+            WHERE attempt.embeddingJob.id = :jobId
+            """,
+        countQuery = """
+            SELECT COUNT(attempt)
+            FROM EmbeddingJobAttempt attempt
+            WHERE attempt.embeddingJob.id = :jobId
+            """
+    )
+    Page<EmbeddingJobAttempt> findAdminAttemptsByJobId(
+        @Param("jobId") Long jobId,
+        Pageable pageable
+    );
 
     Optional<EmbeddingJobAttempt> findByEmbeddingJobIdAndClaimToken(Long embeddingJobId, String claimToken);
 

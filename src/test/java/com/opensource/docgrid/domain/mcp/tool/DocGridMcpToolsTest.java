@@ -196,6 +196,7 @@ class DocGridMcpToolsTest {
         String result = docGridMcpTools.searchDocuments("query", 5);
 
         assertThat(result).contains("\"chunkText\":\"" + "가".repeat(1000) + "\"")
+                .contains("\"documentId\":10")
                 .doesNotContain("가".repeat(1001));
     }
 

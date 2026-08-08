@@ -7,6 +7,8 @@ import java.util.Optional;
 
 import jakarta.persistence.LockModeType;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -22,6 +24,56 @@ import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
  * 제어하고, 단일 Job의 후속 상태·Attempt 변경에는 표준 JPA 쓰기 행 잠금을 제공한다.
  */
 public interface EmbeddingJobRepository extends JpaRepository<EmbeddingJob, Long> {
+
+    /**
+     * 관리자 목록 화면에 필요한 연관관계를 함께 조회하면서 선택 필터와 Pagination을 적용한다.
+     *
+     * <p>정렬은 호출자가 createdAt, id 역순으로 고정한다. 모든 Join은 To-One 관계이므로 Page Content의
+     * 행 수를 늘리지 않고 Converter의 Lazy 추가 조회를 방지한다.
+     */
+    @Query(
+        value = """
+            SELECT job
+            FROM EmbeddingJob job
+            JOIN FETCH job.documentVersion version
+            JOIN FETCH version.document document
+            JOIN FETCH job.embeddingModel model
+            LEFT JOIN FETCH job.lockedByWorker worker
+            WHERE (:status IS NULL OR job.status = :status)
+              AND (:documentId IS NULL OR document.id = :documentId)
+              AND (:workerId IS NULL OR worker.id = :workerId)
+            """,
+        countQuery = """
+            SELECT COUNT(job)
+            FROM EmbeddingJob job
+            JOIN job.documentVersion version
+            JOIN version.document document
+            LEFT JOIN job.lockedByWorker worker
+            WHERE (:status IS NULL OR job.status = :status)
+              AND (:documentId IS NULL OR document.id = :documentId)
+              AND (:workerId IS NULL OR worker.id = :workerId)
+            """
+    )
+    Page<EmbeddingJob> findAdminJobs(
+        @Param("status") EmbeddingJobStatus status,
+        @Param("documentId") Long documentId,
+        @Param("workerId") Long workerId,
+        Pageable pageable
+    );
+
+    /**
+     * 관리자 상세 응답에 필요한 Job과 To-One 연관관계를 한 Query로 조회한다.
+     */
+    @Query("""
+        SELECT job
+        FROM EmbeddingJob job
+        JOIN FETCH job.documentVersion version
+        JOIN FETCH version.document document
+        JOIN FETCH job.embeddingModel model
+        LEFT JOIN FETCH job.lockedByWorker worker
+        WHERE job.id = :jobId
+        """)
+    Optional<EmbeddingJob> findAdminDetailById(@Param("jobId") Long jobId);
 
     /**
      * 같은 Version에 동시에 살아 있는 Job이 하나뿐인지 완료 직전에 확인한다.

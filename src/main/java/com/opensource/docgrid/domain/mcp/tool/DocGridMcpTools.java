@@ -99,8 +99,10 @@ public class DocGridMcpTools {
                 throw new DocGridException(ErrorCode.PERMISSION_DENIED);
             }
 
-            // title/status/currentVersion/updatedAt은 Document 엔티티에 이미 있어 직접 사용
-            Document document = documentRepository.findById(documentId)
+            // title/status/currentVersion/updatedAt은 Document 엔티티에 이미 있어 직접 사용.
+            // currentVersion은 LAZY라 OSIV가 꺼진 /mcp 경로에서는 findById만 쓰면 트랜잭션
+            // 종료 후 LazyInitializationException이 나므로 JOIN FETCH 쿼리를 사용한다.
+            Document document = documentRepository.findByIdWithCurrentVersion(documentId)
                     .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
 
             Integer currentVersionNo = document.getCurrentVersion() != null

@@ -174,7 +174,7 @@ Query별 Recall을 계산하고 Profile에는 최소·평균 Recall을 기록한
 
 ### 6.4 저장 공간
 
-- `pg_relation_size(table)`로 Heap 크기를 기록한다.
+- `pg_table_size(table)`로 Heap·TOAST·FSM·Visibility Map을 포함한 Table 저장 공간을 기록한다.
 - `pg_relation_size(hnsw_index)`로 HNSW Index 크기를 기록한다.
 - `pg_total_relation_size(table)`로 전체 Relation 크기를 기록한다.
 - 값은 Byte 원본을 JSON에 저장하고 문서에는 MiB로 변환한다.

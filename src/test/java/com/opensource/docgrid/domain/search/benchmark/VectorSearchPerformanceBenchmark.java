@@ -194,7 +194,7 @@ class VectorSearchPerformanceBenchmark {
                 recall.average(),
                 recall.minimum(),
                 indexBuildMillis,
-                relationSize(PROBE_TABLE),
+                tableSize(PROBE_TABLE),
                 relationSize(HNSW_INDEX),
                 totalRelationSize(PROBE_TABLE)
             );
@@ -423,6 +423,11 @@ class VectorSearchPerformanceBenchmark {
 
     private long relationSize(String relationName) {
         return jdbcTemplate.queryForObject("SELECT pg_relation_size(?::regclass)", Long.class, relationName);
+    }
+
+    private long tableSize(String relationName) {
+        // 1024차원 Vector는 TOAST에 저장될 수 있으므로 Main Fork만이 아닌 전체 Table 저장 공간을 센다.
+        return jdbcTemplate.queryForObject("SELECT pg_table_size(?::regclass)", Long.class, relationName);
     }
 
     private long totalRelationSize(String relationName) {

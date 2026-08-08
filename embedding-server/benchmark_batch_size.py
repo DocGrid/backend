@@ -21,7 +21,7 @@ from urllib import error, request
 MODEL_NAME = "BAAI/bge-m3"
 VECTOR_DIMENSION = 1024
 MAX_BATCH_SIZE = 64
-CURRENT_DEFAULT_BATCH_SIZE = 16
+CURRENT_DEFAULT_BATCH_SIZE = 32
 DEFAULT_BATCH_SIZES = (1, 4, 8, 16, 32, 64)
 
 BASE_TEXTS = (
@@ -260,7 +260,13 @@ def execute_batch_request(
             success=True,
             error_type=None,
         )
-    except (BenchmarkError, error.URLError, TimeoutError, json.JSONDecodeError) as exception:
+    except (
+        BenchmarkError,
+        error.URLError,
+        TimeoutError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as exception:
         return RequestSample(
             batch_size=batch_size,
             round_index=round_index,

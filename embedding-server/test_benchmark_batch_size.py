@@ -1,4 +1,5 @@
 import math
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -83,6 +84,34 @@ def test_validate_batch_response_rejects_contract_violation(payload):
         benchmark.validate_batch_response(payload, expected_count=1)
 
 
+def test_execute_batch_request_records_invalid_utf8_as_failure(tmp_path):
+    config = benchmark.BenchmarkConfig(
+        base_url="http://localhost:8000",
+        batch_sizes=(1,),
+        total_texts=1,
+        warmup_rounds=1,
+        measurement_rounds=1,
+        timeout_seconds=10.0,
+        container_name=None,
+        memory_sample_interval_seconds=1.0,
+        output_path=tmp_path / "result.json",
+    )
+    response = MagicMock()
+    response.__enter__.return_value.read.return_value = b"\xff"
+
+    result = benchmark.execute_batch_request(
+        config=config,
+        texts=("문서",),
+        batch_size=1,
+        round_index=0,
+        request_index=0,
+        urlopen=MagicMock(return_value=response),
+    )
+
+    assert result.success is False
+    assert result.error_type == "UnicodeDecodeError"
+
+
 def test_summarize_profile_calculates_latency_throughput_and_rss():
     samples = [
         benchmark.RequestSample(4, 0, 0, 4, 1.0, True, None),
@@ -114,14 +143,14 @@ def test_summarize_profile_calculates_latency_throughput_and_rss():
 
 def test_recommendation_keeps_current_default_within_five_percent():
     results = [
-        {"batch_size": 16, "failure_count": 0, "throughput_texts_per_second": 96.0},
-        {"batch_size": 32, "failure_count": 0, "throughput_texts_per_second": 100.0},
+        {"batch_size": 32, "failure_count": 0, "throughput_texts_per_second": 96.0},
+        {"batch_size": 64, "failure_count": 0, "throughput_texts_per_second": 100.0},
     ]
 
     result = benchmark.recommendation(results)
 
     assert result["decision"] == "KEEP_DEFAULT"
-    assert result["fastest_batch_size"] == 32
+    assert result["fastest_batch_size"] == 64
     assert result["current_to_fastest_throughput_ratio"] == 0.96
 
 

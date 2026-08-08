@@ -118,10 +118,11 @@ Query Embedding 단건 API: 변경 없음
 
 ```bash
 python3 -m pytest -p no:cacheprovider \
-  test_benchmark_batch_size.py test_main.py
+  embedding-server/test_benchmark_batch_size.py \
+  embedding-server/test_main.py
 ```
 
-일회성 Embedding Container에서 `27 passed`를 확인했다.
+일회성 Embedding Container에서 `28 passed`를 확인했다.
 
 검증 범위:
 

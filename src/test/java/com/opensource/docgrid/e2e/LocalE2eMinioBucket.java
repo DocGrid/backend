@@ -56,6 +56,17 @@ final class LocalE2eMinioBucket implements AutoCloseable {
         return List.copyOf(keys);
     }
 
+    /**
+     * Bucket은 유지하고 현재 Test가 저장한 Object만 제거해 반복 Profile의 입력 상태를 초기화한다.
+     */
+    void clear() throws Exception {
+        for (String objectKey : objectKeys()) {
+            minioClient.removeObject(
+                RemoveObjectArgs.builder().bucket(bucket).object(objectKey).build()
+            );
+        }
+    }
+
     @Override
     public void close() throws Exception {
         boolean exists = minioClient.bucketExists(
@@ -66,11 +77,7 @@ final class LocalE2eMinioBucket implements AutoCloseable {
         }
 
         // 1. MinIO는 비어 있지 않은 Bucket 삭제를 거부하므로 실제 Object를 모두 먼저 제거한다.
-        for (String objectKey : objectKeys()) {
-            minioClient.removeObject(
-                RemoveObjectArgs.builder().bucket(bucket).object(objectKey).build()
-            );
-        }
+        clear();
 
         // 2. Test가 생성한 격리 Bucket만 삭제하고 다른 개발 Bucket은 조회하거나 변경하지 않는다.
         minioClient.removeBucket(RemoveBucketArgs.builder().bucket(bucket).build());

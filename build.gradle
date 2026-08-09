@@ -52,7 +52,7 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform {
-		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency', 'local-e2e', 'vector-search-performance'
+		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency', 'local-e2e', 'vector-search-performance', 'worker-indexing-throughput'
 	}
 }
 
@@ -149,6 +149,28 @@ tasks.register('vectorSearchPerformanceTest', Test) {
 		)
 	}
 	// 실제 PostgreSQL에 대량 Vector를 적재하는 Benchmark이므로 일반 Test와 Build Cache에서 분리한다.
+	outputs.upToDateWhen { false }
+}
+
+tasks.register('workerIndexingThroughputTest', Test) {
+	group = 'verification'
+	description = '실제 PostgreSQL, MinIO와 BGE-M3에서 자동 Worker 전체 문서 인덱싱 처리량을 측정합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'worker-indexing-throughput'
+	}
+	maxParallelForks = 1
+	systemProperties System.properties.findAll { key, value ->
+		key.toString().startsWith('worker.indexing.throughput.')
+	}
+	if (System.getProperty('worker.indexing.throughput.output') == null) {
+		systemProperty(
+			'worker.indexing.throughput.output',
+			layout.buildDirectory.file('reports/worker-indexing-throughput/worker-indexing-throughput.json').get().asFile.absolutePath
+		)
+	}
+	// 실제 외부 Service를 점유하고 테스트 데이터를 초기화하는 Benchmark이므로 일반 Test와 Build Cache에서 분리한다.
 	outputs.upToDateWhen { false }
 }
 

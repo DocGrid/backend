@@ -68,9 +68,11 @@ import lombok.extern.slf4j.Slf4j;
 @DisplayName("자동 Worker 전체 문서 인덱싱 처리량 Benchmark")
 class WorkerIndexingThroughputBenchmark {
 
-    private static final String TEST_SCHEMA = "docgrid_worker_indexing_throughput";
-    private static final String TEST_BUCKET = "docgrid-worker-throughput-"
-        + UUID.randomUUID().toString().replace("-", "");
+    private static final String EXECUTION_ID = UUID.randomUUID().toString().replace("-", "");
+    // PostgreSQL 식별자 63자 제한 안에서 별도 Gradle 실행이 Schema를 공유하지 않도록 격리한다.
+    private static final String TEST_SCHEMA = "docgrid_worker_indexing_throughput_"
+        + EXECUTION_ID.substring(0, 24);
+    private static final String TEST_BUCKET = "docgrid-worker-throughput-" + EXECUTION_ID;
     private static final String EXPECTED_POSTGRES_VERSION_PREFIX = "17.";
     private static final String EXPECTED_PGVECTOR_VERSION = "0.8.1";
     private static final String EXPECTED_MODEL = "BAAI/bge-m3";
@@ -427,6 +429,7 @@ class WorkerIndexingThroughputBenchmark {
         assertThat(count(
             "SELECT COUNT(*) FROM embedding_jobs WHERE status IN ('PENDING', 'PROCESSING')"
         )).isZero();
+        assertThat(workerLifecycleManager.getWorkerId()).isPresent();
         return new ProfileData(
             chunkCounts.stream().mapToInt(Integer::intValue).sum(),
             totalEmbeddings,

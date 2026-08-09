@@ -61,6 +61,8 @@ jwt:
 embedding:
   server:
     base-url: ${EMBEDDING_SERVER_URL:http://localhost:8000}
+    connect-timeout: ${EMBEDDING_SERVER_CONNECT_TIMEOUT:5s}
+    read-timeout: ${EMBEDDING_SERVER_READ_TIMEOUT:5s}
   document:
     # 실제 BGE-M3 CPU Benchmark에서 최고 처리량의 98.3%를 유지하면서 Batch 64보다 p95가 47% 낮은 균형점이다.
     batch-size: ${EMBEDDING_DOCUMENT_BATCH_SIZE:32}

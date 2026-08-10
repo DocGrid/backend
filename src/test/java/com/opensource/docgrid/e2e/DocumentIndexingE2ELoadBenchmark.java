@@ -17,6 +17,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -82,6 +83,8 @@ class DocumentIndexingE2ELoadBenchmark {
     private static final String EXPECTED_PGVECTOR_VERSION = "0.8.1";
     private static final String EXPECTED_MODEL = "BAAI/bge-m3";
     private static final int EXPECTED_VECTOR_DIMENSION = 1024;
+    // 같은 장비에서 문서 수 변화만 비교하도록 Worker 실행 슬롯을 고정한다.
+    private static final int WORKER_MAX_CONCURRENCY = 2;
     private static final int SECTION_CHARACTER_COUNT = positiveIntegerProperty(
         "document.indexing.e2e.load.section-characters",
         1_600
@@ -141,7 +144,7 @@ class DocumentIndexingE2ELoadBenchmark {
         registry.add("indexing.worker.polling-interval", () -> "50ms");
         registry.add("indexing.worker.heartbeat-interval", () -> "1s");
         registry.add("indexing.worker.dead-threshold", () -> "2m");
-        registry.add("indexing.worker.max-concurrency", () -> "2");
+        registry.add("indexing.worker.max-concurrency", () -> Integer.toString(WORKER_MAX_CONCURRENCY));
         registry.add("indexing.worker.lease-duration", () -> "2m");
         registry.add("indexing.worker.lease-renewal-interval", () -> "10s");
         registry.add("indexing.worker.lease-recovery-interval", () -> "10m");
@@ -229,7 +232,7 @@ class DocumentIndexingE2ELoadBenchmark {
         assertThat(((Number) model.get("dimension")).intValue()).isEqualTo(EXPECTED_VECTOR_DIMENSION);
         assertThat(health).isNotNull();
         assertThat(health.path("status").asText()).isEqualTo("ok");
-        assertThat(workerProperties.getMaxConcurrency()).isEqualTo(2);
+        assertThat(workerProperties.getMaxConcurrency()).isEqualTo(WORKER_MAX_CONCURRENCY);
 
         return new EnvironmentFingerprint(
             postgresVersion,
@@ -396,7 +399,7 @@ class DocumentIndexingE2ELoadBenchmark {
     private void awaitIndexedAndIdle(List<UploadMeasurement> uploads, String profileName)
         throws InterruptedException {
         awaitCondition(
-            profileName + " Profile이 완료되지 않았습니다. " + jobSnapshot(uploads),
+            () -> profileName + " Profile이 완료되지 않았습니다. " + jobSnapshot(uploads),
             () -> indexedJobCount(uploads) == uploads.size() && executionSlotPool.getActiveSlots() == 0
         );
     }
@@ -693,6 +696,11 @@ class DocumentIndexingE2ELoadBenchmark {
     }
 
     private void awaitCondition(String failureMessage, CheckedCondition condition) throws InterruptedException {
+        awaitCondition(() -> failureMessage, condition);
+    }
+
+    private void awaitCondition(Supplier<String> failureMessage, CheckedCondition condition)
+        throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(PROFILE_TIMEOUT_SECONDS);
         while (System.nanoTime() < deadline) {
             if (condition.evaluate()) {
@@ -700,7 +708,8 @@ class DocumentIndexingE2ELoadBenchmark {
             }
             Thread.sleep(POLLING_SLEEP_MILLIS);
         }
-        throw new AssertionError(failureMessage);
+        // 상태 Snapshot처럼 비용이 있는 메시지는 실제 Timeout이 발생했을 때만 계산한다.
+        throw new AssertionError(failureMessage.get());
     }
 
     private int count(String sql, Object... arguments) {

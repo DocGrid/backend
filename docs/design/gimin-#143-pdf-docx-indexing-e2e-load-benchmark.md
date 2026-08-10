@@ -57,8 +57,9 @@ PDF는 PDFBox, DOCX는 Apache POI로 생성한다. 저장소 Fixture Binary를 �
 | 큰 부하 | 100 | 50 | 50 | 2 | 포함 |
 
 본 측정 대상은 총 300문서다. 문서 수와 반복은 `document.indexing.e2e.load.*` System Property로
-줄여 Smoke Test를 실행할 수 있다. Worker 최대 동시성과 Embedding Batch Size는 제품 설정을 사용하고
-결과 환경 지문에 기록한다.
+줄여 Smoke Test를 실행할 수 있다. Worker 최대 동시성은 같은 장비에서 문서 수 변화만 비교하도록
+의도적으로 `2`에 고정한다. Embedding Batch Size는 제품 설정을 사용하며 두 값 모두 결과 환경 지문에
+기록한다.
 
 ### 3.3 측정 순서
 

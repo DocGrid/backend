@@ -2,7 +2,7 @@
 
 - 관련 이슈: [#141](https://github.com/DocGrid/backend/issues/141)
 - 작성일: 2026-08-11
-- 상태: 구현 중
+- 상태: 구현 및 실측 완료
 
 ## 1. 배경
 
@@ -156,4 +156,3 @@ Queue depth는 `PENDING + PROCESSING`으로 정의한다. 다음 요약값을 �
 3. `perf: #141 전체 인덱싱 Queue 및 DB Pool Benchmark 추가`
 4. `build: #141 Queue Backpressure 전용 테스트 작업 추가`
 5. `perf: #141 Queue 및 DB Pool 포화 실측 결과 기록`
-

@@ -52,7 +52,7 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform {
-		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency', 'local-e2e', 'vector-search-performance', 'worker-indexing-throughput'
+		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency', 'local-e2e', 'vector-search-performance', 'worker-indexing-throughput', 'worker-horizontal-scaling'
 	}
 }
 
@@ -171,6 +171,28 @@ tasks.register('workerIndexingThroughputTest', Test) {
 		)
 	}
 	// 실제 외부 Service를 점유하고 테스트 데이터를 초기화하는 Benchmark이므로 일반 Test와 Build Cache에서 분리한다.
+	outputs.upToDateWhen { false }
+}
+
+tasks.register('workerHorizontalScalingTest', Test) {
+	group = 'verification'
+	description = '실제 PostgreSQL, MinIO와 BGE-M3에서 Worker 수·실행 Slot별 전체 인덱싱 확장성을 측정합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'worker-horizontal-scaling'
+	}
+	maxParallelForks = 1
+	systemProperties System.properties.findAll { key, value ->
+		key.toString().startsWith('worker.horizontal.scaling.')
+	}
+	if (System.getProperty('worker.horizontal.scaling.output') == null) {
+		systemProperty(
+			'worker.horizontal.scaling.output',
+			layout.buildDirectory.file('reports/worker-horizontal-scaling/worker-horizontal-scaling.json').get().asFile.absolutePath
+		)
+	}
+	// 여러 Spring Context가 같은 외부 Service와 Test Schema를 공유하므로 병렬 Fork와 Build Cache를 금지한다.
 	outputs.upToDateWhen { false }
 }
 

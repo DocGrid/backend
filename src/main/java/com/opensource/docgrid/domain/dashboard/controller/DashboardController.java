@@ -19,6 +19,11 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * 관리자 RAGOps Dashboard 집계 지표 조회의 HTTP 경계.
+ *
+ * <p>요청 검증과 응답 변환만 담당하며, 실제 집계는 {@link DashboardQueryService}에 위임한다.
+ */
 @Tag(name = "Admin - Dashboard", description = "관리자 전용 RAGOps Dashboard 집계 지표 API")
 @RestController
 @RequestMapping("/admin/dashboard")
@@ -30,7 +35,7 @@ public class DashboardController {
     @Operation(
         summary = "대시보드 집계 지표 조회",
         description = "문서·인덱싱 작업·Worker·검색 현황을 하나의 응답으로 집계해서 반환합니다. "
-            + "모든 지표는 조회 시점 기준 Snapshot이며, 상태 변경 시 실시간 반영은 WebSocket push로 제공됩니다."
+            + "모든 지표는 조회 시점 기준 Snapshot이며, 실시간 WebSocket push는 이 API의 범위가 아닙니다."
     )
     @ApiResponses({
         @io.swagger.v3.oas.annotations.responses.ApiResponse(

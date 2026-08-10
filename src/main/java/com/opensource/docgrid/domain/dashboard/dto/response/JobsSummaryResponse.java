@@ -2,6 +2,12 @@ package com.opensource.docgrid.domain.dashboard.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+/**
+ * 대시보드 응답 중 인덱싱 작업 현황 집계 결과.
+ *
+ * <p>{@code embedding_jobs}의 상태별 개수와 평균 처리 시간을 담으며, 실제 집계는
+ * {@code DashboardQueryService}가 수행한다.
+ */
 public record JobsSummaryResponse(
     @Schema(description = "인덱싱 대기 작업 수 (PENDING)", example = "132")
     long pending,

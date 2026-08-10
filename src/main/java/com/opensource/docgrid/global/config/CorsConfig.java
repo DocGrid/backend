@@ -13,7 +13,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {
 
-    private static final List<String> ALLOWED_ORIGINS = List.of(
+    // WebSocketConfig가 STOMP endpoint 허용 origin으로 재사용하므로 package-private으로 둔다.
+    static final List<String> ALLOWED_ORIGINS = List.of(
         "http://localhost:3000",
         "http://localhost:8080"
     );

@@ -41,7 +41,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        // CONNECT 인증이 SUBSCRIBE 인가보다 먼저 Principal을 세션에 부착해야 하므로 순서를 고정한다.
+        // 1. StompAuthChannelInterceptor가 CONNECT 프레임의 JWT를 검증하고 세션에 Principal을 부착한다.
+        // 2. DashboardSubscriptionAuthorizationInterceptor가 그 Principal로 SUBSCRIBE·SEND 권한을 검증한다.
+        //    순서가 바뀌면 2번 시점에 Principal이 아직 없어 항상 거부된다.
         registration.interceptors(stompAuthChannelInterceptor, dashboardSubscriptionAuthorizationInterceptor);
     }
 }

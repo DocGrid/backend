@@ -14,10 +14,17 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Component;
 
 /**
- * {@code /topic/dashboard} SUBSCRIBE 요청에 ROLE_ADMIN 권한을 요구한다.
+ * {@code /topic/dashboard} 목적지를 ADMIN 전용으로 보호한다.
  *
  * <p>{@code StompAuthChannelInterceptor}가 CONNECT 시점에 세션에 부착한 Principal을 재사용해
  * 목적지 접근 시점에 다시 한 번 검증한다. CONNECT 검증 하나에만 의존하지 않는 이중 방어다.
+ *
+ * <p>SUBSCRIBE뿐 아니라 SEND도 차단한다. {@code enableSimpleBroker("/topic")} 구성에서는
+ * 클라이언트가 {@code /topic/dashboard}로 STOMP SEND 프레임을 보내면 SimpleBroker가 이를 그대로
+ * 구독자 전원에게 브로드캐스트한다 — 인증만 된 일반 사용자도 위조된 지표를 ADMIN 구독자에게 보낼
+ * 수 있다는 뜻이다. 실제 push는 {@code DashboardWebSocketController}가 {@code clientInboundChannel}을
+ * 거치지 않는 {@code SimpMessagingTemplate}으로만 하므로, 이 목적지로의 클라이언트발 SEND는
+ * ADMIN 여부와 무관하게 전부 차단해도 정상 기능에 영향이 없다.
  *
  * <p>{@code @EnableWebSocketSecurity}(Spring Security 메시지 인가 DSL)는 STOMP endpoint가
  * 등록된 것을 감지하면 세션 기반 CSRF 토큰을 무조건 요구하는 {@code CsrfChannelInterceptor}를
@@ -34,10 +41,15 @@ public class DashboardSubscriptionAuthorizationInterceptor implements ChannelInt
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
-        if (accessor != null
-            && StompCommand.SUBSCRIBE.equals(accessor.getCommand())
-            && DASHBOARD_TOPIC.equals(accessor.getDestination())
-            && !isAdmin(accessor.getUser())) {
+        if (accessor == null || !DASHBOARD_TOPIC.equals(accessor.getDestination())) {
+            return message;
+        }
+
+        if (StompCommand.SEND.equals(accessor.getCommand())) {
+            throw new AccessDeniedException("이 목적지로는 메시지를 보낼 수 없습니다.");
+        }
+
+        if (StompCommand.SUBSCRIBE.equals(accessor.getCommand()) && !isAdmin(accessor.getUser())) {
             throw new AccessDeniedException("대시보드 구독 권한이 없습니다.");
         }
 

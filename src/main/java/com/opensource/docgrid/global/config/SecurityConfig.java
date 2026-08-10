@@ -39,9 +39,11 @@ public class SecurityConfig {
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 .requestMatchers("/departments").permitAll()
                 .requestMatchers("/auth/signup", "/auth/login").permitAll()
-                // WebSocket 핸드셰이크는 여기서 인증하지 않는다. 네이티브 websocket Transport는
-                // Upgrade 요청에 커스텀 헤더를 실을 수 없어, 인증은 StompAuthChannelInterceptor가
-                // STOMP CONNECT 프레임에서 담당하고 목적지별 인가는 DashboardSubscriptionAuthorizationInterceptor가 담당한다.
+                // WebSocket 인증·인가는 3단계로 나뉜다. 네이티브 websocket Transport가 Upgrade
+                // 요청에 커스텀 헤더를 못 실어서, 여기(HTTP)에서는 검증하지 않는다:
+                // 1. HTTP 핸드셰이크(여기) — permitAll
+                // 2. STOMP CONNECT — StompAuthChannelInterceptor가 JWT 검증
+                // 3. STOMP SUBSCRIBE·SEND — DashboardSubscriptionAuthorizationInterceptor가 목적지별 권한 검증
                 .requestMatchers("/ws/**").permitAll()
                 .requestMatchers("/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()

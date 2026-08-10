@@ -16,7 +16,7 @@ push를 트리거할지(재처리 클릭, Worker 상태 전이)는 후속 이슈
 
 - `/ws`(SockJS) 연결과 `/topic/dashboard` 구독이 정상 동작한다.
 - 상태 변경 시점에만 push하며, 고정 주기 폴링을 쓰지 않는다.
-- ADMIN이 아닌 사용자는 연결 또는 구독 시점에 거부된다.
+- ADMIN이 아닌 사용자는 `/topic/dashboard` 구독(SUBSCRIBE) 시 거부된다 (CONNECT는 유효한 JWT만 있으면 통과한다).
 - 이 앱의 JWT 인증(stateless, 세션 없음) 모델과 충돌 없이 동작한다.
 
 ## 2. 범위
@@ -156,6 +156,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
+        // 1. StompAuthChannelInterceptor가 CONNECT 프레임의 JWT를 검증하고 세션에 Principal을 부착한다.
+        // 2. DashboardSubscriptionAuthorizationInterceptor가 그 Principal로 SUBSCRIBE·SEND 권한을 검증한다.
+        //    순서가 바뀌면 2번 시점에 Principal이 아직 없어 항상 거부된다.
         registration.interceptors(stompAuthChannelInterceptor, dashboardSubscriptionAuthorizationInterceptor);
     }
 }
@@ -245,7 +248,7 @@ WebSocket 자체는 그냥 양방향 파이프고 "이게 연결 요청인지 �
   `SecurityContextHolder`를 새로 채우지만, WebSocket은 연결이 오래 유지되는 세션이라 이렇게
   세션 레벨에 신원을 붙여두고 이후 모든 프레임에서 재사용한다.
 
-### 5.5 `DashboardSubscriptionAuthorizationInterceptor.java` — SUBSCRIBE 시점 ROLE_ADMIN 인가
+### 5.5 `DashboardSubscriptionAuthorizationInterceptor.java` — `/topic/dashboard` SUBSCRIBE·SEND 인가
 
 ```java
 @Component
@@ -258,10 +261,15 @@ public class DashboardSubscriptionAuthorizationInterceptor implements ChannelInt
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
-        if (accessor != null
-            && StompCommand.SUBSCRIBE.equals(accessor.getCommand())
-            && DASHBOARD_TOPIC.equals(accessor.getDestination())
-            && !isAdmin(accessor.getUser())) {
+        if (accessor == null || !DASHBOARD_TOPIC.equals(accessor.getDestination())) {
+            return message;
+        }
+
+        if (StompCommand.SEND.equals(accessor.getCommand())) {
+            throw new AccessDeniedException("이 목적지로는 메시지를 보낼 수 없습니다.");
+        }
+
+        if (StompCommand.SUBSCRIBE.equals(accessor.getCommand()) && !isAdmin(accessor.getUser())) {
             throw new AccessDeniedException("대시보드 구독 권한이 없습니다.");
         }
 
@@ -279,13 +287,19 @@ public class DashboardSubscriptionAuthorizationInterceptor implements ChannelInt
 }
 ```
 
-5.4가 "누구냐"를 확인했다면, 이 클래스는 "이 사람이 대시보드를 볼 자격이 있냐"만 본다. 5.4를
-통과해서 이미 세션이 열려있는(=로그인 확인된) 사람 중에서, `/topic/dashboard`를 구독하려 할
-때 ADMIN인지만 한 번 더 확인한다 — CONNECT 검증 하나에만 의존하지 않는 이중 방어다.
+5.4가 "누구냐"를 확인했다면, 이 클래스는 "이 사람이 `/topic/dashboard`에 뭘 할 자격이 있냐"를
+본다. 목적지가 `/topic/dashboard`가 아니면 바로 통과시키고, 그 목적지에 한해서만 두 커맨드를
+따로 판단한다:
 
-`preSend`의 `if` 조건 4개가 전부 참이어야 거부한다: ① Accessor가 null이 아니고 ② SUBSCRIBE
-프레임이고 ③ 목적지가 `/topic/dashboard`고 ④ `isAdmin()`이 `false`일 때. 넷 중 하나라도 아니면
-그냥 통과시킨다.
+- **SEND 차단(무조건)** — `enableSimpleBroker("/topic")` 구성에서는 클라이언트가 `/topic/dashboard`로
+  STOMP SEND 프레임을 보내면 SimpleBroker가 그걸 그대로 구독자 전원에게 브로드캐스트한다. 즉
+  CONNECT만 통과한 일반 사용자도 서버인 척 위조 지표를 ADMIN 구독자에게 보낼 수 있다는 뜻이다.
+  실제 push는 `DashboardWebSocketController`가 `clientInboundChannel`을 거치지 않는
+  `SimpMessagingTemplate`으로만 하므로, 클라이언트발 SEND는 ADMIN 여부와 무관하게 전부 차단해도
+  정상 기능에 영향이 없다. 초기 구현에는 이 분기가 없어서 CodeRabbit 리뷰로 뒤늦게 발견했다
+  (7장 참고).
+- **SUBSCRIBE는 ADMIN만 허용** — 5.4를 통과해서 이미 세션이 열려있는(=로그인 확인된) 사람 중에서,
+  ADMIN인지만 한 번 더 확인한다. CONNECT 검증 하나에만 의존하지 않는 이중 방어다.
 
 `isAdmin`은 `accessor.getUser()`(타입은 `java.security.Principal`)를 `Authentication`으로
 다운캐스트해서 `getAuthorities()`를 봐야 권한 목록에 접근할 수 있다(`Principal` 자체는 이름만
@@ -300,9 +314,11 @@ public class DashboardSubscriptionAuthorizationInterceptor implements ChannelInt
 
 ```diff
                  .requestMatchers("/auth/signup", "/auth/login").permitAll()
-+                // WebSocket 핸드셰이크는 여기서 인증하지 않는다. 네이티브 websocket Transport는
-+                // Upgrade 요청에 커스텀 헤더를 실을 수 없어, 인증은 StompAuthChannelInterceptor가
-+                // STOMP CONNECT 프레임에서 담당하고 목적지별 인가는 DashboardSubscriptionAuthorizationInterceptor가 담당한다.
++                // WebSocket 인증·인가는 3단계로 나뉜다. 네이티브 websocket Transport가 Upgrade
++                // 요청에 커스텀 헤더를 못 실어서, 여기(HTTP)에서는 검증하지 않는다:
++                // 1. HTTP 핸드셰이크(여기) — permitAll
++                // 2. STOMP CONNECT — StompAuthChannelInterceptor가 JWT 검증
++                // 3. STOMP SUBSCRIBE·SEND — DashboardSubscriptionAuthorizationInterceptor가 목적지별 권한 검증
 +                .requestMatchers("/ws/**").permitAll()
                  .requestMatchers("/admin/**").hasRole("ADMIN")
                  .anyRequest().authenticated()
@@ -365,9 +381,21 @@ Worker 상태 전이 이벤트 훅)에서 채운다.
 `@SpringBootTest(webEnvironment = RANDOM_PORT)` + 실제 `WebSocketStompClient`로 서버에 직접
 연결해서 검증한다.
 
-- ADMIN 토큰으로 구독 → `sendDashboardUpdate()` 호출 시 1초 내 수신
+- ADMIN 토큰으로 구독 → `sendDashboardUpdate()` 호출 시 1초 내 수신 (완료 기준의 delivery
+  SLA를 그대로 타임아웃 값으로 사용)
 - 토큰 없이 CONNECT → 연결 거부 (Transport 레벨 실패 또는 STOMP ERROR 프레임 중 어느 쪽이든 대응)
 - USER(비 ADMIN) 토큰 → CONNECT는 성공하지만 `/topic/dashboard` SUBSCRIBE는 거부
+- USER 토큰으로 `/topic/dashboard`에 직접 SEND → 거부되고, 동시에 구독 중인 ADMIN에게도
+  전달되지 않음 (5.5절 SEND 차단 검증)
+
+**구독 완료 대기는 STOMP Receipt가 아니라 `SimpUserRegistry` 폴링으로 한다.** 원래는
+`StompSession.Subscription.addReceiptTask()`로 브로커가 SUBSCRIBE를 처리했다는 RECEIPT
+프레임을 기다리려 했는데, `enableSimpleBroker`(in-memory `SimpleBrokerMessageHandler`)는
+STOMP Receipt를 아예 구현하지 않는다 — `DefaultStompSession$ReceiptHandler`는 클라이언트 쪽
+로직일 뿐이라 서버가 RECEIPT를 보내는 기능 자체가 없어 영원히 대기하다 타임아웃났다. 대신
+같은 JVM에서 실행 중인 `SimpUserRegistry.findSubscriptions(...)`로 서버가 실제로 그 구독을
+인지했는지 직접 확인하고, 확인될 때까지 짧은 간격(20ms)으로 재폴링한다. 고정 sleep 하나로
+"아마 됐겠지"하고 넘어가지 않고, 서버의 실제 상태를 근거로 대기한다.
 
 ## 7. 오류 계약
 
@@ -376,6 +404,7 @@ Worker 상태 전이 이벤트 훅)에서 채운다.
 | `Authorization` 헤더 없이 CONNECT | `StompAuthChannelInterceptor`가 `AccessDeniedException` → 연결 종료 |
 | 토큰 만료·서명 무효 | 위와 동일 |
 | ADMIN이 아닌 사용자가 `/topic/dashboard` SUBSCRIBE | `DashboardSubscriptionAuthorizationInterceptor`가 `AccessDeniedException` → 구독 거부, 세션 종료 |
+| 아무 클라이언트가 `/topic/dashboard`로 SEND | `DashboardSubscriptionAuthorizationInterceptor`가 `AccessDeniedException` → SEND 거부, ADMIN 구독자에게도 전달 안 됨 (CodeRabbit 리뷰로 발견 — 초기 구현엔 이 분기가 없어 인증만 된 일반 사용자가 위조 지표를 ADMIN에게 보낼 수 있었음) |
 | `/ws/**` HTTP 핸드셰이크 자체 | 항상 permitAll, 여기서는 거부되지 않음 |
 
 ## 8. 커밋 분할
@@ -392,4 +421,5 @@ Worker 상태 전이 이벤트 훅)에서 채운다.
 - `sendDashboardUpdate()` 호출 시 구독 중인 클라이언트가 1초 내 최신 지표를 수신한다
 - 토큰 없음/무효 토큰으로 CONNECT 시 거부된다
 - ADMIN이 아닌 사용자는 `/topic/dashboard` SUBSCRIBE가 거부된다
-- 전체 빌드(`./gradlew build`)가 회귀 없이 통과한다 (733개 테스트, failures 0, errors 0)
+- 클라이언트가 `/topic/dashboard`로 SEND하면 거부되고, 구독 중인 ADMIN에게도 전달되지 않는다
+- 전체 빌드(`./gradlew build`)가 회귀 없이 통과한다 (734개 테스트, failures 0, errors 0)

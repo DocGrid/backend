@@ -22,6 +22,7 @@ import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
+import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -41,8 +42,8 @@ import com.opensource.docgrid.domain.dashboard.dto.response.WorkersSummaryRespon
  * 실제 STOMP Client로 {@code /ws} 연결부터 {@code /topic/dashboard} 구독, 수동 push 수신까지
  * 관통하는 통합 테스트.
  *
- * <p>CONNECT 시점 JWT 검증({@code StompAuthChannelInterceptor})과 SUBSCRIBE 시점 ADMIN 권한
- * 검증({@code DashboardSubscriptionAuthorizationInterceptor})이 실제 Channel Interceptor
+ * <p>CONNECT 시점 JWT 검증({@code StompAuthChannelInterceptor})과 SUBSCRIBE·SEND 시점 ADMIN
+ * 권한 검증({@code DashboardSubscriptionAuthorizationInterceptor})이 실제 Channel Interceptor
  * 체인에서 함께 동작하는지 확인한다.
  */
 @Tag("integration")
@@ -51,7 +52,10 @@ import com.opensource.docgrid.domain.dashboard.dto.response.WorkersSummaryRespon
 @DisplayName("Dashboard WebSocket 실시간 push 통합 테스트")
 class DashboardWebSocketIntegrationTest {
 
+    private static final String DASHBOARD_TOPIC = "/topic/dashboard";
     private static final long TIMEOUT_SECONDS = 5;
+    private static final long DELIVERY_TIMEOUT_SECONDS = 1;
+    private static final long SUBSCRIPTION_POLL_INTERVAL_MILLIS = 20;
 
     @LocalServerPort
     private int port;
@@ -61,6 +65,9 @@ class DashboardWebSocketIntegrationTest {
 
     @Autowired
     private DashboardWebSocketController dashboardWebSocketController;
+
+    @Autowired
+    private SimpUserRegistry simpUserRegistry;
 
     private WebSocketStompClient stompClient;
 
@@ -76,20 +83,20 @@ class DashboardWebSocketIntegrationTest {
     }
 
     @Test
-    @DisplayName("정상 케이스: ADMIN 토큰으로 구독하면 sendDashboardUpdate() push를 즉시 수신한다")
+    @DisplayName("정상 케이스: ADMIN 토큰으로 구독하면 sendDashboardUpdate() push를 1초 이내 수신한다")
     void receivesPush_whenAdminSubscribed() throws Exception {
         // Given
         BlockingQueue<Throwable> failures = new LinkedBlockingQueue<>();
         StompSession session = connect(adminToken(), failures);
         BlockingQueue<DashboardSummaryResponse> received = new LinkedBlockingQueue<>();
-        subscribeDashboard(session, received);
+        subscribeDashboardAndAwaitRegistration(session, received);
 
         // When
         DashboardSummaryResponse summary = sampleSummary();
         dashboardWebSocketController.sendDashboardUpdate(summary);
 
-        // Then
-        DashboardSummaryResponse result = received.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        // Then — 완료 기준(1초 이내 전달)을 그대로 타임아웃으로 사용해 SLA를 검증한다.
+        DashboardSummaryResponse result = received.poll(DELIVERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         assertThat(result).isNotNull();
         assertThat(result.documents().total()).isEqualTo(summary.documents().total());
         assertThat(result.jobs().failed()).isEqualTo(summary.jobs().failed());
@@ -132,7 +139,7 @@ class DashboardWebSocketIntegrationTest {
         StompSession session = connect(userToken(), failures);
 
         // When
-        session.subscribe("/topic/dashboard", new StompFrameHandler() {
+        session.subscribe(DASHBOARD_TOPIC, new StompFrameHandler() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
                 return DashboardSummaryResponse.class;
@@ -146,6 +153,27 @@ class DashboardWebSocketIntegrationTest {
 
         // Then — SUBSCRIBE 거부 시 서버가 세션을 이미 닫으므로 별도 disconnect()는 호출하지 않는다.
         assertThat(failures.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isNotNull();
+    }
+
+    @Test
+    @DisplayName("예외 케이스: /topic/dashboard로 SEND하면 거부되고 구독자에게 전달되지 않는다")
+    void rejectsSend_toDashboardTopic() throws Exception {
+        // Given — ADMIN이 정상 구독 중인 상태를 먼저 만든다.
+        BlockingQueue<Throwable> adminFailures = new LinkedBlockingQueue<>();
+        StompSession adminSession = connect(adminToken(), adminFailures);
+        BlockingQueue<DashboardSummaryResponse> received = new LinkedBlockingQueue<>();
+        subscribeDashboardAndAwaitRegistration(adminSession, received);
+
+        // When — 별도 세션(ADMIN 아님)이 서버인 척 위조 페이로드를 직접 SEND한다.
+        BlockingQueue<Throwable> senderFailures = new LinkedBlockingQueue<>();
+        StompSession senderSession = connect(userToken(), senderFailures);
+        senderSession.send(DASHBOARD_TOPIC, sampleSummary());
+
+        // Then — SEND 자체가 거부되고, SimpleBroker가 구독자에게 브로드캐스트하지 않는다.
+        assertThat(senderFailures.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isNotNull();
+        assertThat(received.poll(DELIVERY_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isNull();
+
+        adminSession.disconnect();
     }
 
     private StompSession connect(String token, BlockingQueue<Throwable> failures) throws Exception {
@@ -173,8 +201,21 @@ class DashboardWebSocketIntegrationTest {
         };
     }
 
-    private void subscribeDashboard(StompSession session, BlockingQueue<DashboardSummaryResponse> received) {
-        session.subscribe("/topic/dashboard", new StompFrameHandler() {
+    /**
+     * 구독을 요청하고, 서버 브로커의 실제 구독 registry에 등록될 때까지 폴링으로 대기한다.
+     *
+     * <p>{@code enableSimpleBroker}(in-memory {@code SimpleBrokerMessageHandler})는 STOMP
+     * Receipt를 구현하지 않는다 — {@code StompSession.Subscription.addReceiptTask()}로는 서버가
+     * 절대 RECEIPT 프레임을 보내주지 않아 영원히 대기하게 된다. 대신 같은 JVM에서 실행 중인
+     * {@link SimpUserRegistry}로 서버가 실제로 이 구독을 인지했는지 직접 확인한다. 구독 직후
+     * 곧바로 push하면 브로커가 SUBSCRIBE 등록을 마치기 전에 push가 먼저 도착해 유실될 수 있어,
+     * 고정 sleep 대신 실제 서버 상태가 확정될 때까지 짧은 간격으로 재확인한다.
+     */
+    private void subscribeDashboardAndAwaitRegistration(
+        StompSession session,
+        BlockingQueue<DashboardSummaryResponse> received
+    ) throws InterruptedException {
+        session.subscribe(DASHBOARD_TOPIC, new StompFrameHandler() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
                 return DashboardSummaryResponse.class;
@@ -185,6 +226,18 @@ class DashboardWebSocketIntegrationTest {
                 received.add((DashboardSummaryResponse) payload);
             }
         });
+
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SECONDS);
+        while (System.nanoTime() < deadline) {
+            boolean registered = !simpUserRegistry
+                .findSubscriptions(subscription -> DASHBOARD_TOPIC.equals(subscription.getDestination()))
+                .isEmpty();
+            if (registered) {
+                return;
+            }
+            Thread.sleep(SUBSCRIPTION_POLL_INTERVAL_MILLIS);
+        }
+        throw new AssertionError("구독이 " + TIMEOUT_SECONDS + "초 안에 서버에 등록되지 않았습니다.");
     }
 
     private String wsUrl() {

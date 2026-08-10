@@ -19,6 +19,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -177,10 +178,13 @@ class WorkerHorizontalScalingBenchmark {
         }
 
         // 2. Benchmark가 만든 Bucket과 Schema만 제거해 기존 로컬 개발 Data를 보존한다.
-        if (minioBucket != null) {
-            minioBucket.close();
+        try {
+            if (minioBucket != null) {
+                minioBucket.close();
+            }
+        } finally {
+            jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + TEST_SCHEMA + " CASCADE");
         }
-        jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + TEST_SCHEMA + " CASCADE");
     }
 
     @Test
@@ -196,6 +200,7 @@ class WorkerHorizontalScalingBenchmark {
         for (WorkerProfile profile : PROFILES) {
             resetAllBenchmarkState();
             currentCluster = startWorkerCluster(profile);
+            Throwable primaryFailure = null;
             try {
                 runWarmUp(profile, currentCluster);
 
@@ -207,11 +212,12 @@ class WorkerHorizontalScalingBenchmark {
                     logJson("WORKER_HORIZONTAL_SCALING_RESULT", run);
                     writeReport(new BenchmarkReport(environment, runs, medians(runs)));
                 }
+            } catch (Exception | Error failure) {
+                primaryFailure = failure;
+                throw failure;
             } finally {
                 WorkerCluster completedCluster = currentCluster;
-                completedCluster.close();
-                awaitWorkersStopped(completedCluster);
-                currentCluster = null;
+                closeWorkerCluster(completedCluster, primaryFailure);
             }
         }
 
@@ -312,7 +318,7 @@ class WorkerHorizontalScalingBenchmark {
                 WorkerExecutionSlotPool slotPool = context.getBean(WorkerExecutionSlotPool.class);
                 IndexingWorkerProperties properties = context.getBean(IndexingWorkerProperties.class);
                 awaitCondition(
-                    workerName + "가 Application Ready 뒤 등록되지 않았습니다.",
+                    () -> workerName + "가 Application Ready 뒤 등록되지 않았습니다.",
                     () -> lifecycleManager.getWorkerId().isPresent()
                 );
                 assertThat(properties.getMaxConcurrency()).isEqualTo(profile.slotsPerWorker());
@@ -443,7 +449,7 @@ class WorkerHorizontalScalingBenchmark {
         WorkerCluster cluster
     ) throws InterruptedException {
         awaitCondition(
-            runName + " Profile이 완료되지 않았습니다. jobs=" + jobSnapshot(uploads)
+            () -> runName + " Profile이 완료되지 않았습니다. jobs=" + jobSnapshot(uploads)
                 + ", workers=" + workerSnapshot(cluster),
             () -> indexedJobCount(uploads) == uploads.size() && cluster.allSlotsReturned()
         );
@@ -614,7 +620,7 @@ class WorkerHorizontalScalingBenchmark {
         String placeholders = String.join(",", cluster.workers().stream().map(worker -> "?").toList());
         Object[] workerIds = cluster.workers().stream().map(WorkerHandle::id).toArray();
         awaitCondition(
-            "종료한 Worker가 STOPPED 상태로 전환되지 않았습니다: " + workerSnapshot(cluster),
+            () -> "종료한 Worker가 STOPPED 상태로 전환되지 않았습니다: " + workerSnapshot(cluster),
             () -> count(
                 "SELECT COUNT(*) FROM worker_nodes WHERE status = 'STOPPED' AND id IN ("
                     + placeholders + ")",
@@ -625,7 +631,7 @@ class WorkerHorizontalScalingBenchmark {
 
     private void resetJobState(WorkerCluster cluster) throws Exception {
         awaitCondition(
-            "이전 Profile의 Worker 실행 Slot이 반환되지 않았습니다: " + workerSnapshot(cluster),
+            () -> "이전 Profile의 Worker 실행 Slot이 반환되지 않았습니다: " + workerSnapshot(cluster),
             cluster::allSlotsReturned
         );
         minioBucket.clear();
@@ -762,7 +768,7 @@ class WorkerHorizontalScalingBenchmark {
         log.info("{} {}", prefix, objectMapper.writeValueAsString(value));
     }
 
-    private void awaitCondition(String failureMessage, CheckedCondition condition)
+    private void awaitCondition(Supplier<String> failureMessage, CheckedCondition condition)
         throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(PROFILE_TIMEOUT_SECONDS);
         while (System.nanoTime() < deadline) {
@@ -771,7 +777,25 @@ class WorkerHorizontalScalingBenchmark {
             }
             Thread.sleep(POLLING_SLEEP_MILLIS);
         }
-        throw new AssertionError(failureMessage);
+        throw new AssertionError(failureMessage.get());
+    }
+
+    private void closeWorkerCluster(WorkerCluster cluster, Throwable primaryFailure)
+        throws InterruptedException {
+        try {
+            // 1. 독립 Context를 닫고 DB의 Worker 종착 상태까지 확인한다.
+            cluster.close();
+            awaitWorkersStopped(cluster);
+        } catch (RuntimeException | Error | InterruptedException cleanupFailure) {
+            // 2. 본 측정 실패가 있으면 정리 실패는 보조 근거로 남겨 최초 원인을 보존한다.
+            if (primaryFailure != null) {
+                primaryFailure.addSuppressed(cleanupFailure);
+                return;
+            }
+            throw cleanupFailure;
+        } finally {
+            currentCluster = null;
+        }
     }
 
     private int count(String sql, Object... arguments) {

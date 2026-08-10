@@ -107,16 +107,19 @@ Profile이 끝난 뒤 모든 실행 슬롯이 반환된 것을 확인하고 Cont
 
 ```text
 worker.horizontal.scaling.profiles
+worker.horizontal.scaling.document-characters
 worker.horizontal.scaling.document-count
 worker.horizontal.scaling.repetitions
 worker.horizontal.scaling.warm-up-documents
 worker.horizontal.scaling.uploader-threads
 worker.horizontal.scaling.profile-timeout-seconds
+worker.horizontal.scaling.status-polling-ms
 worker.horizontal.scaling.output
 ```
 
 Profile 문자열은 `workerCount x slotsPerWorker` 형식의 쉼표 목록으로 받는다. Worker·Slot·문서·반복 값은
-모두 1 이상이어야 하고 중복 Profile은 거부한다.
+모두 1 이상이어야 하고 중복 Profile은 거부한다. Speedup 기준선을 계산할 수 있도록 사용자 지정 Profile에도
+`1x1`을 반드시 포함해야 한다.
 
 ## 7. 측정 경계와 지표
 

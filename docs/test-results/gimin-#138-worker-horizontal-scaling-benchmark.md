@@ -149,6 +149,7 @@ Queue를 보도록 했다. Credential은 결과와 Log에 기록하지 않았다
 
 ## 10. 결론
 
-자동 Worker는 2개와 4개 Context에서 같은 Queue를 실제로 균등 분담했고 모든 인덱싱·Vector 불변식을
-유지했다. 현재 단일 Host CPU 환경에서는 전체 Slot 2개가 실용적인 포화 지점이며, Worker·Slot을 그보다
-늘리면 Queue 대기는 줄지만 BGE 처리 대기가 증가해 최종 처리량은 약 21.6문서/분에 머물렀다.
+자동 Worker는 2개와 4개 Context에서 같은 Queue를 실제로 나눠 처리했고, 이번 실행에서는 2개 Worker가
+각 8건, 4개 Worker가 각 4건을 처리하는 분포가 관찰됐다. 모든 인덱싱·Vector 불변식도 유지했다. 현재
+단일 Host CPU 환경에서는 전체 Slot 2개가 실용적인 포화 지점이며, Worker·Slot을 그보다 늘리면 Queue
+대기는 줄지만 BGE 처리 대기가 증가해 최종 처리량은 약 21.6문서/분에 머물렀다.

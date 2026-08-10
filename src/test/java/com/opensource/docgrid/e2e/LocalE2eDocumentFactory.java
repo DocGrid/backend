@@ -3,6 +3,7 @@ package com.opensource.docgrid.e2e;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -67,11 +68,25 @@ final class LocalE2eDocumentFactory {
         String heading,
         String body
     ) throws IOException {
+        return docx(fileName, title, List.of(new DocumentSection(heading, body)));
+    }
+
+    static DocumentPayload docx(
+        String fileName,
+        String title,
+        List<DocumentSection> sections
+    ) throws IOException {
+        if (sections == null || sections.isEmpty()) {
+            throw new IllegalArgumentException("DOCX Section은 하나 이상이어야 합니다.");
+        }
+
         try (XWPFDocument document = new XWPFDocument()) {
-            XWPFParagraph headingParagraph = document.createParagraph();
-            headingParagraph.setStyle("Heading1");
-            headingParagraph.createRun().setText(heading);
-            document.createParagraph().createRun().setText(body);
+            for (DocumentSection section : sections) {
+                XWPFParagraph headingParagraph = document.createParagraph();
+                headingParagraph.setStyle("Heading1");
+                headingParagraph.createRun().setText(section.heading());
+                document.createParagraph().createRun().setText(section.body());
+            }
 
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             document.write(output);
@@ -106,5 +121,15 @@ final class LocalE2eDocumentFactory {
         String title,
         byte[] content
     ) {
+    }
+
+    /** DOCX Fixture의 Heading과 그 Heading에 속한 본문을 한 Section으로 표현한다. */
+    record DocumentSection(String heading, String body) {
+
+        DocumentSection {
+            if (heading == null || heading.isBlank() || body == null || body.isBlank()) {
+                throw new IllegalArgumentException("DOCX Section 제목과 본문은 비어 있을 수 없습니다.");
+            }
+        }
     }
 }

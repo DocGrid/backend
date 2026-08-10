@@ -57,7 +57,7 @@ Coordinator Context
   └─ indexing.worker.enabled=false
 
 Worker Context 1..N
-  ├─ WebApplicationType.NONE
+  ├─ WebApplicationType.SERVLET + server.port=0
   ├─ 고유 Worker Name·Instance ID
   ├─ 고유 Job Executor·Slot Pool
   ├─ 고유 Hikari Pool
@@ -67,6 +67,11 @@ Worker Context 1..N
 Coordinator는 Job을 직접 Claim하지 않는다. Worker Context만 Worker Node로 등록되고 Production
 `WorkerJobPollingScheduler`를 실행한다. 따라서 Worker 수가 늘어날 때 각 Context가 실제 DB Lock과
 Claim Token 경계를 통과한다.
+
+Worker Context는 프로젝트의 실제 배포 애플리케이션과 같은 Servlet 자동 설정을 사용한다. 현재
+`SwaggerConfig`는 Web Application에서 제공되는 `SwaggerUiConfigProperties`를 주입받으므로, Worker만
+검증하려고 `WebApplicationType.NONE`을 사용하면 해당 Bean이 자기 자신을 주입하는 순환 생성이 발생한다.
+각 Context는 `server.port=0`으로 HTTP Port 충돌만 차단하고, 기동 시간은 처리량 측정에서 제외한다.
 
 Worker Context는 한 Profile 설정 동안 유지한다. 시작·Flyway 검증·종료 시간은 처리량 측정에서 제외한다.
 Profile이 끝난 뒤 모든 실행 슬롯이 반환된 것을 확인하고 Context를 역순으로 닫아 Worker를 `STOPPED`로

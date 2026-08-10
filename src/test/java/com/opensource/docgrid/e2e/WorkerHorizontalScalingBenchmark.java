@@ -209,9 +209,9 @@ class WorkerHorizontalScalingBenchmark {
                 }
             } finally {
                 WorkerCluster completedCluster = currentCluster;
-                currentCluster = null;
                 completedCluster.close();
                 awaitWorkersStopped(completedCluster);
+                currentCluster = null;
             }
         }
 
@@ -327,7 +327,7 @@ class WorkerHorizontalScalingBenchmark {
             WorkerCluster cluster = new WorkerCluster(contexts, workers);
             assertRegisteredWorkers(cluster);
             return cluster;
-        } catch (RuntimeException | InterruptedException exception) {
+        } catch (RuntimeException | InterruptedException | AssertionError exception) {
             closeContexts(contexts);
             throw exception;
         }

@@ -158,4 +158,32 @@ public interface EmbeddingJobRepository extends JpaRepository<EmbeddingJob, Long
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT job FROM EmbeddingJob job WHERE job.id = :jobId")
     Optional<EmbeddingJob> findByIdForUpdate(@Param("jobId") Long jobId);
+
+    /**
+     * 대시보드 집계 카드(대기/처리 중/실패 작업 수)에 사용하는 상태별 Job 수를 센다.
+     */
+    long countByStatus(EmbeddingJobStatus status);
+
+    /**
+     * 관리자 전체 재처리 대상인 FAILED Job 전체를 조회한다.
+     */
+    List<EmbeddingJob> findAllByStatus(EmbeddingJobStatus status);
+
+    /**
+     * 완료된 Job의 평균 처리 시간을 밀리초 단위로 계산한다.
+     *
+     * <p>Queue 대기 시간({@code created_at})은 제외하고 Worker가 실제로 처리한 구간({@code started_at}
+     * ~ {@code completed_at})만 반영한다. 완료된 Job이 없으면 {@code null}을 반환한다.
+     */
+    @Query(
+        value = """
+            SELECT AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000)
+            FROM embedding_jobs
+            WHERE status = 'INDEXED'
+              AND started_at IS NOT NULL
+              AND completed_at IS NOT NULL
+            """,
+        nativeQuery = true
+    )
+    Double findAverageProcessingMillis();
 }

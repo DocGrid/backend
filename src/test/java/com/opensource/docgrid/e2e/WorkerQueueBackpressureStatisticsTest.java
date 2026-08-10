@@ -62,10 +62,10 @@ class WorkerQueueBackpressureStatisticsTest {
     @DisplayName("Queue depth를 시간 적분하고 시간 가중 평균을 계산한다")
     void summarizesQueueDepthOverTime() {
         QueueSummary summary = WorkerQueueBackpressureStatistics.summarizeQueue(List.of(
-            new QueueSample(0L, 0, 0, 0, 0),
-            new QueueSample(1_000_000_000L, 4, 2, 0, 0),
-            new QueueSample(3_000_000_000L, 0, 2, 4, 0),
-            new QueueSample(4_000_000_000L, 0, 0, 6, 0)
+            new QueueSample(2_000_000_000L, 0, 0, 0, 0),
+            new QueueSample(3_000_000_000L, 4, 2, 0, 0),
+            new QueueSample(5_000_000_000L, 0, 2, 4, 0),
+            new QueueSample(6_000_000_000L, 0, 0, 6, 0)
         ));
 
         assertThat(summary.peakPendingJobs()).isEqualTo(4);

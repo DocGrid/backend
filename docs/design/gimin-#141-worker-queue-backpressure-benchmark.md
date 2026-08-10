@@ -34,7 +34,7 @@ Benchmark 작업이다.
 
 - API Rate Limit, Queue Admission Control 또는 요청 거절 정책 구현
 - 특정 Queue 크기를 운영 환경의 보편적인 한계로 단정
-- PostgreSQL 또는 OpenSQL 서버 설정 튜닝
+- PostgreSQL, MinIO 또는 BGE-M3 서버 설정 튜닝
 - Hikari Pool 크기의 자동 조절
 - Mock Embedding으로 실제 BGE-M3 병목 제거
 

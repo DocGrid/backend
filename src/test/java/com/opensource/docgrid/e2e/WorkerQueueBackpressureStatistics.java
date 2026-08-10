@@ -76,8 +76,8 @@ final class WorkerQueueBackpressureStatistics {
             peakQueueDepth = Math.max(peakQueueDepth, sample.queueDepth());
         }
 
-        double elapsedSeconds = validated.get(validated.size() - 1).elapsedNanos()
-            / 1_000_000_000.0;
+        double elapsedSeconds = (validated.get(validated.size() - 1).elapsedNanos()
+            - validated.get(0).elapsedNanos()) / 1_000_000_000.0;
         double averageQueueDepth = elapsedSeconds == 0.0
             ? validated.get(0).queueDepth()
             : queueDepthAucDocumentSeconds / elapsedSeconds;

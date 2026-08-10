@@ -221,7 +221,8 @@ class WorkerQueueBackpressureBenchmark {
     }
 
     @Test
-    @Timeout(3_600)
+    // 기본 8회 실행 × Profile 제한 600초에 예열과 사후 정합성 검증 예산을 더해 Test 상한을 둔다.
+    @Timeout(6_000)
     @DisplayName("문서 수와 동시 업로드 증가에 따른 Queue·Hikari Pool 압력을 측정한다")
     void measureQueueAndConnectionPoolBackpressure() throws Exception {
         // 1. 실제 환경과 측정 변수를 검증하고 빈 결과 파일을 먼저 남겨 중단 실행도 식별하게 한다.

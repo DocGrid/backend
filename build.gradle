@@ -53,7 +53,7 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform {
-		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency', 'local-e2e', 'vector-search-performance', 'worker-indexing-throughput', 'worker-horizontal-scaling', 'worker-queue-backpressure'
+		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency', 'local-e2e', 'vector-search-performance', 'worker-indexing-throughput', 'worker-horizontal-scaling', 'worker-queue-backpressure', 'document-indexing-e2e-load'
 	}
 }
 
@@ -216,6 +216,28 @@ tasks.register('workerHorizontalScalingTest', Test) {
 		)
 	}
 	// 여러 Spring Context가 같은 외부 Service와 Test Schema를 공유하므로 병렬 Fork와 Build Cache를 금지한다.
+	outputs.upToDateWhen { false }
+}
+
+tasks.register('documentIndexingE2ELoadTest', Test) {
+	group = 'verification'
+	description = '실제 PDF·DOCX 50·100문서의 전체 인덱싱 처리량과 데이터 완전성을 측정합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'document-indexing-e2e-load'
+	}
+	maxParallelForks = 1
+	systemProperties System.properties.findAll { key, value ->
+		key.toString().startsWith('document.indexing.e2e.load.')
+	}
+	if (System.getProperty('document.indexing.e2e.load.output') == null) {
+		systemProperty(
+			'document.indexing.e2e.load.output',
+			layout.buildDirectory.file('reports/document-indexing-e2e-load/document-indexing-e2e-load.json').get().asFile.absolutePath
+		)
+	}
+	// 실제 외부 Service를 점유하고 큰 PDF·DOCX Queue를 만드는 장시간 Benchmark를 일반 Test와 분리한다.
 	outputs.upToDateWhen { false }
 }
 

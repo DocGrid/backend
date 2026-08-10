@@ -44,7 +44,7 @@ public class SecurityConfig {
             )
             /*
              * UsernamePasswordAuthenticationFilter는 위치 기준점(앵커)일 뿐이며,
-             * 실제 목적은 두 필터가 최종 인증 판정(authorizeHttpRequests)보다 먼저
+             * 실제 목적은 두 필터(JwtAuthenticationFilter, McpApiKeyAuthFilter)가 최종 인증 판정(authorizeHttpRequests)보다 먼저 실행됨
              * SecurityContext를 채워두는 것이다. 각자 다른 경로만 처리하고 나머지는 스킵:
              *   - JwtAuthenticationFilter  → 웹 로그인(JWT), /mcp/tokens 등 일반 API 담당
              *   - McpApiKeyAuthFilter      → Claude Desktop API 키, /mcp 경로만 담당

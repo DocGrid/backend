@@ -12,11 +12,27 @@ import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
 
 import com.opensource.docgrid.domain.document.entity.Document;
+import com.opensource.docgrid.domain.document.enums.DocumentStatus;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 
 // A담당자 영역 — B담당자는 존재 확인 등 읽기 전용으로만 사용
 public interface DocumentRepository extends JpaRepository<Document, Long> {
+
+    /**
+     * 대시보드 집계 카드의 전체 문서 수. Soft-delete된 문서는 제외한다.
+     */
+    long countByDeletedAtIsNull();
+
+    /**
+     * 대시보드 집계 카드에서 특정 상태 하나에 속하는 문서 수를 센다 (예: 검색 가능 문서 수).
+     */
+    long countByStatus(DocumentStatus status);
+
+    /**
+     * 대시보드 집계 카드에서 여러 상태에 걸친 문서 수를 센다 (예: 인덱싱 대기 중 문서 수).
+     */
+    long countByStatusIn(Collection<DocumentStatus> statuses);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT d FROM Document d WHERE d.id = :documentId")

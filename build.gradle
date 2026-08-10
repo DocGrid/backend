@@ -53,7 +53,7 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform {
-		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency', 'local-e2e', 'vector-search-performance', 'worker-indexing-throughput', 'worker-horizontal-scaling'
+		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency', 'local-e2e', 'vector-search-performance', 'worker-indexing-throughput', 'worker-horizontal-scaling', 'worker-queue-backpressure'
 	}
 }
 
@@ -172,6 +172,28 @@ tasks.register('workerIndexingThroughputTest', Test) {
 		)
 	}
 	// 실제 외부 Service를 점유하고 테스트 데이터를 초기화하는 Benchmark이므로 일반 Test와 Build Cache에서 분리한다.
+	outputs.upToDateWhen { false }
+}
+
+tasks.register('workerQueueBackpressureTest', Test) {
+	group = 'verification'
+	description = '실제 전체 인덱싱 Queue 적체와 Hikari Connection Pool Backpressure 경계를 측정합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'worker-queue-backpressure'
+	}
+	maxParallelForks = 1
+	systemProperties System.properties.findAll { key, value ->
+		key.toString().startsWith('worker.queue.backpressure.')
+	}
+	if (System.getProperty('worker.queue.backpressure.output') == null) {
+		systemProperty(
+			'worker.queue.backpressure.output',
+			layout.buildDirectory.file('reports/worker-queue-backpressure/worker-queue-backpressure.json').get().asFile.absolutePath
+		)
+	}
+	// 실제 외부 Service와 작은 DB Pool을 점유하는 장시간 Benchmark이므로 일반 Test와 Cache에서 분리한다.
 	outputs.upToDateWhen { false }
 }
 

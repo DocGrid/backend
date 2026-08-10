@@ -425,6 +425,7 @@ class WorkerQueueBackpressureBenchmark {
         int threadCount = Math.min(profile.uploaderThreads(), profile.documentCount());
         ExecutorService uploader = Executors.newFixedThreadPool(threadCount);
         List<Future<UploadAttempt>> futures = new ArrayList<>(profile.documentCount());
+        long uploadsStartedAt = System.nanoTime();
 
         try {
             // 1. 같은 시작 구간에 HTTP 접수를 집중시켜 Worker와 Pool Connection을 실제로 경쟁시킨다.
@@ -436,8 +437,18 @@ class WorkerQueueBackpressureBenchmark {
 
             // 2. 성공과 실패를 모두 결과로 보존해 Connection Timeout을 Benchmark 자체 실패로 숨기지 않는다.
             List<UploadAttempt> attempts = new ArrayList<>(profile.documentCount());
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(PROFILE_TIMEOUT_SECONDS);
             for (Future<UploadAttempt> future : futures) {
-                attempts.add(future.get(PROFILE_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+                long remainingNanos = Math.max(0L, deadline - System.nanoTime());
+                try {
+                    attempts.add(future.get(remainingNanos, TimeUnit.NANOSECONDS));
+                } catch (TimeoutException exception) {
+                    future.cancel(true);
+                    attempts.add(UploadAttempt.failure(
+                        millis(System.nanoTime() - uploadsStartedAt),
+                        exception.getClass().getSimpleName()
+                    ));
+                }
             }
             return List.copyOf(attempts);
         } finally {

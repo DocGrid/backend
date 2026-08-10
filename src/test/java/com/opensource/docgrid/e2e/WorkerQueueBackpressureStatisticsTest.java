@@ -59,6 +59,17 @@ class WorkerQueueBackpressureStatisticsTest {
     }
 
     @Test
+    @DisplayName("Profile 입력이 없으면 기본 Profile을 사용한다")
+    void fallsBackToDefaultProfiles() {
+        List<LoadProfile> defaults = List.of(new LoadProfile(16, 4), new LoadProfile(32, 8));
+
+        assertThat(WorkerQueueBackpressureStatistics.parseProfiles(null, defaults))
+            .containsExactlyElementsOf(defaults);
+        assertThat(WorkerQueueBackpressureStatistics.parseProfiles("  ", defaults))
+            .containsExactlyElementsOf(defaults);
+    }
+
+    @Test
     @DisplayName("Queue depth를 시간 적분하고 시간 가중 평균을 계산한다")
     void summarizesQueueDepthOverTime() {
         QueueSummary summary = WorkerQueueBackpressureStatistics.summarizeQueue(List.of(
@@ -72,6 +83,18 @@ class WorkerQueueBackpressureStatisticsTest {
         assertThat(summary.peakQueueDepth()).isEqualTo(6);
         assertThat(summary.queueDepthAucDocumentSeconds()).isEqualTo(12.0);
         assertThat(summary.averageQueueDepth()).isEqualTo(3.0);
+    }
+
+    @Test
+    @DisplayName("비어 있거나 시각이 역전된 Queue Sample을 거부한다")
+    void rejectsInvalidQueueSamples() {
+        assertThatThrownBy(() -> WorkerQueueBackpressureStatistics.summarizeQueue(List.of()))
+            .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> WorkerQueueBackpressureStatistics.summarizeQueue(List.of(
+            new QueueSample(2_000_000_000L, 1, 0, 0, 0),
+            new QueueSample(1_000_000_000L, 1, 0, 0, 0)
+        ))).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("감소");
     }
 
     @Test

@@ -1,0 +1,423 @@
+{
+  "schemaVersion": 1,
+  "issue": 145,
+  "title": "DocGrid 인덱싱·Vector 검색 최종 통합 성능 데이터",
+  "recordedAt": "2026-08-11",
+  "sources": [
+    {
+      "id": "claim-local",
+      "path": "docs/test-results/gimin-#61-embedding-job-claim-performance.md",
+      "purpose": "PostgreSQL 14.6 기반 초기 Claim 처리량·경합 기준선"
+    },
+    {
+      "id": "opensql-compatibility",
+      "path": "docs/test-results/gimin-#124-opensql-compatibility-performance.md",
+      "purpose": "OpenSQL 17.8 호환성·Vector·Claim 실측"
+    },
+    {
+      "id": "bge-batch",
+      "path": "docs/test-results/gimin-#128-bge-m3-batch-size-performance.md",
+      "purpose": "실제 BAAI/bge-m3 Batch Size 최적화"
+    },
+    {
+      "id": "vector-search",
+      "path": "docs/test-results/gimin-#131-hnsw-exact-scale-benchmark.md",
+      "purpose": "Exact Seq Scan 대비 HNSW 지연·Recall@10 비교"
+    },
+    {
+      "id": "worker-throughput",
+      "path": "docs/test-results/gimin-#133-worker-indexing-throughput-benchmark.md",
+      "purpose": "TXT 16·32문서 자동 Worker 전체 처리량 기준선"
+    },
+    {
+      "id": "worker-scaling",
+      "path": "docs/test-results/gimin-#138-worker-horizontal-scaling-benchmark.md",
+      "purpose": "Worker 수·실행 Slot별 수평 확장"
+    },
+    {
+      "id": "queue-backpressure",
+      "path": "docs/test-results/gimin-#141-worker-queue-backpressure-benchmark.md",
+      "purpose": "Queue 적체·Hikari Pool Backpressure 경계"
+    },
+    {
+      "id": "real-document-e2e",
+      "path": "docs/test-results/gimin-#143-pdf-docx-indexing-e2e-load-benchmark.md",
+      "purpose": "PDF·DOCX 50·100문서 실제 전체 E2E 부하"
+    }
+  ],
+  "benchmarks": {
+    "claim": {
+      "title": "OpenSQL Job Claim 처리량과 Tail Latency",
+      "subtitle": "OpenSQL 17.8 · 5,000 jobs · profile별 5회 중앙값",
+      "sourceIds": [
+        "opensql-compatibility"
+      ],
+      "categories": [
+        "1",
+        "5",
+        "10",
+        "20",
+        "40"
+      ],
+      "categoryLabel": "Worker 수",
+      "series": {
+        "throughput": {
+          "label": "중앙 TPS",
+          "unit": "TPS",
+          "values": [
+            273.61,
+            748.45,
+            563.07,
+            591.32,
+            591.89
+          ]
+        },
+        "p99": {
+          "label": "Claim p99",
+          "unit": "ms",
+          "values": [
+            6.077,
+            13.187,
+            67.78,
+            89.913,
+            212.795
+          ]
+        }
+      },
+      "chart": {
+        "file": "claim-throughput-tail-latency.svg",
+        "leftSeries": [
+          "throughput"
+        ],
+        "rightSeries": [
+          "p99"
+        ],
+        "leftScale": "linear",
+        "leftStyle": "line",
+        "rightStyle": "line"
+      }
+    },
+    "bgeBatch": {
+      "title": "실제 BGE-M3 Batch 처리량과 요청 지연",
+      "subtitle": "BAAI/bge-m3 · CPU · 256 texts · profile별 3회",
+      "sourceIds": [
+        "bge-batch"
+      ],
+      "categories": [
+        "1",
+        "4",
+        "8",
+        "16",
+        "32",
+        "64"
+      ],
+      "categoryLabel": "Batch Size",
+      "series": {
+        "throughput": {
+          "label": "처리량",
+          "unit": "texts/s",
+          "values": [
+            5.85,
+            11.12,
+            13.57,
+            15.15,
+            17.08,
+            17.38
+          ]
+        },
+        "p95": {
+          "label": "요청 p95",
+          "unit": "ms",
+          "values": [
+            222.97,
+            409.23,
+            637.61,
+            1224.44,
+            1975.7,
+            3719.82
+          ]
+        }
+      },
+      "chart": {
+        "file": "bge-batch-throughput-latency.svg",
+        "leftSeries": [
+          "throughput"
+        ],
+        "rightSeries": [
+          "p95"
+        ],
+        "leftScale": "linear",
+        "leftStyle": "line",
+        "rightStyle": "line"
+      }
+    },
+    "vectorSearch": {
+      "title": "Exact Search 대비 HNSW 지연과 Recall@10",
+      "subtitle": "PostgreSQL 17.8 · pgvector 0.8.1 · vector(1024) · topK 10 · ef_search 40",
+      "sourceIds": [
+        "vector-search"
+      ],
+      "categories": [
+        "2천",
+        "1만",
+        "5만"
+      ],
+      "categoryLabel": "Vector 수",
+      "series": {
+        "exactP95": {
+          "label": "Exact p95",
+          "unit": "ms",
+          "values": [
+            5.103,
+            25.874,
+            197.611
+          ]
+        },
+        "hnswP95": {
+          "label": "HNSW p95",
+          "unit": "ms",
+          "values": [
+            1.139,
+            2.015,
+            1.994
+          ]
+        },
+        "recall": {
+          "label": "평균 Recall@10",
+          "unit": "ratio",
+          "values": [
+            0.96,
+            0.52,
+            0.22
+          ]
+        }
+      },
+      "chart": {
+        "file": "vector-exact-hnsw-latency-recall.svg",
+        "leftSeries": [
+          "exactP95",
+          "hnswP95"
+        ],
+        "rightSeries": [
+          "recall"
+        ],
+        "leftScale": "log10",
+        "leftStyle": "bar",
+        "rightStyle": "line"
+      }
+    },
+    "workerScaling": {
+      "title": "Worker 수·실행 Slot별 수평 확장",
+      "subtitle": "TXT 16 docs · 6,400 chars/doc · 8 chunks/doc · BGE batch 32",
+      "sourceIds": [
+        "worker-scaling"
+      ],
+      "categories": [
+        "w1-s1",
+        "w1-s2",
+        "w2-s1",
+        "w2-s2",
+        "w4-s2"
+      ],
+      "categoryLabel": "Worker-Slot Profile",
+      "series": {
+        "throughput": {
+          "label": "처리량",
+          "unit": "docs/min",
+          "values": [
+            19.475,
+            21.862,
+            21.576,
+            21.577,
+            21.677
+          ]
+        },
+        "queueP95": {
+          "label": "Queue p95",
+          "unit": "s",
+          "values": [
+            43.963,
+            38.302,
+            38.912,
+            33.627,
+            22.81
+          ]
+        },
+        "processingP95": {
+          "label": "처리 p95",
+          "unit": "s",
+          "values": [
+            3.391,
+            5.55,
+            5.647,
+            11.693,
+            22.741
+          ]
+        }
+      },
+      "chart": {
+        "file": "worker-horizontal-scaling.svg",
+        "leftSeries": [
+          "throughput"
+        ],
+        "rightSeries": [
+          "queueP95",
+          "processingP95"
+        ],
+        "leftScale": "linear",
+        "leftStyle": "line",
+        "rightStyle": "bar"
+      }
+    },
+    "queueBackpressure": {
+      "title": "Queue 적체와 DB Pool Backpressure",
+      "subtitle": "TXT 800 chars/doc · 1 chunk/doc · Hikari pool 4 · worker slots 8",
+      "sourceIds": [
+        "queue-backpressure"
+      ],
+      "categories": [
+        "16",
+        "32",
+        "64",
+        "128"
+      ],
+      "categoryLabel": "문서 수",
+      "series": {
+        "throughput": {
+          "label": "처리량",
+          "unit": "docs/min",
+          "values": [
+            163.0,
+            149.266,
+            142.791,
+            142.054
+          ]
+        },
+        "queueP95": {
+          "label": "Queue p95",
+          "unit": "s",
+          "values": [
+            3.07301,
+            9.964056,
+            23.777526,
+            49.201731
+          ]
+        }
+      },
+      "chart": {
+        "file": "queue-backpressure.svg",
+        "leftSeries": [
+          "throughput"
+        ],
+        "rightSeries": [
+          "queueP95"
+        ],
+        "leftScale": "linear",
+        "leftStyle": "line",
+        "rightStyle": "line"
+      }
+    },
+    "realDocumentE2E": {
+      "title": "PDF·DOCX 전체 인덱싱 E2E 부하",
+      "subtitle": "PDF 50% + DOCX 50% · 4 chunks/doc · worker slots 2 · BGE batch 32",
+      "sourceIds": [
+        "real-document-e2e"
+      ],
+      "categories": [
+        "50",
+        "100"
+      ],
+      "categoryLabel": "문서 수",
+      "series": {
+        "throughput": {
+          "label": "처리량",
+          "unit": "docs/min",
+          "values": [
+            31.046,
+            32.063
+          ]
+        },
+        "queueP95": {
+          "label": "Queue p95",
+          "unit": "s",
+          "values": [
+            88.355,
+            174.684
+          ]
+        },
+        "processingP95": {
+          "label": "처리 p95",
+          "unit": "s",
+          "values": [
+            4.093,
+            4.026
+          ]
+        }
+      },
+      "chart": {
+        "file": "pdf-docx-e2e-load.svg",
+        "leftSeries": [
+          "throughput"
+        ],
+        "rightSeries": [
+          "queueP95",
+          "processingP95"
+        ],
+        "leftScale": "linear",
+        "leftStyle": "line",
+        "rightStyle": "bar"
+      }
+    }
+  },
+  "supportingBaselines": {
+    "claimLocalPostgreSql14": {
+      "sourceIds": [
+        "claim-local"
+      ],
+      "workers": [
+        1,
+        5,
+        10,
+        20,
+        40
+      ],
+      "medianTps": [
+        364.29,
+        1300.58,
+        1301.34,
+        1265.59,
+        1559.8
+      ],
+      "p99Ms": [
+        4.61,
+        6.19,
+        18.58,
+        39.14,
+        97.63
+      ],
+      "comparisonBoundary": "OpenSQL 17.8 결과와 절대값을 직접 비교하지 않는 초기 로컬 기준선"
+    },
+    "workerIndexingThroughput": {
+      "sourceIds": [
+        "worker-throughput"
+      ],
+      "documentCounts": [
+        16,
+        32
+      ],
+      "documentsPerMinute": [
+        19.102,
+        18.402
+      ],
+      "queueP95Seconds": [
+        43.794,
+        93.554
+      ],
+      "processingP95Seconds": [
+        6.768,
+        7.285
+      ],
+      "comparisonBoundary": "TXT 6,400자·문서당 8 Chunk인 자동 Worker 기준선"
+    }
+  }
+}

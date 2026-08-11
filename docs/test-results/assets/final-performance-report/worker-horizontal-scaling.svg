@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="chart-title chart-description">
+<title id="chart-title">Worker 수·실행 Slot별 수평 확장</title>
+<desc id="chart-description">TXT 16 docs · 6,400 chars/doc · 8 chunks/doc · BGE batch 32. X축은 Worker-Slot Profile이며 좌우 축 Series를 함께 표시한다.</desc>
+<rect width="1200" height="680" fill="#ffffff"/>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}.title{font-size:25px;font-weight:700;fill:#111827;}.subtitle{font-size:14px;fill:#4b5563;}.axis{font-size:12px;fill:#4b5563;}.axis-title{font-size:13px;font-weight:600;fill:#374151;}.legend{font-size:13px;fill:#1f2937;}.grid{stroke:#e5e7eb;stroke-width:1;}.frame{stroke:#9ca3af;stroke-width:1.2;fill:none;}</style>
+<text class="title" x="105" y="42">Worker 수·실행 Slot별 수평 확장</text>
+<text class="subtitle" x="105" y="68">TXT 16 docs · 6,400 chars/doc · 8 chunks/doc · BGE batch 32</text>
+<line x1="105" y1="105" x2="129" y2="105" stroke="#2563eb" stroke-width="4"/>
+<circle cx="117" cy="105" r="4" fill="#ffffff" stroke="#2563eb" stroke-width="3"/>
+<text class="legend" x="137" y="110">처리량 (docs/min)</text>
+<line x1="272" y1="105" x2="296" y2="105" stroke="#dc2626" stroke-width="4"/>
+<circle cx="284" cy="105" r="4" fill="#ffffff" stroke="#dc2626" stroke-width="3"/>
+<text class="legend" x="304" y="110">Queue p95 (s)</text>
+<line x1="439" y1="105" x2="463" y2="105" stroke="#059669" stroke-width="4"/>
+<circle cx="451" cy="105" r="4" fill="#ffffff" stroke="#059669" stroke-width="3"/>
+<text class="legend" x="471" y="110">처리 p95 (s)</text>
+<rect class="frame" x="105" y="150" width="990" height="420"/>
+<line class="grid" x1="105" y1="570.00" x2="1095" y2="570.00"/>
+<text class="axis" x="93" y="574.00" text-anchor="end">0</text>
+<line class="grid" x1="105" y1="486.00" x2="1095" y2="486.00"/>
+<text class="axis" x="93" y="490.00" text-anchor="end">10</text>
+<line class="grid" x1="105" y1="402.00" x2="1095" y2="402.00"/>
+<text class="axis" x="93" y="406.00" text-anchor="end">20</text>
+<line class="grid" x1="105" y1="318.00" x2="1095" y2="318.00"/>
+<text class="axis" x="93" y="322.00" text-anchor="end">30</text>
+<line class="grid" x1="105" y1="234.00" x2="1095" y2="234.00"/>
+<text class="axis" x="93" y="238.00" text-anchor="end">40</text>
+<line class="grid" x1="105" y1="150.00" x2="1095" y2="150.00"/>
+<text class="axis" x="93" y="154.00" text-anchor="end">50</text>
+<text class="axis" x="1107" y="574.00" text-anchor="start">0</text>
+<text class="axis" x="1107" y="490.00" text-anchor="start">10</text>
+<text class="axis" x="1107" y="406.00" text-anchor="start">20</text>
+<text class="axis" x="1107" y="322.00" text-anchor="start">30</text>
+<text class="axis" x="1107" y="238.00" text-anchor="start">40</text>
+<text class="axis" x="1107" y="154.00" text-anchor="start">50</text>
+<rect x="148.58" y="200.71" width="53.42" height="369.29" rx="3" fill="#dc2626" fill-opacity="0.82" data-series="queueP95" data-value="43.963"/>
+<rect x="346.58" y="248.26" width="53.42" height="321.74" rx="3" fill="#dc2626" fill-opacity="0.82" data-series="queueP95" data-value="38.302"/>
+<rect x="544.58" y="243.14" width="53.42" height="326.86" rx="3" fill="#dc2626" fill-opacity="0.82" data-series="queueP95" data-value="38.912"/>
+<rect x="742.58" y="287.53" width="53.42" height="282.47" rx="3" fill="#dc2626" fill-opacity="0.82" data-series="queueP95" data-value="33.627"/>
+<rect x="940.58" y="378.40" width="53.42" height="191.60" rx="3" fill="#dc2626" fill-opacity="0.82" data-series="queueP95" data-value="22.81"/>
+<rect x="206.00" y="541.52" width="53.42" height="28.48" rx="3" fill="#059669" fill-opacity="0.82" data-series="processingP95" data-value="3.391"/>
+<rect x="404.00" y="523.38" width="53.42" height="46.62" rx="3" fill="#059669" fill-opacity="0.82" data-series="processingP95" data-value="5.55"/>
+<rect x="602.00" y="522.57" width="53.42" height="47.43" rx="3" fill="#059669" fill-opacity="0.82" data-series="processingP95" data-value="5.647"/>
+<rect x="800.00" y="471.78" width="53.42" height="98.22" rx="3" fill="#059669" fill-opacity="0.82" data-series="processingP95" data-value="11.693"/>
+<rect x="998.00" y="378.98" width="53.42" height="191.02" rx="3" fill="#059669" fill-opacity="0.82" data-series="processingP95" data-value="22.741"/>
+<polyline points="204.00,406.41 402.00,386.36 600.00,388.76 798.00,388.75 996.00,387.91" fill="none" stroke="#2563eb" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="204.00" cy="406.41" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3" data-series="throughput" data-value="19.475"/>
+<circle cx="402.00" cy="386.36" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3" data-series="throughput" data-value="21.862"/>
+<circle cx="600.00" cy="388.76" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3" data-series="throughput" data-value="21.576"/>
+<circle cx="798.00" cy="388.75" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3" data-series="throughput" data-value="21.577"/>
+<circle cx="996.00" cy="387.91" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3" data-series="throughput" data-value="21.677"/>
+<text class="axis" x="204.00" y="594" text-anchor="middle">w1-s1</text>
+<text class="axis" x="402.00" y="594" text-anchor="middle">w1-s2</text>
+<text class="axis" x="600.00" y="594" text-anchor="middle">w2-s1</text>
+<text class="axis" x="798.00" y="594" text-anchor="middle">w2-s2</text>
+<text class="axis" x="996.00" y="594" text-anchor="middle">w4-s2</text>
+<text class="axis-title" x="600.0" y="632" text-anchor="middle">Worker-Slot Profile</text>
+<text class="axis-title" x="25" y="360.0" text-anchor="middle" transform="rotate(-90 25 360.0)">docs/min</text>
+<text class="axis-title" x="1175" y="360.0" text-anchor="middle" transform="rotate(90 1175 360.0)">s</text>
+</svg>

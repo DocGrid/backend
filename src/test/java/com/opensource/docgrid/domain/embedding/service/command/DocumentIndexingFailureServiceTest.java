@@ -22,6 +22,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.opensource.docgrid.domain.document.entity.Document;
@@ -75,6 +76,7 @@ class DocumentIndexingFailureServiceTest {
     @Mock private EmbeddingRepository embeddingRepository;
     @Mock private IndexingEventRepository indexingEventRepository;
     @Mock private EmbeddingJobOwnershipValidator ownershipValidator;
+    @Mock private ApplicationEventPublisher applicationEventPublisher;
 
     private DocumentIndexingFailureService service;
     private IndexingWorkerProperties workerProperties;
@@ -101,7 +103,8 @@ class DocumentIndexingFailureServiceTest {
             ownershipValidator,
             new EmbeddingJobAttemptConverter(),
             workerProperties,
-            clock
+            clock,
+            applicationEventPublisher
         );
         prepareExecution(DocumentVersionStatus.PARSING, DocumentStatus.INDEXING);
     }

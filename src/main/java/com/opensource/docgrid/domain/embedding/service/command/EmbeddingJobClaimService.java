@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,6 +15,7 @@ import com.opensource.docgrid.domain.embedding.converter.EmbeddingJobConverter;
 import com.opensource.docgrid.domain.embedding.dto.response.ClaimedEmbeddingJobResponse;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
+import com.opensource.docgrid.domain.embedding.event.EmbeddingJobStatusChangedEvent;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.worker.config.IndexingWorkerProperties;
 import com.opensource.docgrid.domain.worker.entity.IndexingEvent;
@@ -50,6 +52,7 @@ public class EmbeddingJobClaimService {
     private final EmbeddingJobConverter embeddingJobConverter;
     private final IndexingWorkerProperties indexingWorkerProperties;
     private final Clock clock;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     /**
      * Worker가 처리할 다음 PENDING Job을 Claim한다.
@@ -95,7 +98,11 @@ public class EmbeddingJobClaimService {
             .occurredAt(claimedAt)
             .build());
 
-        // 4. Transaction 안에서 LAZY 연관 식별자를 읽어 Claim 결과 DTO를 완성한다.
+        // 4. 대시보드가 최신 집계를 다시 계산하도록 상태 전이를 알린다. AFTER_COMMIT 구독자만
+        //    반응하므로 이 Transaction이 실제로 커밋된 뒤에만 push로 이어진다.
+        applicationEventPublisher.publishEvent(new EmbeddingJobStatusChangedEvent(embeddingJob.getId()));
+
+        // 5. Transaction 안에서 LAZY 연관 식별자를 읽어 Claim 결과 DTO를 완성한다.
         return embeddingJobConverter.toClaimedResponse(embeddingJob);
     }
 

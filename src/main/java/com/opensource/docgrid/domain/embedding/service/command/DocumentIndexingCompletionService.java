@@ -8,6 +8,7 @@ import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Set;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -25,6 +26,7 @@ import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingModel;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingStatus;
+import com.opensource.docgrid.domain.embedding.event.EmbeddingJobStatusChangedEvent;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingRepository;
 import com.opensource.docgrid.domain.worker.entity.EmbeddingJobAttempt;
@@ -72,6 +74,7 @@ public class DocumentIndexingCompletionService {
     private final IndexingEventRepository indexingEventRepository;
     private final EmbeddingJobOwnershipValidator ownershipValidator;
     private final Clock clock;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     /**
      * 현재 Claim 실행이 생성한 전체 Embedding Set을 문서의 검색 가능 상태로 확정한다.
@@ -133,6 +136,10 @@ public class DocumentIndexingCompletionService {
             completedAt,
             durationMs
         );
+
+        // 6. 대시보드가 최신 집계를 다시 계산하도록 상태 전이를 알린다. AFTER_COMMIT 구독자만
+        //    반응하므로 이 Transaction이 실제로 커밋된 뒤에만 push로 이어진다.
+        applicationEventPublisher.publishEvent(new EmbeddingJobStatusChangedEvent(embeddingJob.getId()));
 
         log.info(
             "문서 인덱싱 완료: jobId={}, attemptId={}, documentId={}, versionId={}, "

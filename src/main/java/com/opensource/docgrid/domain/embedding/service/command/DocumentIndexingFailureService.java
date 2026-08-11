@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +19,7 @@ import com.opensource.docgrid.domain.embedding.dto.request.FailDocumentIndexingR
 import com.opensource.docgrid.domain.embedding.dto.response.DocumentIndexingFailureResponse;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
+import com.opensource.docgrid.domain.embedding.event.EmbeddingJobStatusChangedEvent;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingRepository;
 import com.opensource.docgrid.domain.worker.config.IndexingWorkerProperties;
@@ -48,6 +50,7 @@ public class DocumentIndexingFailureService {
     private final EmbeddingJobAttemptConverter attemptConverter;
     private final IndexingFailureTransitionService failureTransitionService;
     private final Clock clock;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     /**
      * 운영 경로에서 공통 실패 전이 Service를 주입받는 생성자.
@@ -59,7 +62,8 @@ public class DocumentIndexingFailureService {
         EmbeddingJobOwnershipValidator ownershipValidator,
         EmbeddingJobAttemptConverter attemptConverter,
         IndexingFailureTransitionService failureTransitionService,
-        Clock clock
+        Clock clock,
+        ApplicationEventPublisher applicationEventPublisher
     ) {
         this.embeddingJobRepository = embeddingJobRepository;
         this.embeddingJobAttemptRepository = embeddingJobAttemptRepository;
@@ -67,6 +71,7 @@ public class DocumentIndexingFailureService {
         this.attemptConverter = attemptConverter;
         this.failureTransitionService = failureTransitionService;
         this.clock = clock;
+        this.applicationEventPublisher = applicationEventPublisher;
     }
 
     /**
@@ -82,7 +87,8 @@ public class DocumentIndexingFailureService {
         EmbeddingJobOwnershipValidator ownershipValidator,
         EmbeddingJobAttemptConverter attemptConverter,
         IndexingWorkerProperties workerProperties,
-        Clock clock
+        Clock clock,
+        ApplicationEventPublisher applicationEventPublisher
     ) {
         this(
             embeddingJobRepository,
@@ -96,7 +102,8 @@ public class DocumentIndexingFailureService {
                 indexingEventRepository,
                 workerProperties
             ),
-            clock
+            clock,
+            applicationEventPublisher
         );
     }
 
@@ -143,6 +150,12 @@ public class DocumentIndexingFailureService {
             request.failureType().isRetryable(),
             failedAt
         );
+
+        // 4. 대시보드가 최신 집계를 다시 계산하도록 상태 전이를 알린다. transition()이 재시도 예약
+        //    (PENDING)과 최종 실패(FAILED) 중 어느 쪽으로 끝났든 embeddingJob은 같은 영속 인스턴스라
+        //    최종 상태를 그대로 반영한다. AFTER_COMMIT 구독자만 반응하므로 이 Transaction이 실제로
+        //    커밋된 뒤에만 push로 이어진다.
+        applicationEventPublisher.publishEvent(new EmbeddingJobStatusChangedEvent(embeddingJob.getId()));
 
         log.info(
             "문서 인덱싱 실패 기록: jobId={}, attemptId={}, failureType={}, retryCount={}, terminal={}",

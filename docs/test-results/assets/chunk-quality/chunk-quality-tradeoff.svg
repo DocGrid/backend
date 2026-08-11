@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="640" viewBox="0 0 1000 640" role="img" aria-labelledby="title desc">
+  <title id="title">Chunk Size와 Overlap별 중복 비율 대비 MRR@10</title>
+  <desc id="desc">실제 BAAI bge-m3로 12개 경계 질의를 측정했다. 가로축은 중복 코드 포인트 비율, 세로축은 MRR@10이다. 800에 160 Overlap 조합이 MRR 0.660으로 가장 높고, 현재 기본값 1000에 200 Overlap은 MRR 0.302다.</desc>
+  <style>
+    .title { font: 700 25px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #172033; }
+    .subtitle { font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #5b6474; }
+    .axis { stroke: #758096; stroke-width: 1.5; }
+    .grid { stroke: #dde2ea; stroke-width: 1; stroke-dasharray: 4 5; }
+    .tick { font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #5b6474; }
+    .label { font: 600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #263248; }
+    .note { font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #39445a; }
+    .zero { fill: #667085; stroke: #ffffff; stroke-width: 2; }
+    .overlap { fill: #2f80ed; stroke: #ffffff; stroke-width: 2; }
+    .default { fill: #f79009; stroke: #172033; stroke-width: 3; }
+  </style>
+  <rect width="1000" height="640" fill="#ffffff"/>
+  <text class="title" x="95" y="48">Chunk Size·Overlap 검색 품질–중복 비용 Trade-off</text>
+  <text class="subtitle" x="95" y="75">BAAI/bge-m3 · 12개 경계 Query · Exact Cosine · 2회 측정</text>
+
+  <line class="grid" x1="160" y1="530" x2="880" y2="530"/>
+  <line class="grid" x1="160" y1="416" x2="880" y2="416"/>
+  <line class="grid" x1="160" y1="301" x2="880" y2="301"/>
+  <line class="grid" x1="160" y1="187" x2="880" y2="187"/>
+  <line class="grid" x1="160" y1="130" x2="880" y2="130"/>
+  <line class="grid" x1="160" y1="130" x2="160" y2="530"/>
+  <line class="grid" x1="304" y1="130" x2="304" y2="530"/>
+  <line class="grid" x1="448" y1="130" x2="448" y2="530"/>
+  <line class="grid" x1="592" y1="130" x2="592" y2="530"/>
+  <line class="grid" x1="736" y1="130" x2="736" y2="530"/>
+  <line class="grid" x1="880" y1="130" x2="880" y2="530"/>
+
+  <line class="axis" x1="160" y1="530" x2="880" y2="530"/>
+  <line class="axis" x1="160" y1="130" x2="160" y2="530"/>
+  <text class="tick" x="132" y="534">0.0</text>
+  <text class="tick" x="132" y="420">0.2</text>
+  <text class="tick" x="132" y="305">0.4</text>
+  <text class="tick" x="132" y="191">0.6</text>
+  <text class="tick" x="132" y="134">0.7</text>
+  <text class="tick" x="153" y="553">0%</text>
+  <text class="tick" x="294" y="553">4%</text>
+  <text class="tick" x="438" y="553">8%</text>
+  <text class="tick" x="578" y="553">12%</text>
+  <text class="tick" x="722" y="553">16%</text>
+  <text class="tick" x="862" y="553">20%</text>
+  <text class="label" x="466" y="588">중복 Code Point 비율 →</text>
+  <text class="label" transform="translate(72 370) rotate(-90)">MRR@10 →</text>
+
+  <circle class="zero" cx="160" cy="429" r="8"/>
+  <text class="label" x="174" y="433">400/0 · 0.176</text>
+  <circle class="zero" cx="160" cy="350" r="8"/>
+  <text class="label" x="174" y="354">800/0 · 0.315</text>
+  <circle class="zero" cx="160" cy="393" r="8"/>
+  <text class="label" x="174" y="397">1000/0 · 0.239</text>
+  <circle class="zero" cx="160" cy="477" r="8"/>
+  <text class="label" x="174" y="481">1600/0 · 0.093</text>
+
+  <circle class="overlap" cx="874" cy="187" r="9"/>
+  <text class="label" x="742" y="176">400/80 · 0.600</text>
+  <circle class="overlap" cx="874" cy="153" r="10"/>
+  <text class="label" x="722" y="139">800/160 · 0.660</text>
+  <circle class="default" cx="755" cy="358" r="10"/>
+  <text class="label" x="615" y="344">1000/200 · 0.302</text>
+  <circle class="overlap" cx="636" cy="227" r="9"/>
+  <text class="label" x="492" y="215">1600/320 · 0.530</text>
+
+  <circle class="zero" cx="120" cy="612" r="7"/>
+  <text class="note" x="134" y="617">Overlap 0</text>
+  <circle class="overlap" cx="244" cy="612" r="7"/>
+  <text class="note" x="258" y="617">Overlap 20%</text>
+  <circle class="default" cx="403" cy="612" r="8"/>
+  <text class="note" x="418" y="617">현재 기본값</text>
+  <text class="note" x="620" y="617">높을수록 품질↑ · 왼쪽일수록 중복 비용↓</text>
+</svg>

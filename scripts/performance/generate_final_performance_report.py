@@ -240,7 +240,7 @@ def render_chart(benchmark: dict[str, Any]) -> str:
     chart = benchmark["chart"]
     ordered_series = chart["leftSeries"] + chart["rightSeries"]
     colors = {
-        series_id: PALETTE[index]
+        series_id: PALETTE[index % len(PALETTE)]
         for index, series_id in enumerate(ordered_series)
     }
     left_axis = _build_axis(
@@ -518,7 +518,11 @@ def write_outputs(rendered: dict[str, str], output_directory: Path) -> None:
     """Write all rendered SVG files using stable UTF-8 and LF output."""
     output_directory.mkdir(parents=True, exist_ok=True)
     for file_name in sorted(rendered):
-        (output_directory / file_name).write_text(rendered[file_name], encoding="utf-8")
+        # Force LF so the same normalized data produces identical bytes on every OS.
+        with (output_directory / file_name).open(
+            "w", encoding="utf-8", newline="\n"
+        ) as output_file:
+            output_file.write(rendered[file_name])
 
 
 def check_outputs(rendered: dict[str, str], output_directory: Path) -> None:
@@ -529,7 +533,8 @@ def check_outputs(rendered: dict[str, str], output_directory: Path) -> None:
         if not output_path.is_file():
             mismatches.append(f"누락: {_display_path(output_path)}")
             continue
-        if output_path.read_text(encoding="utf-8") != rendered[file_name]:
+        # Compare bytes to detect platform newline conversion as output drift.
+        if output_path.read_bytes() != rendered[file_name].encode("utf-8"):
             mismatches.append(f"불일치: {_display_path(output_path)}")
     if mismatches:
         details = "\n".join(f"- {mismatch}" for mismatch in mismatches)

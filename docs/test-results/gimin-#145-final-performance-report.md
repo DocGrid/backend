@@ -156,9 +156,10 @@ Job 실패와 제한 시간 미완료는 없었다. 즉 측정 범위에서는 �
 문서 수를 두 배로 늘려도 처리량과 개별 처리 p95는 유지됐고, Queue p95와 E2E p95가 약 두 배로
 증가했다. PDF·DOCX Parser보다 고정된 Worker 처리 용량 앞의 Queue가 전체 지연을 지배했다.
 
-본 측정 300문서에서 Chunk와 Embedding은 각각 1,200개였고 실패, Retry, 미완료, 중복 Vector는
-0건이었다. 모든 Vector는 1,024차원이었으며 PDF 페이지와 DOCX Section Metadata도 보존됐다.
-스캔 PDF와 OCR은 이 Workload 범위가 아니다.
+50문서와 100문서 Profile을 각각 2회 실행한 본 측정은 합계 300문서다. 네 실행에서 Chunk와
+Embedding은 각각 1,200개였고 실패, Retry, 미완료, 중복 Vector는 0건이었다. 모든 Vector는
+1,024차원이었으며 PDF 페이지와 DOCX Section Metadata도 보존됐다. 스캔 PDF와 OCR은 이
+Workload 범위가 아니다.
 
 ## 9. 병목 이동과 운영 판단
 
@@ -209,6 +210,20 @@ python3 scripts/performance/generate_final_performance_report.py --check
 python3 -m unittest scripts/performance/test_generate_final_performance_report.py
 ```
 
+| 검증 | 범위 | 결과 |
+|---|---|---|
+| 실제 PDF·DOCX 처리량 | 50·100문서 Profile, 각 2회 | PASS |
+| 실제 PDF·DOCX 완전성 | 네 Profile 합계 300문서·1,200 Vector | PASS |
+| 원본 부하 측정 회귀 | PDF·DOCX 결과 문서 작성 시 전체 일반 Java 회귀 | PASS, 746 tests |
+| 통합 리포트 회귀 | 현재 Branch 전체 일반 Java 회귀 | PASS, 728 tests |
+| 그래프 생성기 단위 테스트 | 데이터 계약·접근성·Drift 검출 | PASS, 4 tests |
+| Commit된 그래프 재현 | 정규화 JSON과 SVG 6개 바이트 비교 | PASS |
+| Swagger 수동 검증 | API 계약과 제품 동작을 변경하지 않는 Offline 통합 문서 작업 | 미실행, 범위 밖 |
+
+50·100문서 처리량과 합계 300문서 완전성 결과는
+[PDF·DOCX 원본 측정](gimin-%23143-pdf-docx-indexing-e2e-load-benchmark.md)에 기록된 실행을
+재사용했다. 이번 작업은 기존 Benchmark를 다시 실행하지 않고 검증된 수치를 정규화·시각화했다.
+
 | 결과 영역 | 원본 문서 |
 |---|---|
 | 초기 Claim 기준선 | [Embedding Job Claim 성능](gimin-%2361-embedding-job-claim-performance.md) |
@@ -223,8 +238,9 @@ python3 -m unittest scripts/performance/test_generate_final_performance_report.p
 ## 12. 최종 결론
 
 DocGrid는 실제 PDF·DOCX를 Parsing하고 BGE-M3로 Batch Embedding한 뒤 PostgreSQL
-`vector(1024)`에 저장하는 전체 경로를 100문서 부하까지 검증했다. 성능 개선의 우선순위는 Claim
-Worker 수를 늘리는 것이 아니라 Embedding 실행 자원과 Queue 운영 정책을 관리하는 것이다.
+`vector(1024)`에 저장하는 전체 경로를 50·100문서 Profile에서 각각 2회 측정했다. 네 실행 합계
+300문서·1,200 Vector의 완전성도 별도로 확인했다. 성능 개선의 우선순위는 Claim Worker 수를
+늘리는 것이 아니라 Embedding 실행 자원과 Queue 운영 정책을 관리하는 것이다.
 
 현재 측정 근거로는 Batch 32와 실행 Slot 2가 로컬 CPU 환경의 균형점이다. HNSW는 규모가 커질수록
 큰 지연 이점을 보이지만, 검색 품질은 실제 Corpus에서 `ef_search`를 튜닝한 뒤 확정해야 한다. 마지막

@@ -54,6 +54,7 @@ class FinalPerformanceReportGeneratorTest(unittest.TestCase):
         """Check mode must detect drift between data and committed charts."""
         GENERATOR.validate_data(self.data, GENERATOR.REPOSITORY_ROOT)
         rendered = GENERATOR.render_all(self.data)
+        GENERATOR.check_outputs(rendered, GENERATOR.DEFAULT_OUTPUT_DIRECTORY)
 
         with tempfile.TemporaryDirectory() as directory:
             output_directory = Path(directory)

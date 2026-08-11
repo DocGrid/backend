@@ -2,7 +2,7 @@
 
 - 관련 이슈: [#145](https://github.com/DocGrid/backend/issues/145)
 - 작성일: 2026-08-11
-- 상태: 구현 중
+- 상태: 구현 및 검증 완료
 
 ## 1. 배경
 

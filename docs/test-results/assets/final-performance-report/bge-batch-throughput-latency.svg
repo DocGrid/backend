@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="chart-title chart-description">
+<title id="chart-title">실제 BGE-M3 Batch 처리량과 요청 지연</title>
+<desc id="chart-description">BAAI/bge-m3 · CPU · 256 texts · profile별 3회. X축은 Batch Size이며 좌우 축 Series를 함께 표시한다.</desc>
+<rect width="1200" height="680" fill="#ffffff"/>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}.title{font-size:25px;font-weight:700;fill:#111827;}.subtitle{font-size:14px;fill:#4b5563;}.axis{font-size:12px;fill:#4b5563;}.axis-title{font-size:13px;font-weight:600;fill:#374151;}.legend{font-size:13px;fill:#1f2937;}.grid{stroke:#e5e7eb;stroke-width:1;}.frame{stroke:#9ca3af;stroke-width:1.2;fill:none;}</style>
+<text class="title" x="105" y="42">실제 BGE-M3 Batch 처리량과 요청 지연</text>
+<text class="subtitle" x="105" y="68">BAAI/bge-m3 · CPU · 256 texts · profile별 3회</text>
+<line x1="105" y1="105" x2="129" y2="105" stroke="#2563eb" stroke-width="4"/>
+<circle cx="117" cy="105" r="4" fill="#ffffff" stroke="#2563eb" stroke-width="3"/>
+<text class="legend" x="137" y="110">처리량 (texts/s)</text>
+<line x1="272" y1="105" x2="296" y2="105" stroke="#dc2626" stroke-width="4"/>
+<circle cx="284" cy="105" r="4" fill="#ffffff" stroke="#dc2626" stroke-width="3"/>
+<text class="legend" x="304" y="110">요청 p95 (ms)</text>
+<rect class="frame" x="105" y="150" width="990" height="420"/>
+<line class="grid" x1="105" y1="570.00" x2="1095" y2="570.00"/>
+<text class="axis" x="93" y="574.00" text-anchor="end">0</text>
+<line class="grid" x1="105" y1="486.00" x2="1095" y2="486.00"/>
+<text class="axis" x="93" y="490.00" text-anchor="end">4</text>
+<line class="grid" x1="105" y1="402.00" x2="1095" y2="402.00"/>
+<text class="axis" x="93" y="406.00" text-anchor="end">8</text>
+<line class="grid" x1="105" y1="318.00" x2="1095" y2="318.00"/>
+<text class="axis" x="93" y="322.00" text-anchor="end">12</text>
+<line class="grid" x1="105" y1="234.00" x2="1095" y2="234.00"/>
+<text class="axis" x="93" y="238.00" text-anchor="end">16</text>
+<line class="grid" x1="105" y1="150.00" x2="1095" y2="150.00"/>
+<text class="axis" x="93" y="154.00" text-anchor="end">20</text>
+<text class="axis" x="1107" y="574.00" text-anchor="start">0</text>
+<text class="axis" x="1107" y="490.00" text-anchor="start">1,000</text>
+<text class="axis" x="1107" y="406.00" text-anchor="start">2,000</text>
+<text class="axis" x="1107" y="322.00" text-anchor="start">3,000</text>
+<text class="axis" x="1107" y="238.00" text-anchor="start">4,000</text>
+<text class="axis" x="1107" y="154.00" text-anchor="start">5,000</text>
+<polyline points="187.50,447.15 352.50,336.48 517.50,285.03 682.50,251.85 847.50,211.32 1012.50,205.02" fill="none" stroke="#2563eb" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="187.50" cy="447.15" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3" data-series="throughput" data-value="5.85"/>
+<circle cx="352.50" cy="336.48" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3" data-series="throughput" data-value="11.12"/>
+<circle cx="517.50" cy="285.03" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3" data-series="throughput" data-value="13.57"/>
+<circle cx="682.50" cy="251.85" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3" data-series="throughput" data-value="15.15"/>
+<circle cx="847.50" cy="211.32" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3" data-series="throughput" data-value="17.08"/>
+<circle cx="1012.50" cy="205.02" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3" data-series="throughput" data-value="17.38"/>
+<polyline points="187.50,551.27 352.50,535.62 517.50,516.44 682.50,467.15 847.50,404.04 1012.50,257.54" fill="none" stroke="#dc2626" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="187.50" cy="551.27" r="5" fill="#ffffff" stroke="#dc2626" stroke-width="3" data-series="p95" data-value="222.97"/>
+<circle cx="352.50" cy="535.62" r="5" fill="#ffffff" stroke="#dc2626" stroke-width="3" data-series="p95" data-value="409.23"/>
+<circle cx="517.50" cy="516.44" r="5" fill="#ffffff" stroke="#dc2626" stroke-width="3" data-series="p95" data-value="637.61"/>
+<circle cx="682.50" cy="467.15" r="5" fill="#ffffff" stroke="#dc2626" stroke-width="3" data-series="p95" data-value="1224.44"/>
+<circle cx="847.50" cy="404.04" r="5" fill="#ffffff" stroke="#dc2626" stroke-width="3" data-series="p95" data-value="1975.7"/>
+<circle cx="1012.50" cy="257.54" r="5" fill="#ffffff" stroke="#dc2626" stroke-width="3" data-series="p95" data-value="3719.82"/>
+<text class="axis" x="187.50" y="594" text-anchor="middle">1</text>
+<text class="axis" x="352.50" y="594" text-anchor="middle">4</text>
+<text class="axis" x="517.50" y="594" text-anchor="middle">8</text>
+<text class="axis" x="682.50" y="594" text-anchor="middle">16</text>
+<text class="axis" x="847.50" y="594" text-anchor="middle">32</text>
+<text class="axis" x="1012.50" y="594" text-anchor="middle">64</text>
+<text class="axis-title" x="600.0" y="632" text-anchor="middle">Batch Size</text>
+<text class="axis-title" x="25" y="360.0" text-anchor="middle" transform="rotate(-90 25 360.0)">texts/s</text>
+<text class="axis-title" x="1175" y="360.0" text-anchor="middle" transform="rotate(90 1175 360.0)">ms</text>
+</svg>

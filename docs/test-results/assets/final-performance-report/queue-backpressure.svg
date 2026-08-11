@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="chart-title chart-description">
+<title id="chart-title">Queue 적체와 DB Pool Backpressure</title>
+<desc id="chart-description">TXT 800 chars/doc · 1 chunk/doc · Hikari pool 4 · worker slots 8. X축은 문서 수이며 좌우 축 Series를 함께 표시한다.</desc>
+<rect width="1200" height="680" fill="#ffffff"/>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}.title{font-size:25px;font-weight:700;fill:#111827;}.subtitle{font-size:14px;fill:#4b5563;}.axis{font-size:12px;fill:#4b5563;}.axis-title{font-size:13px;font-weight:600;fill:#374151;}.legend{font-size:13px;fill:#1f2937;}.grid{stroke:#e5e7eb;stroke-width:1;}.frame{stroke:#9ca3af;stroke-width:1.2;fill:none;}</style>
+<text class="title" x="105" y="42">Queue 적체와 DB Pool Backpressure</text>
+<text class="subtitle" x="105" y="68">TXT 800 chars/doc · 1 chunk/doc · Hikari pool 4 · worker slots 8</text>
+<line x1="105" y1="105" x2="129" y2="105" stroke="#2563eb" stroke-width="4"/>
+<circle cx="117" cy="105" r="4" fill="#ffffff" stroke="#2563eb" stroke-width="3"/>
+<text class="legend" x="137" y="110">처리량 (docs/min)</text>
+<line x1="272" y1="105" x2="296" y2="105" stroke="#dc2626" stroke-width="4"/>
+<circle cx="284" cy="105" r="4" fill="#ffffff" stroke="#dc2626" stroke-width="3"/>
+<text class="legend" x="304" y="110">Queue p95 (s)</text>
+<rect class="frame" x="105" y="150" width="990" height="420"/>
+<line class="grid" x1="105" y1="570.00" x2="1095" y2="570.00"/>
+<text class="axis" x="93" y="574.00" text-anchor="end">0</text>
+<line class="grid" x1="105" y1="486.00" x2="1095" y2="486.00"/>
+<text class="axis" x="93" y="490.00" text-anchor="end">40</text>
+<line class="grid" x1="105" y1="402.00" x2="1095" y2="402.00"/>
+<text class="axis" x="93" y="406.00" text-anchor="end">80</text>
+<line class="grid" x1="105" y1="318.00" x2="1095" y2="318.00"/>
+<text class="axis" x="93" y="322.00" text-anchor="end">120</text>
+<line class="grid" x1="105" y1="234.00" x2="1095" y2="234.00"/>
+<text class="axis" x="93" y="238.00" text-anchor="end">160</text>
+<line class="grid" x1="105" y1="150.00" x2="1095" y2="150.00"/>
+<text class="axis" x="93" y="154.00" text-anchor="end">200</text>
+<text class="axis" x="1107" y="574.00" text-anchor="start">0</text>
+<text class="axis" x="1107" y="490.00" text-anchor="start">20</text>
+<text class="axis" x="1107" y="406.00" text-anchor="start">40</text>
+<text class="axis" x="1107" y="322.00" text-anchor="start">60</text>
+<text class="axis" x="1107" y="238.00" text-anchor="start">80</text>
+<text class="axis" x="1107" y="154.00" text-anchor="start">100</text>
+<polyline points="228.75,227.70 476.25,256.54 723.75,270.14 971.25,271.69" fill="none" stroke="#2563eb" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="228.75" cy="227.70" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3" data-series="throughput" data-value="163.0"/>
+<circle cx="476.25" cy="256.54" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3" data-series="throughput" data-value="149.266"/>
+<circle cx="723.75" cy="270.14" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3" data-series="throughput" data-value="142.791"/>
+<circle cx="971.25" cy="271.69" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="3" data-series="throughput" data-value="142.054"/>
+<polyline points="228.75,557.09 476.25,528.15 723.75,470.13 971.25,363.35" fill="none" stroke="#dc2626" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="228.75" cy="557.09" r="5" fill="#ffffff" stroke="#dc2626" stroke-width="3" data-series="queueP95" data-value="3.07301"/>
+<circle cx="476.25" cy="528.15" r="5" fill="#ffffff" stroke="#dc2626" stroke-width="3" data-series="queueP95" data-value="9.964056"/>
+<circle cx="723.75" cy="470.13" r="5" fill="#ffffff" stroke="#dc2626" stroke-width="3" data-series="queueP95" data-value="23.777526"/>
+<circle cx="971.25" cy="363.35" r="5" fill="#ffffff" stroke="#dc2626" stroke-width="3" data-series="queueP95" data-value="49.201731"/>
+<text class="axis" x="228.75" y="594" text-anchor="middle">16</text>
+<text class="axis" x="476.25" y="594" text-anchor="middle">32</text>
+<text class="axis" x="723.75" y="594" text-anchor="middle">64</text>
+<text class="axis" x="971.25" y="594" text-anchor="middle">128</text>
+<text class="axis-title" x="600.0" y="632" text-anchor="middle">문서 수</text>
+<text class="axis-title" x="25" y="360.0" text-anchor="middle" transform="rotate(-90 25 360.0)">docs/min</text>
+<text class="axis-title" x="1175" y="360.0" text-anchor="middle" transform="rotate(90 1175 360.0)">s</text>
+</svg>

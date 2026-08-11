@@ -3,7 +3,7 @@
 - 관련 이슈: [#147](https://github.com/DocGrid/backend/issues/147)
 - 측정 일시: 2026-08-11
 - 상태: 실제 BGE-M3 측정 완료
-- 원본 데이터: [`gimin-#147-chunk-size-overlap-quality-benchmark-data.json`](./gimin-#147-chunk-size-overlap-quality-benchmark-data.json)
+- 원본 데이터: [`gimin-#147-chunk-size-overlap-quality-benchmark-data.json`](./gimin-%23147-chunk-size-overlap-quality-benchmark-data.json)
 
 ## 1. 결론
 
@@ -36,20 +36,20 @@
 | 본 측정 | Profile별 2회, 시작 순서 회전 |
 | Model Batch Size | 32 |
 | HTTP 요청당 최대 Text | 64 |
-| Query Embedding | 12개, 1,010.70ms, 1회 요청 |
+| Query Embedding | 12개, 572.52ms, 1회 요청 |
 
 ## 3. 품질·비용 비교
 
 | Chunk/Overlap | Coverage | Hit@1 | Hit@3 | MRR@10 | Chunk 수 | 중복 비율 | Embedding Median | Embedding p95 | Pareto |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|:---:|
-| `400/0` | 25.0% | 16.7% | 16.7% | 0.176 | 72 | 0.0% | 31.21s | 37.72s |  |
-| `400/80` | 100.0% | 50.0% | 66.7% | 0.600 | 84 | 21.8% | 35.83s | 37.69s |  |
-| `800/0` | 50.0% | 25.0% | 33.3% | 0.315 | 36 | 0.0% | 32.31s | 36.31s | ✓ |
-| `800/160` | **100.0%** | **50.0%** | **66.7%** | **0.660** | 48 | 21.8% | 41.37s | 43.11s | ✓ |
-| `1000/0` | 75.0% | 8.3% | 16.7% | 0.239 | 36 | 0.0% | 43.89s | 44.32s | ✓ |
-| `1000/200` 현재 기본 | 100.0% | 25.0% | 33.3% | 0.302 | 36 | 18.2% | 42.38s | 44.59s |  |
-| `1600/0` | 75.0% | 0.0% | 0.0% | 0.093 | 24 | 0.0% | 46.14s | 54.39s |  |
-| `1600/320` | 100.0% | 50.0% | 50.0% | 0.530 | 24 | **14.5%** | 52.90s | 55.59s | ✓ |
+| `400/0` | 25.0% | 16.7% | 16.7% | 0.176 | 72 | 0.0% | 26.15s | 26.85s |  |
+| `400/80` | 100.0% | 50.0% | 66.7% | 0.600 | 84 | 21.8% | 33.29s | 34.52s |  |
+| `800/0` | 50.0% | 25.0% | 33.3% | 0.315 | 36 | 0.0% | 28.62s | 30.74s | ✓ |
+| `800/160` | **100.0%** | **50.0%** | **66.7%** | **0.660** | 48 | 21.8% | 38.25s | 38.42s | ✓ |
+| `1000/0` | 75.0% | 8.3% | 16.7% | 0.239 | 36 | 0.0% | 37.79s | 41.46s | ✓ |
+| `1000/200` 현재 기본 | 100.0% | 25.0% | 33.3% | 0.302 | 36 | 18.2% | 36.66s | 38.90s |  |
+| `1600/0` | 75.0% | 0.0% | 0.0% | 0.093 | 24 | 0.0% | 42.82s | 47.69s |  |
+| `1600/320` | 100.0% | 50.0% | 50.0% | 0.530 | 24 | **14.5%** | 43.33s | 45.10s | ✓ |
 
 Pareto 표시는 Coverage·Hit@1·Hit@3·MRR@10은 높을수록 좋고 Chunk Code Point 수는 낮을수록
 좋다는 기준으로 다른 Profile에 완전히 지배되지 않은 조합이다. 실측 지연은 Host 열 상태의 영향을
@@ -72,9 +72,9 @@ Pareto 표시는 Coverage·Hit@1·Hit@3·MRR@10은 높을수록 좋고 Chunk Cod
 
 - 20% 설정의 실제 중복 비율은 마지막 짧은 Chunk 영향으로 14.5~21.8%였다.
 - 가장 작은 `400/80`은 84개 Chunk를 만들었고, `1600/320`은 24개를 만들었다.
-- Embedding p95는 36.31~55.59초 범위였다. Text 수뿐 아니라 긴 Sequence의 CPU 추론 비용이
+- Embedding p95는 26.85~47.69초 범위였다. Text 수뿐 아니라 긴 Sequence의 CPU 추론 비용이
   영향을 주어 큰 Chunk가 항상 빠르지 않았다.
-- Exact 검색 p95는 모든 Profile에서 15.78ms 이하였지만 Candidate가 최대 84개인 Micro
+- Exact 검색 p95는 모든 Profile에서 8.28ms 이하였지만 Candidate가 최대 84개인 Micro
   Benchmark라 운영 Vector 검색 성능으로 해석하지 않는다.
 
 ### 4.3 현재 기본값 판단
@@ -111,17 +111,17 @@ docker compose up -d embedding-server
 |---|---|
 | Corpus·Ground Truth·Hit@K·MRR 단위 테스트 | ✅ 성공 |
 | 일반 회귀 테스트 | ✅ 734개 성공 |
-| 실제 BGE-M3 전용 Benchmark | ✅ 11분 25초, 8 Profile × 2 Round 성공 |
+| 실제 BGE-M3 전용 Benchmark | ✅ 9분 52초, 8 Profile × 2 Round 성공 |
 | Model명·응답 개수·순서 | ✅ 모두 일치 |
 | 1024차원·유한값·0이 아닌 Norm | ✅ 모두 통과 |
-| HTTP·계약 실패 | ✅ 0건 |
+| HTTP·응답 계약·Vector 불변식 | ✅ 모든 검증 통과 후 JSON 생성 |
 | Profile별 반복 품질 결정성 | ✅ 모두 일치 |
 
 일반 회귀 테스트는 로컬 PostgreSQL의 SSL 미지원과 필수 테스트 JWT를 반영해 다음 환경으로 실행했다.
 
 ```bash
 DB_SSLMODE=disable \
-JWT_SECRET=docgrid-test-secret-key-for-local-regression-2026 \
+JWT_SECRET=<로컬-테스트용-임의-문자열> \
 ./gradlew test
 ```
 

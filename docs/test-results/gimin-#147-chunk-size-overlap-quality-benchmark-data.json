@@ -1,5 +1,5 @@
 {
-  "generatedAt" : "2026-08-11T06:40:36.551212Z",
+  "generatedAt" : "2026-08-11T07:04:50.868837Z",
   "model" : "BAAI/bge-m3",
   "embeddingEndpoint" : "http://localhost:8000",
   "osName" : "Mac OS X",
@@ -12,7 +12,7 @@
   "documentCount" : 12,
   "queryCount" : 12,
   "originalCodePoints" : 26400,
-  "queryEmbeddingMillis" : 1010.697584,
+  "queryEmbeddingMillis" : 572.515916,
   "queryEmbeddingRequestCount" : 1,
   "profiles" : [ {
     "profileId" : "c400-o0",
@@ -39,13 +39,13 @@
         "answerCovered" : false,
         "firstRelevantRank" : null,
         "topCandidateId" : "doc12:4",
-        "topSimilarity" : 0.6816941247399085
+        "topSimilarity" : 0.6816941247399084
       }, {
         "queryId" : "q3",
         "answerCovered" : false,
         "firstRelevantRank" : null,
         "topCandidateId" : "doc9:2",
-        "topSimilarity" : 0.6262402306129985
+        "topSimilarity" : 0.6262402306129986
       }, {
         "queryId" : "q4",
         "answerCovered" : false,
@@ -63,7 +63,7 @@
         "answerCovered" : false,
         "firstRelevantRank" : null,
         "topCandidateId" : "doc6:2",
-        "topSimilarity" : 0.6651210403091455
+        "topSimilarity" : 0.6651210403091457
       }, {
         "queryId" : "q7",
         "answerCovered" : true,
@@ -93,48 +93,45 @@
         "answerCovered" : false,
         "firstRelevantRank" : null,
         "topCandidateId" : "doc9:2",
-        "topSimilarity" : 0.6701510837170314
+        "topSimilarity" : 0.6701510837170316
       }, {
         "queryId" : "q12",
         "answerCovered" : false,
         "firstRelevantRank" : null,
         "topCandidateId" : "doc9:2",
-        "topSimilarity" : 0.6452717413230643
+        "topSimilarity" : 0.6452717413230644
       } ]
     },
     "chunkingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 1.574333,
-      "p95Millis" : 7.291417,
-      "maxMillis" : 7.291417
+      "medianMillis" : 1.026042,
+      "p95Millis" : 6.467208,
+      "maxMillis" : 6.467208
     },
     "embeddingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 31207.9815,
-      "p95Millis" : 37718.805917,
-      "maxMillis" : 37718.805917
+      "medianMillis" : 26146.832042,
+      "p95Millis" : 26850.768375,
+      "maxMillis" : 26850.768375
     },
     "searchTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 3.49125,
-      "p95Millis" : 15.777292,
-      "maxMillis" : 15.777292
+      "medianMillis" : 3.132959,
+      "p95Millis" : 8.279875,
+      "maxMillis" : 8.279875
     },
     "embeddingRequestCount" : 4,
-    "failureCount" : 0,
     "paretoCandidate" : false,
     "rounds" : [ {
-      "chunkingMillis" : 7.291417,
-      "embeddingMillis" : 37718.805917,
-      "searchMillis" : 15.777292,
-      "embeddingRequestCount" : 2,
-      "failureCount" : 0
+      "chunkingMillis" : 6.467208,
+      "embeddingMillis" : 26146.832042,
+      "searchMillis" : 8.279875,
+      "embeddingRequestCount" : 2
     }, {
-      "chunkingMillis" : 1.574333,
-      "embeddingMillis" : 31207.9815,
-      "searchMillis" : 3.49125,
-      "embeddingRequestCount" : 2,
-      "failureCount" : 0
+      "chunkingMillis" : 1.026042,
+      "embeddingMillis" : 26850.768375,
+      "searchMillis" : 3.132959,
+      "embeddingRequestCount" : 2
     } ]
   }, {
     "profileId" : "c400-o80",
@@ -155,7 +152,7 @@
         "answerCovered" : true,
         "firstRelevantRank" : 1,
         "topCandidateId" : "doc1:1",
-        "topSimilarity" : 0.7540549747448034
+        "topSimilarity" : 0.7540549747448035
       }, {
         "queryId" : "q2",
         "answerCovered" : true,
@@ -167,7 +164,7 @@
         "answerCovered" : true,
         "firstRelevantRank" : 1,
         "topCandidateId" : "doc3:1",
-        "topSimilarity" : 0.7462990360204614
+        "topSimilarity" : 0.7462990360204615
       }, {
         "queryId" : "q4",
         "answerCovered" : true,
@@ -191,13 +188,13 @@
         "answerCovered" : true,
         "firstRelevantRank" : 11,
         "topCandidateId" : "doc7:3",
-        "topSimilarity" : 0.7781056075487017
+        "topSimilarity" : 0.7781056075487018
       }, {
         "queryId" : "q8",
         "answerCovered" : true,
         "firstRelevantRank" : 13,
         "topCandidateId" : "doc8:3",
-        "topSimilarity" : 0.749832236977978
+        "topSimilarity" : 0.7498322369779779
       }, {
         "queryId" : "q9",
         "answerCovered" : true,
@@ -226,37 +223,34 @@
     },
     "chunkingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 2.119792,
-      "p95Millis" : 11.856792,
-      "maxMillis" : 11.856792
+      "medianMillis" : 2.682625,
+      "p95Millis" : 12.084958,
+      "maxMillis" : 12.084958
     },
     "embeddingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 35833.677667,
-      "p95Millis" : 37694.600042,
-      "maxMillis" : 37694.600042
+      "medianMillis" : 33289.058042,
+      "p95Millis" : 34516.763958,
+      "maxMillis" : 34516.763958
     },
     "searchTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 2.812958,
-      "p95Millis" : 3.549042,
-      "maxMillis" : 3.549042
+      "medianMillis" : 2.300791,
+      "p95Millis" : 2.9825,
+      "maxMillis" : 2.9825
     },
     "embeddingRequestCount" : 4,
-    "failureCount" : 0,
     "paretoCandidate" : false,
     "rounds" : [ {
-      "chunkingMillis" : 11.856792,
-      "embeddingMillis" : 35833.677667,
-      "searchMillis" : 2.812958,
-      "embeddingRequestCount" : 2,
-      "failureCount" : 0
+      "chunkingMillis" : 12.084958,
+      "embeddingMillis" : 34516.763958,
+      "searchMillis" : 2.9825,
+      "embeddingRequestCount" : 2
     }, {
-      "chunkingMillis" : 2.119792,
-      "embeddingMillis" : 37694.600042,
-      "searchMillis" : 3.549042,
-      "embeddingRequestCount" : 2,
-      "failureCount" : 0
+      "chunkingMillis" : 2.682625,
+      "embeddingMillis" : 33289.058042,
+      "searchMillis" : 2.300791,
+      "embeddingRequestCount" : 2
     } ]
   }, {
     "profileId" : "c800-o0",
@@ -289,7 +283,7 @@
         "answerCovered" : true,
         "firstRelevantRank" : 1,
         "topCandidateId" : "doc3:0",
-        "topSimilarity" : 0.6409625259330886
+        "topSimilarity" : 0.6409625259330887
       }, {
         "queryId" : "q4",
         "answerCovered" : false,
@@ -348,37 +342,34 @@
     },
     "chunkingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 1.172625,
-      "p95Millis" : 2.4705,
-      "maxMillis" : 2.4705
+      "medianMillis" : 0.966167,
+      "p95Millis" : 3.862917,
+      "maxMillis" : 3.862917
     },
     "embeddingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 32313.15125,
-      "p95Millis" : 36314.362458,
-      "maxMillis" : 36314.362458
+      "medianMillis" : 28615.78275,
+      "p95Millis" : 30743.704083,
+      "maxMillis" : 30743.704083
     },
     "searchTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 1.149833,
-      "p95Millis" : 1.905417,
-      "maxMillis" : 1.905417
+      "medianMillis" : 0.932167,
+      "p95Millis" : 1.301417,
+      "maxMillis" : 1.301417
     },
     "embeddingRequestCount" : 2,
-    "failureCount" : 0,
     "paretoCandidate" : true,
     "rounds" : [ {
-      "chunkingMillis" : 2.4705,
-      "embeddingMillis" : 36314.362458,
-      "searchMillis" : 1.149833,
-      "embeddingRequestCount" : 1,
-      "failureCount" : 0
+      "chunkingMillis" : 3.862917,
+      "embeddingMillis" : 30743.704083,
+      "searchMillis" : 0.932167,
+      "embeddingRequestCount" : 1
     }, {
-      "chunkingMillis" : 1.172625,
-      "embeddingMillis" : 32313.15125,
-      "searchMillis" : 1.905417,
-      "embeddingRequestCount" : 1,
-      "failureCount" : 0
+      "chunkingMillis" : 0.966167,
+      "embeddingMillis" : 28615.78275,
+      "searchMillis" : 1.301417,
+      "embeddingRequestCount" : 1
     } ]
   }, {
     "profileId" : "c800-o160",
@@ -411,13 +402,13 @@
         "answerCovered" : true,
         "firstRelevantRank" : 1,
         "topCandidateId" : "doc3:0",
-        "topSimilarity" : 0.6409625259330886
+        "topSimilarity" : 0.6409625259330887
       }, {
         "queryId" : "q4",
         "answerCovered" : true,
         "firstRelevantRank" : 1,
         "topCandidateId" : "doc4:1",
-        "topSimilarity" : 0.7060108112125647
+        "topSimilarity" : 0.7060108112125649
       }, {
         "queryId" : "q5",
         "answerCovered" : true,
@@ -447,7 +438,7 @@
         "answerCovered" : true,
         "firstRelevantRank" : 4,
         "topCandidateId" : "doc1:0",
-        "topSimilarity" : 0.6499167971165734
+        "topSimilarity" : 0.6499167971165735
       }, {
         "queryId" : "q10",
         "answerCovered" : true,
@@ -465,42 +456,39 @@
         "answerCovered" : true,
         "firstRelevantRank" : 1,
         "topCandidateId" : "doc12:2",
-        "topSimilarity" : 0.6495438677852052
+        "topSimilarity" : 0.6495438677852051
       } ]
     },
     "chunkingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 1.934042,
-      "p95Millis" : 3.197042,
-      "maxMillis" : 3.197042
+      "medianMillis" : 2.109666,
+      "p95Millis" : 2.389542,
+      "maxMillis" : 2.389542
     },
     "embeddingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 41371.758584,
-      "p95Millis" : 43114.870959,
-      "maxMillis" : 43114.870959
+      "medianMillis" : 38248.445167,
+      "p95Millis" : 38416.442958,
+      "maxMillis" : 38416.442958
     },
     "searchTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 1.625625,
-      "p95Millis" : 3.424125,
-      "maxMillis" : 3.424125
+      "medianMillis" : 1.291917,
+      "p95Millis" : 1.6895,
+      "maxMillis" : 1.6895
     },
     "embeddingRequestCount" : 2,
-    "failureCount" : 0,
     "paretoCandidate" : true,
     "rounds" : [ {
-      "chunkingMillis" : 3.197042,
-      "embeddingMillis" : 43114.870959,
-      "searchMillis" : 1.625625,
-      "embeddingRequestCount" : 1,
-      "failureCount" : 0
+      "chunkingMillis" : 2.389542,
+      "embeddingMillis" : 38416.442958,
+      "searchMillis" : 1.291917,
+      "embeddingRequestCount" : 1
     }, {
-      "chunkingMillis" : 1.934042,
-      "embeddingMillis" : 41371.758584,
-      "searchMillis" : 3.424125,
-      "embeddingRequestCount" : 1,
-      "failureCount" : 0
+      "chunkingMillis" : 2.109666,
+      "embeddingMillis" : 38248.445167,
+      "searchMillis" : 1.6895,
+      "embeddingRequestCount" : 1
     } ]
   }, {
     "profileId" : "c1000-o0",
@@ -521,7 +509,7 @@
         "answerCovered" : true,
         "firstRelevantRank" : 2,
         "topCandidateId" : "doc7:1",
-        "topSimilarity" : 0.6904044091974142
+        "topSimilarity" : 0.6904044091974141
       }, {
         "queryId" : "q2",
         "answerCovered" : true,
@@ -533,13 +521,13 @@
         "answerCovered" : true,
         "firstRelevantRank" : 1,
         "topCandidateId" : "doc3:0",
-        "topSimilarity" : 0.6371132458563252
+        "topSimilarity" : 0.6371132458563253
       }, {
         "queryId" : "q4",
         "answerCovered" : true,
         "firstRelevantRank" : 7,
         "topCandidateId" : "doc7:1",
-        "topSimilarity" : 0.6425385345264589
+        "topSimilarity" : 0.6425385345264588
       }, {
         "queryId" : "q5",
         "answerCovered" : true,
@@ -563,7 +551,7 @@
         "answerCovered" : false,
         "firstRelevantRank" : null,
         "topCandidateId" : "doc8:1",
-        "topSimilarity" : 0.7040165847552032
+        "topSimilarity" : 0.7040165847552031
       }, {
         "queryId" : "q9",
         "answerCovered" : false,
@@ -592,37 +580,34 @@
     },
     "chunkingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 1.982292,
-      "p95Millis" : 2.509709,
-      "maxMillis" : 2.509709
+      "medianMillis" : 1.203541,
+      "p95Millis" : 1.3275,
+      "maxMillis" : 1.3275
     },
     "embeddingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 43893.614,
-      "p95Millis" : 44316.125708,
-      "maxMillis" : 44316.125708
+      "medianMillis" : 37793.176792,
+      "p95Millis" : 41457.951042,
+      "maxMillis" : 41457.951042
     },
     "searchTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 1.429875,
-      "p95Millis" : 1.651542,
-      "maxMillis" : 1.651542
+      "medianMillis" : 0.915083,
+      "p95Millis" : 1.831083,
+      "maxMillis" : 1.831083
     },
     "embeddingRequestCount" : 2,
-    "failureCount" : 0,
     "paretoCandidate" : true,
     "rounds" : [ {
-      "chunkingMillis" : 2.509709,
-      "embeddingMillis" : 43893.614,
-      "searchMillis" : 1.651542,
-      "embeddingRequestCount" : 1,
-      "failureCount" : 0
+      "chunkingMillis" : 1.3275,
+      "embeddingMillis" : 37793.176792,
+      "searchMillis" : 0.915083,
+      "embeddingRequestCount" : 1
     }, {
-      "chunkingMillis" : 1.982292,
-      "embeddingMillis" : 44316.125708,
-      "searchMillis" : 1.429875,
-      "embeddingRequestCount" : 1,
-      "failureCount" : 0
+      "chunkingMillis" : 1.203541,
+      "embeddingMillis" : 41457.951042,
+      "searchMillis" : 1.831083,
+      "embeddingRequestCount" : 1
     } ]
   }, {
     "profileId" : "c1000-o200",
@@ -655,7 +640,7 @@
         "answerCovered" : true,
         "firstRelevantRank" : 1,
         "topCandidateId" : "doc3:0",
-        "topSimilarity" : 0.6371132458563252
+        "topSimilarity" : 0.6371132458563253
       }, {
         "queryId" : "q4",
         "answerCovered" : true,
@@ -697,7 +682,7 @@
         "answerCovered" : true,
         "firstRelevantRank" : 13,
         "topCandidateId" : "doc12:2",
-        "topSimilarity" : 0.6536859433031584
+        "topSimilarity" : 0.6536859433031583
       }, {
         "queryId" : "q11",
         "answerCovered" : true,
@@ -714,37 +699,34 @@
     },
     "chunkingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 1.028416,
-      "p95Millis" : 1.315542,
-      "maxMillis" : 1.315542
+      "medianMillis" : 1.166667,
+      "p95Millis" : 1.455208,
+      "maxMillis" : 1.455208
     },
     "embeddingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 42377.414125,
-      "p95Millis" : 44590.625583,
-      "maxMillis" : 44590.625583
+      "medianMillis" : 36656.349834,
+      "p95Millis" : 38899.592708,
+      "maxMillis" : 38899.592708
     },
     "searchTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 1.32275,
-      "p95Millis" : 1.3235,
-      "maxMillis" : 1.3235
+      "medianMillis" : 1.012375,
+      "p95Millis" : 1.186834,
+      "maxMillis" : 1.186834
     },
     "embeddingRequestCount" : 2,
-    "failureCount" : 0,
     "paretoCandidate" : false,
     "rounds" : [ {
-      "chunkingMillis" : 1.028416,
-      "embeddingMillis" : 44590.625583,
-      "searchMillis" : 1.32275,
-      "embeddingRequestCount" : 1,
-      "failureCount" : 0
+      "chunkingMillis" : 1.455208,
+      "embeddingMillis" : 36656.349834,
+      "searchMillis" : 1.012375,
+      "embeddingRequestCount" : 1
     }, {
-      "chunkingMillis" : 1.315542,
-      "embeddingMillis" : 42377.414125,
-      "searchMillis" : 1.3235,
-      "embeddingRequestCount" : 1,
-      "failureCount" : 0
+      "chunkingMillis" : 1.166667,
+      "embeddingMillis" : 38899.592708,
+      "searchMillis" : 1.186834,
+      "embeddingRequestCount" : 1
     } ]
   }, {
     "profileId" : "c1600-o0",
@@ -783,7 +765,7 @@
         "answerCovered" : true,
         "firstRelevantRank" : 11,
         "topCandidateId" : "doc11:1",
-        "topSimilarity" : 0.6416130232835788
+        "topSimilarity" : 0.6416130232835789
       }, {
         "queryId" : "q5",
         "answerCovered" : true,
@@ -813,13 +795,13 @@
         "answerCovered" : true,
         "firstRelevantRank" : 9,
         "topCandidateId" : "doc10:1",
-        "topSimilarity" : 0.6409233550075841
+        "topSimilarity" : 0.6409233550075842
       }, {
         "queryId" : "q10",
         "answerCovered" : false,
         "firstRelevantRank" : null,
         "topCandidateId" : "doc12:1",
-        "topSimilarity" : 0.6536859433031584
+        "topSimilarity" : 0.6536859433031583
       }, {
         "queryId" : "q11",
         "answerCovered" : false,
@@ -831,42 +813,39 @@
         "answerCovered" : false,
         "firstRelevantRank" : null,
         "topCandidateId" : "doc11:1",
-        "topSimilarity" : 0.6365183412550757
+        "topSimilarity" : 0.6365183412550758
       } ]
     },
     "chunkingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 0.702416,
-      "p95Millis" : 0.926666,
-      "maxMillis" : 0.926666
+      "medianMillis" : 1.300458,
+      "p95Millis" : 3.021625,
+      "maxMillis" : 3.021625
     },
     "embeddingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 46135.786416,
-      "p95Millis" : 54386.107375,
-      "maxMillis" : 54386.107375
+      "medianMillis" : 42823.150167,
+      "p95Millis" : 47688.757333,
+      "maxMillis" : 47688.757333
     },
     "searchTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 1.118375,
-      "p95Millis" : 1.151,
-      "maxMillis" : 1.151
+      "medianMillis" : 0.549166,
+      "p95Millis" : 0.591667,
+      "maxMillis" : 0.591667
     },
     "embeddingRequestCount" : 2,
-    "failureCount" : 0,
     "paretoCandidate" : false,
     "rounds" : [ {
-      "chunkingMillis" : 0.926666,
-      "embeddingMillis" : 54386.107375,
-      "searchMillis" : 1.118375,
-      "embeddingRequestCount" : 1,
-      "failureCount" : 0
+      "chunkingMillis" : 1.300458,
+      "embeddingMillis" : 47688.757333,
+      "searchMillis" : 0.549166,
+      "embeddingRequestCount" : 1
     }, {
-      "chunkingMillis" : 0.702416,
-      "embeddingMillis" : 46135.786416,
-      "searchMillis" : 1.151,
-      "embeddingRequestCount" : 1,
-      "failureCount" : 0
+      "chunkingMillis" : 3.021625,
+      "embeddingMillis" : 42823.150167,
+      "searchMillis" : 0.591667,
+      "embeddingRequestCount" : 1
     } ]
   }, {
     "profileId" : "c1600-o320",
@@ -917,7 +896,7 @@
         "answerCovered" : true,
         "firstRelevantRank" : 8,
         "topCandidateId" : "doc10:1",
-        "topSimilarity" : 0.5832690317702725
+        "topSimilarity" : 0.5832690317702722
       }, {
         "queryId" : "q7",
         "answerCovered" : true,
@@ -953,42 +932,39 @@
         "answerCovered" : true,
         "firstRelevantRank" : 1,
         "topCandidateId" : "doc12:1",
-        "topSimilarity" : 0.6418130607741556
+        "topSimilarity" : 0.6418130607741558
       } ]
     },
     "chunkingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 1.3545,
-      "p95Millis" : 1.575083,
-      "maxMillis" : 1.575083
+      "medianMillis" : 0.856042,
+      "p95Millis" : 1.125625,
+      "maxMillis" : 1.125625
     },
     "embeddingTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 52903.824875,
-      "p95Millis" : 55587.691958,
-      "maxMillis" : 55587.691958
+      "medianMillis" : 43325.423167,
+      "p95Millis" : 45104.538875,
+      "maxMillis" : 45104.538875
     },
     "searchTiming" : {
       "sampleCount" : 2,
-      "medianMillis" : 1.092,
-      "p95Millis" : 1.2385,
-      "maxMillis" : 1.2385
+      "medianMillis" : 0.698083,
+      "p95Millis" : 0.720375,
+      "maxMillis" : 0.720375
     },
     "embeddingRequestCount" : 2,
-    "failureCount" : 0,
     "paretoCandidate" : true,
     "rounds" : [ {
-      "chunkingMillis" : 1.3545,
-      "embeddingMillis" : 55587.691958,
-      "searchMillis" : 1.092,
-      "embeddingRequestCount" : 1,
-      "failureCount" : 0
+      "chunkingMillis" : 1.125625,
+      "embeddingMillis" : 43325.423167,
+      "searchMillis" : 0.698083,
+      "embeddingRequestCount" : 1
     }, {
-      "chunkingMillis" : 1.575083,
-      "embeddingMillis" : 52903.824875,
-      "searchMillis" : 1.2385,
-      "embeddingRequestCount" : 1,
-      "failureCount" : 0
+      "chunkingMillis" : 0.856042,
+      "embeddingMillis" : 45104.538875,
+      "searchMillis" : 0.720375,
+      "embeddingRequestCount" : 1
     } ]
   } ]
 }

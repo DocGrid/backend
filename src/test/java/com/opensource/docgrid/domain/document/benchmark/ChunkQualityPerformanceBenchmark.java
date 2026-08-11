@@ -156,8 +156,7 @@ class ChunkQualityPerformanceBenchmark {
             chunkingMillis,
             embeddingMillis,
             searchMillis,
-            chunkEmbeddings.requestCount(),
-            0
+            chunkEmbeddings.requestCount()
         );
     }
 
@@ -211,6 +210,7 @@ class ChunkQualityPerformanceBenchmark {
     }
 
     private boolean isParetoCandidate(ProfileResult candidate, List<ProfileResult> results) {
+        // record의 값 기반 equals는 지표가 같은 다른 Profile까지 제외하므로 참조로 자기 자신만 건너뛴다.
         return results.stream().noneMatch(other -> other != candidate && dominates(other, candidate));
     }
 
@@ -289,35 +289,8 @@ class ChunkQualityPerformanceBenchmark {
         Path outputPath
     ) {
 
-        static BenchmarkConfiguration fromSystemProperties() {
-            String configuredUrl = System.getProperty("chunk.quality.performance.server-url");
-            if (configuredUrl == null || configuredUrl.isBlank()) {
-                configuredUrl = System.getenv().getOrDefault("EMBEDDING_SERVER_URL", "http://localhost:8000");
-            }
-            BenchmarkConfiguration configuration = new BenchmarkConfiguration(
-                URI.create(configuredUrl),
-                integerProperty("chunk.quality.performance.warm-up-runs", 1),
-                integerProperty("chunk.quality.performance.rounds", 2),
-                integerProperty("chunk.quality.performance.batch-size", 32),
-                Path.of(System.getProperty(
-                    "chunk.quality.performance.output",
-                    "build/reports/chunk-quality/chunk-quality-latest.json"
-                ))
-            );
-            configuration.validate();
-            return configuration;
-        }
-
-        private static int integerProperty(String name, int defaultValue) {
-            try {
-                return Integer.parseInt(System.getProperty(name, Integer.toString(defaultValue)));
-            } catch (NumberFormatException exception) {
-                throw new IllegalArgumentException("정수 System Property가 필요합니다: " + name, exception);
-            }
-        }
-
-        private void validate() {
-            if (serverUri.getScheme() == null || serverUri.getHost() == null) {
+        BenchmarkConfiguration {
+            if (serverUri == null || serverUri.getScheme() == null || serverUri.getHost() == null) {
                 throw new IllegalArgumentException("Embedding Server URL은 절대 HTTP URL이어야 합니다.");
             }
             if (!"http".equals(serverUri.getScheme()) && !"https".equals(serverUri.getScheme())) {
@@ -332,7 +305,36 @@ class ChunkQualityPerformanceBenchmark {
             if (batchSize < 1 || batchSize > MAX_REQUEST_TEXTS) {
                 throw new IllegalArgumentException("Batch Size는 1 이상 64 이하여야 합니다.");
             }
+            if (outputPath == null) {
+                throw new IllegalArgumentException("Benchmark 출력 경로가 필요합니다.");
+            }
         }
+
+        static BenchmarkConfiguration fromSystemProperties() {
+            String configuredUrl = System.getProperty("chunk.quality.performance.server-url");
+            if (configuredUrl == null || configuredUrl.isBlank()) {
+                configuredUrl = System.getenv().getOrDefault("EMBEDDING_SERVER_URL", "http://localhost:8000");
+            }
+            return new BenchmarkConfiguration(
+                URI.create(configuredUrl),
+                integerProperty("chunk.quality.performance.warm-up-runs", 1),
+                integerProperty("chunk.quality.performance.rounds", 2),
+                integerProperty("chunk.quality.performance.batch-size", 32),
+                Path.of(System.getProperty(
+                    "chunk.quality.performance.output",
+                    "build/reports/chunk-quality/chunk-quality-latest.json"
+                ))
+            );
+        }
+
+        private static int integerProperty(String name, int defaultValue) {
+            try {
+                return Integer.parseInt(System.getProperty(name, Integer.toString(defaultValue)));
+            } catch (NumberFormatException exception) {
+                throw new IllegalArgumentException("정수 System Property가 필요합니다: " + name, exception);
+            }
+        }
+
     }
 
     /**
@@ -350,8 +352,7 @@ class ChunkQualityPerformanceBenchmark {
         double chunkingMillis,
         double embeddingMillis,
         double searchMillis,
-        int embeddingRequestCount,
-        int failureCount
+        int embeddingRequestCount
     ) {
     }
 
@@ -413,7 +414,6 @@ class ChunkQualityPerformanceBenchmark {
                 summarizeTimings(rounds.stream().map(RoundMeasurement::embeddingMillis).toList()),
                 summarizeTimings(rounds.stream().map(RoundMeasurement::searchMillis).toList()),
                 rounds.stream().mapToInt(RoundMeasurement::embeddingRequestCount).sum(),
-                rounds.stream().mapToInt(RoundMeasurement::failureCount).sum(),
                 paretoCandidate,
                 rounds.stream().map(RoundResult::from).toList()
             );
@@ -421,14 +421,13 @@ class ChunkQualityPerformanceBenchmark {
     }
 
     /**
-     * 외부 결과에 노출하는 한 Round의 지연과 요청·실패 수다.
+     * 외부 결과에 노출하는 한 Round의 지연과 요청 수다.
      */
     record RoundResult(
         double chunkingMillis,
         double embeddingMillis,
         double searchMillis,
-        int embeddingRequestCount,
-        int failureCount
+        int embeddingRequestCount
     ) {
 
         private static RoundResult from(RoundMeasurement measurement) {
@@ -436,8 +435,7 @@ class ChunkQualityPerformanceBenchmark {
                 measurement.chunkingMillis(),
                 measurement.embeddingMillis(),
                 measurement.searchMillis(),
-                measurement.embeddingRequestCount(),
-                measurement.failureCount()
+                measurement.embeddingRequestCount()
             );
         }
     }
@@ -459,7 +457,6 @@ class ChunkQualityPerformanceBenchmark {
         TimingSummary embeddingTiming,
         TimingSummary searchTiming,
         int embeddingRequestCount,
-        int failureCount,
         boolean paretoCandidate,
         List<RoundResult> rounds
     ) {
@@ -483,7 +480,6 @@ class ChunkQualityPerformanceBenchmark {
                 embeddingTiming,
                 searchTiming,
                 embeddingRequestCount,
-                failureCount,
                 value,
                 rounds
             );

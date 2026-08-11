@@ -211,6 +211,10 @@ final class ChunkQualityBenchmarkSupport {
      * Vector 차원과 유한값, 0이 아닌 Norm을 검증한다.
      */
     static void validateVector(float[] vector) {
+        validatedNorm(vector);
+    }
+
+    private static double validatedNorm(float[] vector) {
         if (vector == null || vector.length != VECTOR_DIMENSION) {
             throw new IllegalArgumentException("Embedding Vector는 1024차원이어야 합니다.");
         }
@@ -224,23 +228,23 @@ final class ChunkQualityBenchmarkSupport {
         if (squaredNorm == 0.0) {
             throw new IllegalArgumentException("Embedding Vector Norm은 0보다 커야 합니다.");
         }
+        return Math.sqrt(squaredNorm);
     }
 
     /**
      * 같은 차원의 두 Dense Vector 사이 Cosine Similarity를 계산한다.
      */
     static double cosineSimilarity(float[] left, float[] right) {
-        validateVector(left);
-        validateVector(right);
+        return cosineSimilarity(left, validatedNorm(left), right);
+    }
+
+    private static double cosineSimilarity(float[] left, double leftNorm, float[] right) {
+        double rightNorm = validatedNorm(right);
         double dotProduct = 0.0;
-        double leftSquaredNorm = 0.0;
-        double rightSquaredNorm = 0.0;
         for (int index = 0; index < left.length; index++) {
             dotProduct += left[index] * right[index];
-            leftSquaredNorm += left[index] * left[index];
-            rightSquaredNorm += right[index] * right[index];
         }
-        return dotProduct / Math.sqrt(leftSquaredNorm * rightSquaredNorm);
+        return dotProduct / (leftNorm * rightNorm);
     }
 
     /**
@@ -250,10 +254,10 @@ final class ChunkQualityBenchmarkSupport {
         if (samplesMillis == null || samplesMillis.isEmpty()) {
             throw new IllegalArgumentException("Timing 표본은 한 개 이상이어야 합니다.");
         }
-        List<Double> sorted = samplesMillis.stream().sorted().toList();
-        if (sorted.stream().anyMatch(value -> value == null || !Double.isFinite(value) || value < 0.0)) {
+        if (samplesMillis.stream().anyMatch(value -> value == null || !Double.isFinite(value) || value < 0.0)) {
             throw new IllegalArgumentException("Timing 표본은 0 이상의 유한값이어야 합니다.");
         }
+        List<Double> sorted = samplesMillis.stream().sorted().toList();
         return new TimingSummary(
             sorted.size(),
             nearestRank(sorted, 0.50),
@@ -267,11 +271,16 @@ final class ChunkQualityBenchmarkSupport {
         float[] queryVector,
         Map<String, float[]> chunkVectors
     ) {
+        double queryNorm = validatedNorm(queryVector);
         List<RankedChunk> ranked = new ArrayList<>(candidates.size());
         for (ChunkCandidate candidate : candidates) {
             ranked.add(new RankedChunk(
                 candidate,
-                cosineSimilarity(queryVector, requiredVector(chunkVectors, candidate.candidateId()))
+                cosineSimilarity(
+                    queryVector,
+                    queryNorm,
+                    requiredVector(chunkVectors, candidate.candidateId())
+                )
             ));
         }
         ranked.sort(
@@ -282,7 +291,7 @@ final class ChunkQualityBenchmarkSupport {
         return ranked;
     }
 
-    private static boolean isRelevant(QueryCase queryCase, ChunkCandidate candidate) {
+    static boolean isRelevant(QueryCase queryCase, ChunkCandidate candidate) {
         return queryCase.documentId().equals(candidate.documentId())
             && candidate.charStart() <= queryCase.evidenceStart()
             && candidate.charEnd() >= queryCase.evidenceEnd();
@@ -430,7 +439,9 @@ final class ChunkQualityBenchmarkSupport {
         Map<String, float[]> result = new LinkedHashMap<>();
         for (int index = 0; index < ids.size(); index++) {
             validateVector(vectors.get(index));
-            result.put(ids.get(index), vectors.get(index).clone());
+            if (result.put(ids.get(index), vectors.get(index).clone()) != null) {
+                throw new IllegalArgumentException("중복된 Vector ID입니다: " + ids.get(index));
+            }
         }
         return Map.copyOf(result);
     }

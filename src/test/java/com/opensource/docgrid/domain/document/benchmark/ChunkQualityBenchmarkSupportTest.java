@@ -3,6 +3,9 @@ package com.opensource.docgrid.domain.document.benchmark;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.net.URI;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -15,6 +18,7 @@ import com.opensource.docgrid.domain.document.benchmark.ChunkQualityBenchmarkSup
 import com.opensource.docgrid.domain.document.benchmark.ChunkQualityBenchmarkSupport.QualityMetrics;
 import com.opensource.docgrid.domain.document.benchmark.ChunkQualityBenchmarkSupport.QueryCase;
 import com.opensource.docgrid.domain.document.benchmark.ChunkQualityBenchmarkSupport.TimingSummary;
+import com.opensource.docgrid.domain.document.benchmark.ChunkQualityPerformanceBenchmark.BenchmarkConfiguration;
 
 /**
  * 실제 모델 없이 Chunk 품질 Benchmark의 Corpus, Ground Truth와 Exact 품질 계산을 검증한다.
@@ -129,6 +133,53 @@ class ChunkQualityBenchmarkSupportTest {
         assertThat(summary.maxMillis()).isEqualTo(8.0);
     }
 
+    @Test
+    @DisplayName("Timing null 표본은 정렬 전에 명시적인 입력 오류로 거부한다")
+    void summarizeTimings_rejectsNullBeforeSorting() {
+        List<Double> samples = new ArrayList<>();
+        samples.add(1.0);
+        samples.add(null);
+
+        assertThatThrownBy(() -> ChunkQualityBenchmarkSupport.summarizeTimings(samples))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("Timing 표본은 0 이상의 유한값이어야 합니다.");
+    }
+
+    @Test
+    @DisplayName("Vector Map은 중복 ID로 앞선 Vector가 덮어써지는 것을 거부한다")
+    void vectorMap_rejectsDuplicateIds() {
+        assertThatThrownBy(() -> ChunkQualityBenchmarkSupport.vectorMap(
+            List.of("duplicate", "duplicate"),
+            List.of(vector(1.0F, 0.0F), vector(0.0F, 1.0F))
+        ))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("중복된 Vector ID입니다: duplicate");
+    }
+
+    @Test
+    @DisplayName("Benchmark 설정은 직접 생성해도 URL과 실행 횟수 불변식을 검증한다")
+    void benchmarkConfiguration_validatesEveryConstructionPath() {
+        assertThatThrownBy(() -> new BenchmarkConfiguration(
+            URI.create("ftp://localhost:8000"),
+            1,
+            2,
+            32,
+            Path.of("result.json")
+        ))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("Embedding Server URL은 HTTP 또는 HTTPS여야 합니다.");
+
+        assertThatThrownBy(() -> new BenchmarkConfiguration(
+            URI.create("http://localhost:8000"),
+            0,
+            2,
+            32,
+            Path.of("result.json")
+        ))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("Warm-up과 측정 Round는 각각 1 이상이어야 합니다.");
+    }
+
     private void assertBoundaryCoverage(
         List<QueryCase> corpus,
         ChunkProfile profile,
@@ -141,11 +192,8 @@ class ChunkQualityBenchmarkSupportTest {
         ChunkedCorpus chunked = ChunkQualityBenchmarkSupport.chunk(targetCases, profile);
 
         for (QueryCase queryCase : targetCases) {
-            boolean covered = chunked.candidates().stream().anyMatch(candidate ->
-                candidate.documentId().equals(queryCase.documentId())
-                    && candidate.charStart() <= queryCase.evidenceStart()
-                    && candidate.charEnd() >= queryCase.evidenceEnd()
-            );
+            boolean covered = chunked.candidates().stream()
+                .anyMatch(candidate -> ChunkQualityBenchmarkSupport.isRelevant(queryCase, candidate));
             assertThat(covered).isEqualTo(expected);
         }
     }

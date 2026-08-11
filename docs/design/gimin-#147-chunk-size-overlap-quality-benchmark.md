@@ -99,7 +99,6 @@ Page·Section 경계 보존 동작은 제품 Chunker 테스트 범위이며 이�
 | Duplicate Ratio | `Duplicate Code Points / 원문 Code Points` |
 | Embedding Median·P95 | Profile별 Chunk Vector 생성 시간의 Round 통계 |
 | Search Median·P95 | 전체 Query Exact Ranking 시간의 Round 통계 |
-| Failure Count | HTTP·응답 계약·Vector 불변식 실패 수 |
 
 ## 7. 실행 공정성
 
@@ -152,7 +151,7 @@ build/reports/chunk-quality/chunk-quality-latest.json
 
 ## 10. 결과 해석
 
-1. Failure Count가 0이고 Vector 불변식을 만족한 Profile만 비교한다.
+1. JSON이 생성되면 모든 HTTP·응답 계약·Vector 불변식 검증을 통과한 것으로 본다.
 2. Answer Coverage와 Hit@3가 가장 높은 Profile 집합을 확인한다.
 3. 같은 품질이면 Duplicate Ratio와 Embedding P95가 낮은 Profile을 선호한다.
 4. 한 Profile이 다른 Profile보다 품질은 낮지 않고 비용은 높지 않으면서 한 지표 이상 우수하면

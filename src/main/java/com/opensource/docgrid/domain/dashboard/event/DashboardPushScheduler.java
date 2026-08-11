@@ -18,8 +18,8 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>이 클래스는 새 로직을 거의 안 만들고, 이미 있는 세 부품을 "언제 조합해서 실행할지"만
  * 정한다: "바뀌었는지 확인"은 {@link DashboardUpdateFlag}, "최신 집계 계산"은
- * {@code DashboardQueryService}(이슈1), "WebSocket 전송"은
- * {@code DashboardWebSocketController}(이슈2)가 이미 만들어 둔 것을 그대로 가져다 쓴다.
+ * {@code DashboardQueryService}(대시보드 집계 조회), "WebSocket 전송"은
+ * {@code DashboardWebSocketController}(WebSocket 전송)가 이미 만들어 둔 것을 그대로 가져다 쓴다.
  */
 @Component
 @RequiredArgsConstructor
@@ -41,7 +41,14 @@ public class DashboardPushScheduler {
         if (dashboardUpdateFlag.consumeIfDirty()) {
             // 2. 있었을 때만 최신 집계를 처음부터 다시 계산해서 push한다. 없었으면 이 블록 자체가
             //    실행되지 않으므로 DB 조회도 push도 전혀 일어나지 않는다.
-            dashboardWebSocketController.sendDashboardUpdate(dashboardQueryService.getSummary());
+            try {
+                dashboardWebSocketController.sendDashboardUpdate(dashboardQueryService.getSummary());
+            } catch (RuntimeException exception) {
+                // 집계나 push가 실패하면 이미 소비해버린 dirty 신호를 되살린다 — 안 그러면 다음
+                // 상태 전이가 안 들어오는 한 대시보드가 갱신 신호를 영영 잃어버린 채로 남는다.
+                dashboardUpdateFlag.markDirty();
+                throw exception;
+            }
         }
     }
 }

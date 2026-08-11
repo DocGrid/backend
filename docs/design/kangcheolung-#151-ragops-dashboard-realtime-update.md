@@ -103,7 +103,7 @@ Worker는 여러 스레드가 동시에 도는 구조라, 예를 들어 전체 �
 
 ## 3. 아키텍처 개요
 
-```
+```text
 [Worker Thread]                                    [Scheduler Thread — 300ms마다]
      │
      │ ① Claim/Completion/Failure 로직 실행
@@ -332,7 +332,7 @@ public class DashboardUpdateFlag {
 
 실제 흐름:
 
-```
+```text
 [시작] dirty = false
 
 Worker가 job A를 claim → 리스너가 markDirty() 호출 → dirty = true

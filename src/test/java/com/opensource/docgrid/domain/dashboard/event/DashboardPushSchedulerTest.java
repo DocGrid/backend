@@ -1,5 +1,6 @@
 package com.opensource.docgrid.domain.dashboard.event;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.mock;
 import static org.mockito.BDDMockito.then;
@@ -52,5 +53,19 @@ class DashboardPushSchedulerTest {
         // Then
         then(dashboardQueryService).shouldHaveNoInteractions();
         then(dashboardWebSocketController).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("예외 케이스: 집계·push 도중 예외가 나면 dirty 플래그를 복구하고 예외를 다시 던진다")
+    void pushIfDirty_restoresDirtyFlagAndRethrows_whenSendingUpdateFails() {
+        // Given
+        given(dashboardUpdateFlag.consumeIfDirty()).willReturn(true);
+        given(dashboardQueryService.getSummary()).willThrow(new RuntimeException("집계 실패"));
+
+        // When & Then
+        assertThatThrownBy(() -> scheduler.pushIfDirty())
+            .isInstanceOf(RuntimeException.class)
+            .hasMessage("집계 실패");
+        then(dashboardUpdateFlag).should().markDirty();
     }
 }

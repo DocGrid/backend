@@ -28,7 +28,7 @@ import com.opensource.docgrid.domain.dashboard.dto.response.RetryAllJobsResponse
  *
  * <p>{@link EmbeddingJobRetryService}가 클래스 레벨 {@code @Transactional}을 의도적으로 두지
  * 않는 이유(트랜잭션 독립 커밋)는 Mockito 단위 테스트로는 증명할 수 없다 — Mock은 실제 스프링
- * 트랜잭션 프록시를 거치지 않기 때문이다. 이 테스트는 A 담당자의 {@code EmbeddingJobManualRetryService}를
+ * 트랜잭션 프록시를 거치지 않기 때문이다. 이 테스트는 {@code EmbeddingJobManualRetryService}를
  * Mock 없이 그대로 사용해서 실제 Transaction 경계를 검증한다.
  */
 @Tag("integration")
@@ -117,7 +117,7 @@ class EmbeddingJobRetryTransactionIsolationIntegrationTest {
     /**
      * FAILED 상태 Job 하나와, 그 재처리 대상이 되는 FAILED 문서·버전을 만든다.
      *
-     * @param deleted true면 문서를 soft-delete 상태로 만들어, A의
+     * @param deleted true면 문서를 soft-delete 상태로 만들어,
      *                {@code EmbeddingJobManualRetryService.validateRetryTarget()}이
      *                {@code EMBEDDING_JOB_MANUAL_RETRY_TARGET_INVALID}를 던지도록 유도한다.
      */

@@ -41,7 +41,7 @@ class EmbeddingJobRetryServiceTest {
     @Mock private DashboardWebSocketController dashboardWebSocketController;
 
     @Test
-    @DisplayName("정상 케이스: 단건 재처리 성공 시 A 서비스를 호출하고 최신 집계를 push한다")
+    @DisplayName("정상 케이스: 단건 재처리 성공 시 EmbeddingJobManualRetryService를 호출하고 최신 집계를 push한다")
     void retryJob_delegatesToAService_andPushesLatestSummary() {
         // Given
         ManualRetriedIndexingJobResponse retryResponse = mock(ManualRetriedIndexingJobResponse.class);

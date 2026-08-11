@@ -44,17 +44,19 @@ public class EmbeddingJobRetryService {
     private final DashboardQueryService dashboardQueryService;
     private final DashboardWebSocketController dashboardWebSocketController;
 
-    // 관리자 FAILED Job 단건 재처리
     public ManualRetriedIndexingJobResponse retryJob(Long jobId) {
+        // 1. 상태 전환은 A Service에 위임한다 — 여기서 예외가 나면(404/409) 그대로 전파시킨다.
         ManualRetriedIndexingJobResponse response = embeddingJobManualRetryService.retry(jobId);
+        // 2. 재처리 성공 후에만 최신 집계를 다시 계산해서 push한다.
         dashboardWebSocketController.sendDashboardUpdate(dashboardQueryService.getSummary());
         return response;
     }
 
-    // 관리자 FAILED Job 전체 재처리
     public RetryAllJobsResponse retryAllFailedJobs() {
+        // 1. A의 REST 엔드포인트를 내부 호출하지 않고 Repository를 직접 읽는다(조회는 A/B 경계 밖).
         List<EmbeddingJob> failedJobs = embeddingJobRepository.findAllByStatus(EmbeddingJobStatus.FAILED);
 
+        // 2. 한 건씩 독립적으로 재처리한다. 개별 실패는 catch해서 건너뛰고 나머지를 계속 진행한다.
         int retriedCount = 0;
         for (EmbeddingJob failedJob : failedJobs) {
             try {
@@ -65,6 +67,7 @@ public class EmbeddingJobRetryService {
             }
         }
 
+        // 3. 실제로 바뀐 게 있을 때만(1건 이상 성공) push한다 — 전부 실패하면 push할 변경사항이 없다.
         if (retriedCount > 0) {
             dashboardWebSocketController.sendDashboardUpdate(dashboardQueryService.getSummary());
         }

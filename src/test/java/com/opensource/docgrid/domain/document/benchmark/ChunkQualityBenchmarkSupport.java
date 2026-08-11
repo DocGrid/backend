@@ -243,6 +243,25 @@ final class ChunkQualityBenchmarkSupport {
         return dotProduct / Math.sqrt(leftSquaredNorm * rightSquaredNorm);
     }
 
+    /**
+     * Millisecond 표본의 Nearest-rank Median과 p95를 계산한다.
+     */
+    static TimingSummary summarizeTimings(List<Double> samplesMillis) {
+        if (samplesMillis == null || samplesMillis.isEmpty()) {
+            throw new IllegalArgumentException("Timing 표본은 한 개 이상이어야 합니다.");
+        }
+        List<Double> sorted = samplesMillis.stream().sorted().toList();
+        if (sorted.stream().anyMatch(value -> value == null || !Double.isFinite(value) || value < 0.0)) {
+            throw new IllegalArgumentException("Timing 표본은 0 이상의 유한값이어야 합니다.");
+        }
+        return new TimingSummary(
+            sorted.size(),
+            nearestRank(sorted, 0.50),
+            nearestRank(sorted, 0.95),
+            sorted.get(sorted.size() - 1)
+        );
+    }
+
     private static List<RankedChunk> rank(
         List<ChunkCandidate> candidates,
         float[] queryVector,
@@ -295,6 +314,11 @@ final class ChunkQualityBenchmarkSupport {
 
     private static double ratio(int numerator, int denominator) {
         return denominator == 0 ? 0.0 : (double) numerator / denominator;
+    }
+
+    private static double nearestRank(List<Double> sorted, double percentile) {
+        int rank = Math.max(1, (int) Math.ceil(percentile * sorted.size()));
+        return sorted.get(rank - 1);
     }
 
     /**
@@ -370,6 +394,12 @@ final class ChunkQualityBenchmarkSupport {
         QualityMetrics {
             queries = List.copyOf(queries);
         }
+    }
+
+    /**
+     * 반복 실행 지연의 표본 수, Median, p95와 최댓값을 보관한다.
+     */
+    record TimingSummary(int sampleCount, double medianMillis, double p95Millis, double maxMillis) {
     }
 
     /**

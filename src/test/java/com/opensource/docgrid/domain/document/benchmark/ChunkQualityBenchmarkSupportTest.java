@@ -14,6 +14,7 @@ import com.opensource.docgrid.domain.document.benchmark.ChunkQualityBenchmarkSup
 import com.opensource.docgrid.domain.document.benchmark.ChunkQualityBenchmarkSupport.ChunkedCorpus;
 import com.opensource.docgrid.domain.document.benchmark.ChunkQualityBenchmarkSupport.QualityMetrics;
 import com.opensource.docgrid.domain.document.benchmark.ChunkQualityBenchmarkSupport.QueryCase;
+import com.opensource.docgrid.domain.document.benchmark.ChunkQualityBenchmarkSupport.TimingSummary;
 
 /**
  * 실제 모델 없이 Chunk 품질 Benchmark의 Corpus, Ground Truth와 Exact 품질 계산을 검증한다.
@@ -113,6 +114,19 @@ class ChunkQualityBenchmarkSupportTest {
             .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ChunkProfile("invalid", 400, -1))
             .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("반복 지연의 Nearest-rank Median과 p95를 계산한다")
+    void summarizeTimings_usesNearestRankPercentiles() {
+        TimingSummary summary = ChunkQualityBenchmarkSupport.summarizeTimings(
+            List.of(8.0, 1.0, 4.0, 2.0, 7.0, 3.0, 6.0, 5.0)
+        );
+
+        assertThat(summary.sampleCount()).isEqualTo(8);
+        assertThat(summary.medianMillis()).isEqualTo(4.0);
+        assertThat(summary.p95Millis()).isEqualTo(8.0);
+        assertThat(summary.maxMillis()).isEqualTo(8.0);
     }
 
     private void assertBoundaryCoverage(

@@ -1,0 +1,970 @@
+{
+  "generatedAt" : "2026-08-11T07:04:50.868837Z",
+  "model" : "BAAI/bge-m3",
+  "embeddingEndpoint" : "http://localhost:8000",
+  "osName" : "Mac OS X",
+  "osArchitecture" : "aarch64",
+  "javaVersion" : "17.0.18",
+  "warmUpRuns" : 1,
+  "measuredRounds" : 2,
+  "modelBatchSize" : 32,
+  "maxTextsPerRequest" : 64,
+  "documentCount" : 12,
+  "queryCount" : 12,
+  "originalCodePoints" : 26400,
+  "queryEmbeddingMillis" : 572.515916,
+  "queryEmbeddingRequestCount" : 1,
+  "profiles" : [ {
+    "profileId" : "c400-o0",
+    "chunkSize" : 400,
+    "overlap" : 0,
+    "chunkCount" : 72,
+    "originalCodePoints" : 26400,
+    "chunkCodePoints" : 26400,
+    "duplicateCodePoints" : 0,
+    "duplicateRatio" : 0.0,
+    "quality" : {
+      "answerCoverageRatio" : 0.25,
+      "hitAt1" : 0.16666666666666666,
+      "hitAt3" : 0.16666666666666666,
+      "mrrAt10" : 0.17592592592592593,
+      "queries" : [ {
+        "queryId" : "q1",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc10:4",
+        "topSimilarity" : 0.6735931793412909
+      }, {
+        "queryId" : "q2",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc12:4",
+        "topSimilarity" : 0.6816941247399084
+      }, {
+        "queryId" : "q3",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc9:2",
+        "topSimilarity" : 0.6262402306129986
+      }, {
+        "queryId" : "q4",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc9:2",
+        "topSimilarity" : 0.6430223021020572
+      }, {
+        "queryId" : "q5",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc10:4",
+        "topSimilarity" : 0.642979111245326
+      }, {
+        "queryId" : "q6",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc6:2",
+        "topSimilarity" : 0.6651210403091457
+      }, {
+        "queryId" : "q7",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc7:2",
+        "topSimilarity" : 0.6970139101412048
+      }, {
+        "queryId" : "q8",
+        "answerCovered" : true,
+        "firstRelevantRank" : 9,
+        "topCandidateId" : "doc10:4",
+        "topSimilarity" : 0.7126785983266984
+      }, {
+        "queryId" : "q9",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc9:2",
+        "topSimilarity" : 0.7234677980890809
+      }, {
+        "queryId" : "q10",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc4:2",
+        "topSimilarity" : 0.6519163693633525
+      }, {
+        "queryId" : "q11",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc9:2",
+        "topSimilarity" : 0.6701510837170316
+      }, {
+        "queryId" : "q12",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc9:2",
+        "topSimilarity" : 0.6452717413230644
+      } ]
+    },
+    "chunkingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 1.026042,
+      "p95Millis" : 6.467208,
+      "maxMillis" : 6.467208
+    },
+    "embeddingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 26146.832042,
+      "p95Millis" : 26850.768375,
+      "maxMillis" : 26850.768375
+    },
+    "searchTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 3.132959,
+      "p95Millis" : 8.279875,
+      "maxMillis" : 8.279875
+    },
+    "embeddingRequestCount" : 4,
+    "paretoCandidate" : false,
+    "rounds" : [ {
+      "chunkingMillis" : 6.467208,
+      "embeddingMillis" : 26146.832042,
+      "searchMillis" : 8.279875,
+      "embeddingRequestCount" : 2
+    }, {
+      "chunkingMillis" : 1.026042,
+      "embeddingMillis" : 26850.768375,
+      "searchMillis" : 3.132959,
+      "embeddingRequestCount" : 2
+    } ]
+  }, {
+    "profileId" : "c400-o80",
+    "chunkSize" : 400,
+    "overlap" : 80,
+    "chunkCount" : 84,
+    "originalCodePoints" : 26400,
+    "chunkCodePoints" : 32160,
+    "duplicateCodePoints" : 5760,
+    "duplicateRatio" : 0.21818181818181817,
+    "quality" : {
+      "answerCoverageRatio" : 1.0,
+      "hitAt1" : 0.5,
+      "hitAt3" : 0.6666666666666666,
+      "mrrAt10" : 0.6,
+      "queries" : [ {
+        "queryId" : "q1",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc1:1",
+        "topSimilarity" : 0.7540549747448035
+      }, {
+        "queryId" : "q2",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc2:1",
+        "topSimilarity" : 0.749721970477369
+      }, {
+        "queryId" : "q3",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc3:1",
+        "topSimilarity" : 0.7462990360204615
+      }, {
+        "queryId" : "q4",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc4:2",
+        "topSimilarity" : 0.7319008689211068
+      }, {
+        "queryId" : "q5",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc5:2",
+        "topSimilarity" : 0.7320189139351577
+      }, {
+        "queryId" : "q6",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc6:2",
+        "topSimilarity" : 0.7345189733256429
+      }, {
+        "queryId" : "q7",
+        "answerCovered" : true,
+        "firstRelevantRank" : 11,
+        "topCandidateId" : "doc7:3",
+        "topSimilarity" : 0.7781056075487018
+      }, {
+        "queryId" : "q8",
+        "answerCovered" : true,
+        "firstRelevantRank" : 13,
+        "topCandidateId" : "doc8:3",
+        "topSimilarity" : 0.7498322369779779
+      }, {
+        "queryId" : "q9",
+        "answerCovered" : true,
+        "firstRelevantRank" : 5,
+        "topCandidateId" : "doc9:3",
+        "topSimilarity" : 0.7924142924877039
+      }, {
+        "queryId" : "q10",
+        "answerCovered" : true,
+        "firstRelevantRank" : 6,
+        "topCandidateId" : "doc9:3",
+        "topSimilarity" : 0.6870622860146378
+      }, {
+        "queryId" : "q11",
+        "answerCovered" : true,
+        "firstRelevantRank" : 3,
+        "topCandidateId" : "doc9:3",
+        "topSimilarity" : 0.6900303440416493
+      }, {
+        "queryId" : "q12",
+        "answerCovered" : true,
+        "firstRelevantRank" : 2,
+        "topCandidateId" : "doc9:3",
+        "topSimilarity" : 0.676789400542001
+      } ]
+    },
+    "chunkingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 2.682625,
+      "p95Millis" : 12.084958,
+      "maxMillis" : 12.084958
+    },
+    "embeddingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 33289.058042,
+      "p95Millis" : 34516.763958,
+      "maxMillis" : 34516.763958
+    },
+    "searchTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 2.300791,
+      "p95Millis" : 2.9825,
+      "maxMillis" : 2.9825
+    },
+    "embeddingRequestCount" : 4,
+    "paretoCandidate" : false,
+    "rounds" : [ {
+      "chunkingMillis" : 12.084958,
+      "embeddingMillis" : 34516.763958,
+      "searchMillis" : 2.9825,
+      "embeddingRequestCount" : 2
+    }, {
+      "chunkingMillis" : 2.682625,
+      "embeddingMillis" : 33289.058042,
+      "searchMillis" : 2.300791,
+      "embeddingRequestCount" : 2
+    } ]
+  }, {
+    "profileId" : "c800-o0",
+    "chunkSize" : 800,
+    "overlap" : 0,
+    "chunkCount" : 36,
+    "originalCodePoints" : 26400,
+    "chunkCodePoints" : 26400,
+    "duplicateCodePoints" : 0,
+    "duplicateRatio" : 0.0,
+    "quality" : {
+      "answerCoverageRatio" : 0.5,
+      "hitAt1" : 0.25,
+      "hitAt3" : 0.3333333333333333,
+      "mrrAt10" : 0.31547619047619047,
+      "queries" : [ {
+        "queryId" : "q1",
+        "answerCovered" : true,
+        "firstRelevantRank" : 2,
+        "topCandidateId" : "doc10:2",
+        "topSimilarity" : 0.6790695446941827
+      }, {
+        "queryId" : "q2",
+        "answerCovered" : true,
+        "firstRelevantRank" : 7,
+        "topCandidateId" : "doc12:2",
+        "topSimilarity" : 0.6893403650966076
+      }, {
+        "queryId" : "q3",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc3:0",
+        "topSimilarity" : 0.6409625259330887
+      }, {
+        "queryId" : "q4",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc6:1",
+        "topSimilarity" : 0.6422960943853532
+      }, {
+        "queryId" : "q5",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc10:2",
+        "topSimilarity" : 0.6482296162220844
+      }, {
+        "queryId" : "q6",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc10:2",
+        "topSimilarity" : 0.6665407593531907
+      }, {
+        "queryId" : "q7",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc7:1",
+        "topSimilarity" : 0.6852590579358906
+      }, {
+        "queryId" : "q8",
+        "answerCovered" : true,
+        "firstRelevantRank" : 7,
+        "topCandidateId" : "doc10:2",
+        "topSimilarity" : 0.7164643163641427
+      }, {
+        "queryId" : "q9",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc9:1",
+        "topSimilarity" : 0.7044479036929447
+      }, {
+        "queryId" : "q10",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc4:1",
+        "topSimilarity" : 0.6559190450876863
+      }, {
+        "queryId" : "q11",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc9:1",
+        "topSimilarity" : 0.6593161185410963
+      }, {
+        "queryId" : "q12",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc6:1",
+        "topSimilarity" : 0.6370144683768945
+      } ]
+    },
+    "chunkingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 0.966167,
+      "p95Millis" : 3.862917,
+      "maxMillis" : 3.862917
+    },
+    "embeddingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 28615.78275,
+      "p95Millis" : 30743.704083,
+      "maxMillis" : 30743.704083
+    },
+    "searchTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 0.932167,
+      "p95Millis" : 1.301417,
+      "maxMillis" : 1.301417
+    },
+    "embeddingRequestCount" : 2,
+    "paretoCandidate" : true,
+    "rounds" : [ {
+      "chunkingMillis" : 3.862917,
+      "embeddingMillis" : 30743.704083,
+      "searchMillis" : 0.932167,
+      "embeddingRequestCount" : 1
+    }, {
+      "chunkingMillis" : 0.966167,
+      "embeddingMillis" : 28615.78275,
+      "searchMillis" : 1.301417,
+      "embeddingRequestCount" : 1
+    } ]
+  }, {
+    "profileId" : "c800-o160",
+    "chunkSize" : 800,
+    "overlap" : 160,
+    "chunkCount" : 48,
+    "originalCodePoints" : 26400,
+    "chunkCodePoints" : 32160,
+    "duplicateCodePoints" : 5760,
+    "duplicateRatio" : 0.21818181818181817,
+    "quality" : {
+      "answerCoverageRatio" : 1.0,
+      "hitAt1" : 0.5,
+      "hitAt3" : 0.6666666666666666,
+      "mrrAt10" : 0.6597222222222222,
+      "queries" : [ {
+        "queryId" : "q1",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc1:0",
+        "topSimilarity" : 0.6778207321784095
+      }, {
+        "queryId" : "q2",
+        "answerCovered" : true,
+        "firstRelevantRank" : 4,
+        "topCandidateId" : "doc4:1",
+        "topSimilarity" : 0.6510561645726254
+      }, {
+        "queryId" : "q3",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc3:0",
+        "topSimilarity" : 0.6409625259330887
+      }, {
+        "queryId" : "q4",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc4:1",
+        "topSimilarity" : 0.7060108112125649
+      }, {
+        "queryId" : "q5",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc5:1",
+        "topSimilarity" : 0.7208090727431955
+      }, {
+        "queryId" : "q6",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc6:1",
+        "topSimilarity" : 0.7080127853398269
+      }, {
+        "queryId" : "q7",
+        "answerCovered" : true,
+        "firstRelevantRank" : 6,
+        "topCandidateId" : "doc6:1",
+        "topSimilarity" : 0.6586650481938062
+      }, {
+        "queryId" : "q8",
+        "answerCovered" : true,
+        "firstRelevantRank" : 4,
+        "topCandidateId" : "doc6:1",
+        "topSimilarity" : 0.6827513155016285
+      }, {
+        "queryId" : "q9",
+        "answerCovered" : true,
+        "firstRelevantRank" : 4,
+        "topCandidateId" : "doc1:0",
+        "topSimilarity" : 0.6499167971165735
+      }, {
+        "queryId" : "q10",
+        "answerCovered" : true,
+        "firstRelevantRank" : 2,
+        "topCandidateId" : "doc6:1",
+        "topSimilarity" : 0.6557535458820644
+      }, {
+        "queryId" : "q11",
+        "answerCovered" : true,
+        "firstRelevantRank" : 2,
+        "topCandidateId" : "doc4:1",
+        "topSimilarity" : 0.6634190860335112
+      }, {
+        "queryId" : "q12",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc12:2",
+        "topSimilarity" : 0.6495438677852051
+      } ]
+    },
+    "chunkingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 2.109666,
+      "p95Millis" : 2.389542,
+      "maxMillis" : 2.389542
+    },
+    "embeddingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 38248.445167,
+      "p95Millis" : 38416.442958,
+      "maxMillis" : 38416.442958
+    },
+    "searchTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 1.291917,
+      "p95Millis" : 1.6895,
+      "maxMillis" : 1.6895
+    },
+    "embeddingRequestCount" : 2,
+    "paretoCandidate" : true,
+    "rounds" : [ {
+      "chunkingMillis" : 2.389542,
+      "embeddingMillis" : 38416.442958,
+      "searchMillis" : 1.291917,
+      "embeddingRequestCount" : 1
+    }, {
+      "chunkingMillis" : 2.109666,
+      "embeddingMillis" : 38248.445167,
+      "searchMillis" : 1.6895,
+      "embeddingRequestCount" : 1
+    } ]
+  }, {
+    "profileId" : "c1000-o0",
+    "chunkSize" : 1000,
+    "overlap" : 0,
+    "chunkCount" : 36,
+    "originalCodePoints" : 26400,
+    "chunkCodePoints" : 26400,
+    "duplicateCodePoints" : 0,
+    "duplicateRatio" : 0.0,
+    "quality" : {
+      "answerCoverageRatio" : 0.75,
+      "hitAt1" : 0.08333333333333333,
+      "hitAt3" : 0.16666666666666666,
+      "mrrAt10" : 0.23921957671957672,
+      "queries" : [ {
+        "queryId" : "q1",
+        "answerCovered" : true,
+        "firstRelevantRank" : 2,
+        "topCandidateId" : "doc7:1",
+        "topSimilarity" : 0.6904044091974141
+      }, {
+        "queryId" : "q2",
+        "answerCovered" : true,
+        "firstRelevantRank" : 4,
+        "topCandidateId" : "doc7:1",
+        "topSimilarity" : 0.6656396724261332
+      }, {
+        "queryId" : "q3",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc3:0",
+        "topSimilarity" : 0.6371132458563253
+      }, {
+        "queryId" : "q4",
+        "answerCovered" : true,
+        "firstRelevantRank" : 7,
+        "topCandidateId" : "doc7:1",
+        "topSimilarity" : 0.6425385345264588
+      }, {
+        "queryId" : "q5",
+        "answerCovered" : true,
+        "firstRelevantRank" : 9,
+        "topCandidateId" : "doc9:1",
+        "topSimilarity" : 0.6377573328475455
+      }, {
+        "queryId" : "q6",
+        "answerCovered" : true,
+        "firstRelevantRank" : 6,
+        "topCandidateId" : "doc9:1",
+        "topSimilarity" : 0.6573300608037055
+      }, {
+        "queryId" : "q7",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc9:1",
+        "topSimilarity" : 0.6545689520213677
+      }, {
+        "queryId" : "q8",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc8:1",
+        "topSimilarity" : 0.7040165847552031
+      }, {
+        "queryId" : "q9",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc1:0",
+        "topSimilarity" : 0.6434803191205066
+      }, {
+        "queryId" : "q10",
+        "answerCovered" : true,
+        "firstRelevantRank" : 4,
+        "topCandidateId" : "doc8:1",
+        "topSimilarity" : 0.6431785530295476
+      }, {
+        "queryId" : "q11",
+        "answerCovered" : true,
+        "firstRelevantRank" : 5,
+        "topCandidateId" : "doc8:1",
+        "topSimilarity" : 0.6549985842255989
+      }, {
+        "queryId" : "q12",
+        "answerCovered" : true,
+        "firstRelevantRank" : 4,
+        "topCandidateId" : "doc7:1",
+        "topSimilarity" : 0.6292480225167075
+      } ]
+    },
+    "chunkingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 1.203541,
+      "p95Millis" : 1.3275,
+      "maxMillis" : 1.3275
+    },
+    "embeddingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 37793.176792,
+      "p95Millis" : 41457.951042,
+      "maxMillis" : 41457.951042
+    },
+    "searchTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 0.915083,
+      "p95Millis" : 1.831083,
+      "maxMillis" : 1.831083
+    },
+    "embeddingRequestCount" : 2,
+    "paretoCandidate" : true,
+    "rounds" : [ {
+      "chunkingMillis" : 1.3275,
+      "embeddingMillis" : 37793.176792,
+      "searchMillis" : 0.915083,
+      "embeddingRequestCount" : 1
+    }, {
+      "chunkingMillis" : 1.203541,
+      "embeddingMillis" : 41457.951042,
+      "searchMillis" : 1.831083,
+      "embeddingRequestCount" : 1
+    } ]
+  }, {
+    "profileId" : "c1000-o200",
+    "chunkSize" : 1000,
+    "overlap" : 200,
+    "chunkCount" : 36,
+    "originalCodePoints" : 26400,
+    "chunkCodePoints" : 31200,
+    "duplicateCodePoints" : 4800,
+    "duplicateRatio" : 0.18181818181818182,
+    "quality" : {
+      "answerCoverageRatio" : 1.0,
+      "hitAt1" : 0.25,
+      "hitAt3" : 0.3333333333333333,
+      "mrrAt10" : 0.30158730158730157,
+      "queries" : [ {
+        "queryId" : "q1",
+        "answerCovered" : true,
+        "firstRelevantRank" : 3,
+        "topCandidateId" : "doc10:2",
+        "topSimilarity" : 0.6790695446941827
+      }, {
+        "queryId" : "q2",
+        "answerCovered" : true,
+        "firstRelevantRank" : 7,
+        "topCandidateId" : "doc12:2",
+        "topSimilarity" : 0.6893403650966076
+      }, {
+        "queryId" : "q3",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc3:0",
+        "topSimilarity" : 0.6371132458563253
+      }, {
+        "queryId" : "q4",
+        "answerCovered" : true,
+        "firstRelevantRank" : 13,
+        "topCandidateId" : "doc6:1",
+        "topSimilarity" : 0.6423020703851419
+      }, {
+        "queryId" : "q5",
+        "answerCovered" : true,
+        "firstRelevantRank" : 14,
+        "topCandidateId" : "doc10:2",
+        "topSimilarity" : 0.6482296162220844
+      }, {
+        "queryId" : "q6",
+        "answerCovered" : true,
+        "firstRelevantRank" : 12,
+        "topCandidateId" : "doc10:2",
+        "topSimilarity" : 0.6665407593531907
+      }, {
+        "queryId" : "q7",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc7:1",
+        "topSimilarity" : 0.689658608623764
+      }, {
+        "queryId" : "q8",
+        "answerCovered" : true,
+        "firstRelevantRank" : 7,
+        "topCandidateId" : "doc10:2",
+        "topSimilarity" : 0.7164643163641427
+      }, {
+        "queryId" : "q9",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc9:1",
+        "topSimilarity" : 0.6977039652276941
+      }, {
+        "queryId" : "q10",
+        "answerCovered" : true,
+        "firstRelevantRank" : 13,
+        "topCandidateId" : "doc12:2",
+        "topSimilarity" : 0.6536859433031583
+      }, {
+        "queryId" : "q11",
+        "answerCovered" : true,
+        "firstRelevantRank" : 11,
+        "topCandidateId" : "doc9:1",
+        "topSimilarity" : 0.6591973183194991
+      }, {
+        "queryId" : "q12",
+        "answerCovered" : true,
+        "firstRelevantRank" : 11,
+        "topCandidateId" : "doc6:1",
+        "topSimilarity" : 0.6369197667974564
+      } ]
+    },
+    "chunkingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 1.166667,
+      "p95Millis" : 1.455208,
+      "maxMillis" : 1.455208
+    },
+    "embeddingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 36656.349834,
+      "p95Millis" : 38899.592708,
+      "maxMillis" : 38899.592708
+    },
+    "searchTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 1.012375,
+      "p95Millis" : 1.186834,
+      "maxMillis" : 1.186834
+    },
+    "embeddingRequestCount" : 2,
+    "paretoCandidate" : false,
+    "rounds" : [ {
+      "chunkingMillis" : 1.455208,
+      "embeddingMillis" : 36656.349834,
+      "searchMillis" : 1.012375,
+      "embeddingRequestCount" : 1
+    }, {
+      "chunkingMillis" : 1.166667,
+      "embeddingMillis" : 38899.592708,
+      "searchMillis" : 1.186834,
+      "embeddingRequestCount" : 1
+    } ]
+  }, {
+    "profileId" : "c1600-o0",
+    "chunkSize" : 1600,
+    "overlap" : 0,
+    "chunkCount" : 24,
+    "originalCodePoints" : 26400,
+    "chunkCodePoints" : 26400,
+    "duplicateCodePoints" : 0,
+    "duplicateRatio" : 0.0,
+    "quality" : {
+      "answerCoverageRatio" : 0.75,
+      "hitAt1" : 0.0,
+      "hitAt3" : 0.0,
+      "mrrAt10" : 0.0925925925925926,
+      "queries" : [ {
+        "queryId" : "q1",
+        "answerCovered" : true,
+        "firstRelevantRank" : 4,
+        "topCandidateId" : "doc10:1",
+        "topSimilarity" : 0.6790695446941827
+      }, {
+        "queryId" : "q2",
+        "answerCovered" : true,
+        "firstRelevantRank" : 4,
+        "topCandidateId" : "doc12:1",
+        "topSimilarity" : 0.6893403650966076
+      }, {
+        "queryId" : "q3",
+        "answerCovered" : true,
+        "firstRelevantRank" : 4,
+        "topCandidateId" : "doc12:1",
+        "topSimilarity" : 0.621412959436665
+      }, {
+        "queryId" : "q4",
+        "answerCovered" : true,
+        "firstRelevantRank" : 11,
+        "topCandidateId" : "doc11:1",
+        "topSimilarity" : 0.6416130232835789
+      }, {
+        "queryId" : "q5",
+        "answerCovered" : true,
+        "firstRelevantRank" : 12,
+        "topCandidateId" : "doc10:1",
+        "topSimilarity" : 0.6482296162220844
+      }, {
+        "queryId" : "q6",
+        "answerCovered" : true,
+        "firstRelevantRank" : 8,
+        "topCandidateId" : "doc10:1",
+        "topSimilarity" : 0.6665407593531907
+      }, {
+        "queryId" : "q7",
+        "answerCovered" : true,
+        "firstRelevantRank" : 8,
+        "topCandidateId" : "doc10:1",
+        "topSimilarity" : 0.6630577925625493
+      }, {
+        "queryId" : "q8",
+        "answerCovered" : true,
+        "firstRelevantRank" : 13,
+        "topCandidateId" : "doc10:1",
+        "topSimilarity" : 0.7164643163641427
+      }, {
+        "queryId" : "q9",
+        "answerCovered" : true,
+        "firstRelevantRank" : 9,
+        "topCandidateId" : "doc10:1",
+        "topSimilarity" : 0.6409233550075842
+      }, {
+        "queryId" : "q10",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc12:1",
+        "topSimilarity" : 0.6536859433031583
+      }, {
+        "queryId" : "q11",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc12:1",
+        "topSimilarity" : 0.6548509647252859
+      }, {
+        "queryId" : "q12",
+        "answerCovered" : false,
+        "firstRelevantRank" : null,
+        "topCandidateId" : "doc11:1",
+        "topSimilarity" : 0.6365183412550758
+      } ]
+    },
+    "chunkingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 1.300458,
+      "p95Millis" : 3.021625,
+      "maxMillis" : 3.021625
+    },
+    "embeddingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 42823.150167,
+      "p95Millis" : 47688.757333,
+      "maxMillis" : 47688.757333
+    },
+    "searchTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 0.549166,
+      "p95Millis" : 0.591667,
+      "maxMillis" : 0.591667
+    },
+    "embeddingRequestCount" : 2,
+    "paretoCandidate" : false,
+    "rounds" : [ {
+      "chunkingMillis" : 1.300458,
+      "embeddingMillis" : 47688.757333,
+      "searchMillis" : 0.549166,
+      "embeddingRequestCount" : 1
+    }, {
+      "chunkingMillis" : 3.021625,
+      "embeddingMillis" : 42823.150167,
+      "searchMillis" : 0.591667,
+      "embeddingRequestCount" : 1
+    } ]
+  }, {
+    "profileId" : "c1600-o320",
+    "chunkSize" : 1600,
+    "overlap" : 320,
+    "chunkCount" : 24,
+    "originalCodePoints" : 26400,
+    "chunkCodePoints" : 30240,
+    "duplicateCodePoints" : 3840,
+    "duplicateRatio" : 0.14545454545454545,
+    "quality" : {
+      "answerCoverageRatio" : 1.0,
+      "hitAt1" : 0.5,
+      "hitAt3" : 0.5,
+      "mrrAt10" : 0.5300925925925926,
+      "queries" : [ {
+        "queryId" : "q1",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc1:0",
+        "topSimilarity" : 0.6471420915832058
+      }, {
+        "queryId" : "q2",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc2:0",
+        "topSimilarity" : 0.6007945593193365
+      }, {
+        "queryId" : "q3",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc3:0",
+        "topSimilarity" : 0.6124200172407591
+      }, {
+        "queryId" : "q4",
+        "answerCovered" : true,
+        "firstRelevantRank" : 11,
+        "topCandidateId" : "doc12:1",
+        "topSimilarity" : 0.5664043443544751
+      }, {
+        "queryId" : "q5",
+        "answerCovered" : true,
+        "firstRelevantRank" : 12,
+        "topCandidateId" : "doc10:1",
+        "topSimilarity" : 0.5968825674609654
+      }, {
+        "queryId" : "q6",
+        "answerCovered" : true,
+        "firstRelevantRank" : 8,
+        "topCandidateId" : "doc10:1",
+        "topSimilarity" : 0.5832690317702722
+      }, {
+        "queryId" : "q7",
+        "answerCovered" : true,
+        "firstRelevantRank" : 8,
+        "topCandidateId" : "doc1:0",
+        "topSimilarity" : 0.6063545280542689
+      }, {
+        "queryId" : "q8",
+        "answerCovered" : true,
+        "firstRelevantRank" : 13,
+        "topCandidateId" : "doc10:1",
+        "topSimilarity" : 0.6306948024727911
+      }, {
+        "queryId" : "q9",
+        "answerCovered" : true,
+        "firstRelevantRank" : 9,
+        "topCandidateId" : "doc1:0",
+        "topSimilarity" : 0.6128615819920745
+      }, {
+        "queryId" : "q10",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc10:1",
+        "topSimilarity" : 0.6522574518982497
+      }, {
+        "queryId" : "q11",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc11:1",
+        "topSimilarity" : 0.6522453506144413
+      }, {
+        "queryId" : "q12",
+        "answerCovered" : true,
+        "firstRelevantRank" : 1,
+        "topCandidateId" : "doc12:1",
+        "topSimilarity" : 0.6418130607741558
+      } ]
+    },
+    "chunkingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 0.856042,
+      "p95Millis" : 1.125625,
+      "maxMillis" : 1.125625
+    },
+    "embeddingTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 43325.423167,
+      "p95Millis" : 45104.538875,
+      "maxMillis" : 45104.538875
+    },
+    "searchTiming" : {
+      "sampleCount" : 2,
+      "medianMillis" : 0.698083,
+      "p95Millis" : 0.720375,
+      "maxMillis" : 0.720375
+    },
+    "embeddingRequestCount" : 2,
+    "paretoCandidate" : true,
+    "rounds" : [ {
+      "chunkingMillis" : 1.125625,
+      "embeddingMillis" : 43325.423167,
+      "searchMillis" : 0.698083,
+      "embeddingRequestCount" : 1
+    }, {
+      "chunkingMillis" : 0.856042,
+      "embeddingMillis" : 45104.538875,
+      "searchMillis" : 0.720375,
+      "embeddingRequestCount" : 1
+    } ]
+  } ]
+}

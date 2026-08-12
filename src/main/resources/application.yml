@@ -24,8 +24,14 @@ spring:
   task:
     scheduling:
       pool:
-        # DB Claim 지연이 Worker Heartbeat와 Lease 복구 실행을 막지 않도록 세 작업을 분리한다.
-        size: 3
+        # DB Claim 지연이 Worker Heartbeat·Lease 복구 실행을 막지 않도록, Dashboard debounce push까지
+        # 포함해 네 작업을 분리한다.
+        size: 4
+
+dashboard:
+  push:
+    # 짧은 시간에 몰리는 Job 상태 전이 이벤트를 이 주기로 모아서 한 번만 집계·push한다(debounce).
+    debounce-interval-ms: ${DASHBOARD_PUSH_DEBOUNCE_INTERVAL_MS:300}
 
 document:
   upload:

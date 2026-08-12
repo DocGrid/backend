@@ -22,6 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.opensource.docgrid.domain.embedding.converter.EmbeddingJobConverter;
@@ -59,6 +60,7 @@ class EmbeddingJobClaimServiceTest {
     @Mock private WorkerNodeRepository workerNodeRepository;
     @Mock private IndexingEventRepository indexingEventRepository;
     @Mock private EmbeddingJobConverter embeddingJobConverter;
+    @Mock private ApplicationEventPublisher applicationEventPublisher;
 
     private EmbeddingJobClaimService embeddingJobClaimService;
 
@@ -74,7 +76,8 @@ class EmbeddingJobClaimServiceTest {
             indexingEventRepository,
             embeddingJobConverter,
             properties,
-            clock
+            clock,
+            applicationEventPublisher
         );
     }
 

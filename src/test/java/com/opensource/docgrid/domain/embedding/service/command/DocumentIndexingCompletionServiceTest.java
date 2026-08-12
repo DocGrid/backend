@@ -19,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.opensource.docgrid.domain.document.entity.Document;
@@ -72,6 +73,7 @@ class DocumentIndexingCompletionServiceTest {
     @Mock private EmbeddingRepository embeddingRepository;
     @Mock private IndexingEventRepository indexingEventRepository;
     @Mock private EmbeddingJobOwnershipValidator ownershipValidator;
+    @Mock private ApplicationEventPublisher applicationEventPublisher;
 
     private DocumentIndexingCompletionService service;
     private Document document;
@@ -96,7 +98,8 @@ class DocumentIndexingCompletionServiceTest {
             embeddingRepository,
             indexingEventRepository,
             ownershipValidator,
-            clock
+            clock,
+            applicationEventPublisher
         );
         prepareExecution();
     }

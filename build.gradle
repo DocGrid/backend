@@ -53,7 +53,7 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform {
-		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency', 'local-e2e', 'vector-search-performance', 'worker-indexing-throughput', 'worker-horizontal-scaling', 'worker-queue-backpressure', 'document-indexing-e2e-load', 'chunk-quality-performance'
+		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency', 'local-e2e', 'vector-search-performance', 'vector-storage-performance', 'worker-indexing-throughput', 'worker-horizontal-scaling', 'worker-queue-backpressure', 'document-indexing-e2e-load', 'chunk-quality-performance'
 	}
 }
 
@@ -172,6 +172,28 @@ tasks.register('vectorSearchPerformanceTest', Test) {
 		)
 	}
 	// 실제 PostgreSQL에 대량 Vector를 적재하는 Benchmark이므로 일반 Test와 Build Cache에서 분리한다.
+	outputs.upToDateWhen { false }
+}
+
+tasks.register('vectorStoragePerformanceTest', Test) {
+	group = 'verification'
+	description = 'PostgreSQL pgvector의 저장 규모·JDBC Batch Size별 TPS와 저장 비용을 비교합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'vector-storage-performance'
+	}
+	maxParallelForks = 1
+	systemProperties System.properties.findAll { key, value ->
+		key.toString().startsWith('vector.storage.performance.')
+	}
+	if (System.getProperty('vector.storage.performance.output') == null) {
+		systemProperty(
+			'vector.storage.performance.output',
+			layout.buildDirectory.file('reports/vector-storage/vector-storage-latest.json').get().asFile.absolutePath
+		)
+	}
+	// 실제 PostgreSQL에 최대 10만 개의 1024차원 Vector를 반복 적재하므로 일반 Test와 Cache에서 분리한다.
 	outputs.upToDateWhen { false }
 }
 

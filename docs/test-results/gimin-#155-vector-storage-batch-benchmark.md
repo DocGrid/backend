@@ -3,7 +3,7 @@
 - 측정일: 2026-08-11
 - 결과: 성공
 - 원본 데이터: [gimin-vector-storage-batch-benchmark-data.json](gimin-vector-storage-batch-benchmark-data.json)
-- 설계: [gimin-vector-storage-batch-benchmark.md](../design/gimin-vector-storage-batch-benchmark.md)
+- 설계: [gimin-#155-vector-storage-batch-benchmark.md](../design/gimin-%23155-vector-storage-batch-benchmark.md)
 
 ## 1. 결론
 
@@ -37,8 +37,9 @@ HNSW Index가 이미 존재하는 Table에 저장했다. JDBC Batch는 데이터
 
 ## 3. 전체 결과
 
-TPS와 시간은 2회 표본의 nearest-rank p50이다. 표본 수가 작으므로 절대 성능 SLO가 아니라 같은
-로컬 환경의 상대 기준선으로 해석한다.
+TPS와 시간은 각 지표의 2회 표본을 독립적으로 정렬해 계산한 nearest-rank p50이다. 따라서 같은
+Profile의 TPS p50과 시간 p50도 서로 다른 Round에서 나올 수 있으며, 두 값을 서로 환산하면 안 된다.
+표본 수가 작으므로 절대 성능 SLO가 아니라 같은 로컬 환경의 상대 기준선으로 해석한다.
 
 | 저장 건수 | Batch Size | TPS p50 | 시간 p50 | Batch 호출 | Batch 1 대비 TPS | 총 저장 크기 |
 |---:|---:|---:|---:|---:|---:|---:|

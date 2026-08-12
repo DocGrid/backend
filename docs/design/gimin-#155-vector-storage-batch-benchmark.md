@@ -112,7 +112,7 @@ DB_SSLMODE=disable ./gradlew vectorStoragePerformanceTest \
 
 실측 결과와 원본 데이터는 다음 파일에 보존한다.
 
-- `docs/test-results/gimin-vector-storage-batch-benchmark.md`
+- `docs/test-results/gimin-#155-vector-storage-batch-benchmark.md`
 - `docs/test-results/gimin-vector-storage-batch-benchmark-data.json`
 
 ## 9. 완료 조건

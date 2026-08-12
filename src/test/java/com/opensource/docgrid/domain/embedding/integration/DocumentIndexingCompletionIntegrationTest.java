@@ -94,7 +94,7 @@ class DocumentIndexingCompletionIntegrationTest {
     void completeFirstVersion_makesDocumentSearchable() {
         ExecutionContext context = insertFirstVersionExecution();
 
-        assertThat(documentRepository.findReadableDocumentIds(context.userId())).isEmpty();
+        assertThat(documentRepository.findReadableDocumentIds(context.userId(), List.of("INDEXED"))).isEmpty();
         assertThat(search(context)).isEmpty();
 
         DocumentIndexingCompletionResponse response = completionService.complete(
@@ -106,7 +106,7 @@ class DocumentIndexingCompletionIntegrationTest {
         assertThat(response.jobStatus().name()).isEqualTo("INDEXED");
         assertThat(response.attemptStatus().name()).isEqualTo("SUCCESS");
         assertThat(response.versionStatus().name()).isEqualTo("INDEXED");
-        assertThat(documentRepository.findReadableDocumentIds(context.userId()))
+        assertThat(documentRepository.findReadableDocumentIds(context.userId(), List.of("INDEXED")))
             .containsExactly(context.documentId());
         assertThat(search(context))
             .extracting(VectorSearchCandidate::chunkText)

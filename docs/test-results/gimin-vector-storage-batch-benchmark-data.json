@@ -1,0 +1,413 @@
+{
+  "generatedAt" : "2026-08-11T07:53:59.298903Z",
+  "databaseProduct" : "PostgreSQL",
+  "databaseVersion" : "17.8 (Debian 17.8-1.pgdg12+1)",
+  "jdbcDriver" : "PostgreSQL JDBC Driver",
+  "jdbcDriverVersion" : "42.7.11",
+  "pgvectorVersion" : "0.8.1",
+  "architecture" : "aarch64",
+  "javaVersion" : "17.0.18",
+  "vectorDimension" : 1024,
+  "hnswM" : 16,
+  "hnswEfConstruction" : 64,
+  "warmUpRows" : 1000,
+  "measuredRuns" : 2,
+  "vectorPoolSize" : 1024,
+  "profiles" : [ {
+    "rowCount" : 1000,
+    "batchSize" : 1,
+    "executionOrder" : 0,
+    "expectedBatchExecutions" : 1000,
+    "rounds" : [ {
+      "durationMillis" : 2389.147166,
+      "rowsPerSecond" : 418.5593981948954,
+      "batchExecutions" : 1000,
+      "acknowledgedRows" : 1000
+    }, {
+      "durationMillis" : 2410.766209,
+      "rowsPerSecond" : 414.8058804983856,
+      "batchExecutions" : 1000,
+      "acknowledgedRows" : 1000
+    } ],
+    "durationMillis" : {
+      "sampleCount" : 2,
+      "minimum" : 2389.147166,
+      "p50" : 2389.147166,
+      "p95" : 2410.766209,
+      "maximum" : 2410.766209
+    },
+    "rowsPerSecond" : {
+      "sampleCount" : 2,
+      "minimum" : 414.8058804983856,
+      "p50" : 414.8058804983856,
+      "p95" : 418.5593981948954,
+      "maximum" : 418.5593981948954
+    },
+    "tableBytes" : 5668864,
+    "indexBytes" : 8200192,
+    "totalBytes" : 13869056
+  }, {
+    "rowCount" : 1000,
+    "batchSize" : 100,
+    "executionOrder" : 1,
+    "expectedBatchExecutions" : 10,
+    "rounds" : [ {
+      "durationMillis" : 2115.742083,
+      "rowsPerSecond" : 472.64740255204345,
+      "batchExecutions" : 10,
+      "acknowledgedRows" : 1000
+    }, {
+      "durationMillis" : 2118.055625,
+      "rowsPerSecond" : 472.1311320612744,
+      "batchExecutions" : 10,
+      "acknowledgedRows" : 1000
+    } ],
+    "durationMillis" : {
+      "sampleCount" : 2,
+      "minimum" : 2115.742083,
+      "p50" : 2115.742083,
+      "p95" : 2118.055625,
+      "maximum" : 2118.055625
+    },
+    "rowsPerSecond" : {
+      "sampleCount" : 2,
+      "minimum" : 472.1311320612744,
+      "p50" : 472.1311320612744,
+      "p95" : 472.64740255204345,
+      "maximum" : 472.64740255204345
+    },
+    "tableBytes" : 5668864,
+    "indexBytes" : 8200192,
+    "totalBytes" : 13869056
+  }, {
+    "rowCount" : 1000,
+    "batchSize" : 500,
+    "executionOrder" : 2,
+    "expectedBatchExecutions" : 2,
+    "rounds" : [ {
+      "durationMillis" : 2136.909917,
+      "rowsPerSecond" : 467.9654448905812,
+      "batchExecutions" : 2,
+      "acknowledgedRows" : 1000
+    }, {
+      "durationMillis" : 2119.149417,
+      "rowsPerSecond" : 471.88744313067946,
+      "batchExecutions" : 2,
+      "acknowledgedRows" : 1000
+    } ],
+    "durationMillis" : {
+      "sampleCount" : 2,
+      "minimum" : 2119.149417,
+      "p50" : 2119.149417,
+      "p95" : 2136.909917,
+      "maximum" : 2136.909917
+    },
+    "rowsPerSecond" : {
+      "sampleCount" : 2,
+      "minimum" : 467.9654448905812,
+      "p50" : 467.9654448905812,
+      "p95" : 471.88744313067946,
+      "maximum" : 471.88744313067946
+    },
+    "tableBytes" : 5668864,
+    "indexBytes" : 8200192,
+    "totalBytes" : 13869056
+  }, {
+    "rowCount" : 1000,
+    "batchSize" : 1000,
+    "executionOrder" : 3,
+    "expectedBatchExecutions" : 1,
+    "rounds" : [ {
+      "durationMillis" : 2133.162667,
+      "rowsPerSecond" : 468.78750292698606,
+      "batchExecutions" : 1,
+      "acknowledgedRows" : 1000
+    }, {
+      "durationMillis" : 2154.789833,
+      "rowsPerSecond" : 464.0823827388089,
+      "batchExecutions" : 1,
+      "acknowledgedRows" : 1000
+    } ],
+    "durationMillis" : {
+      "sampleCount" : 2,
+      "minimum" : 2133.162667,
+      "p50" : 2133.162667,
+      "p95" : 2154.789833,
+      "maximum" : 2154.789833
+    },
+    "rowsPerSecond" : {
+      "sampleCount" : 2,
+      "minimum" : 464.0823827388089,
+      "p50" : 464.0823827388089,
+      "p95" : 468.78750292698606,
+      "maximum" : 468.78750292698606
+    },
+    "tableBytes" : 5668864,
+    "indexBytes" : 8200192,
+    "totalBytes" : 13869056
+  }, {
+    "rowCount" : 10000,
+    "batchSize" : 100,
+    "executionOrder" : 4,
+    "expectedBatchExecutions" : 100,
+    "rounds" : [ {
+      "durationMillis" : 6561.1185,
+      "rowsPerSecond" : 1524.1303750267582,
+      "batchExecutions" : 100,
+      "acknowledgedRows" : 10000
+    }, {
+      "durationMillis" : 6467.21275,
+      "rowsPerSecond" : 1546.2611771972402,
+      "batchExecutions" : 100,
+      "acknowledgedRows" : 10000
+    } ],
+    "durationMillis" : {
+      "sampleCount" : 2,
+      "minimum" : 6467.21275,
+      "p50" : 6467.21275,
+      "p95" : 6561.1185,
+      "maximum" : 6561.1185
+    },
+    "rowsPerSecond" : {
+      "sampleCount" : 2,
+      "minimum" : 1524.1303750267582,
+      "p50" : 1524.1303750267582,
+      "p95" : 1546.2611771972402,
+      "maximum" : 1546.2611771972402
+    },
+    "tableBytes" : 55967744,
+    "indexBytes" : 8396800,
+    "totalBytes" : 64364544
+  }, {
+    "rowCount" : 10000,
+    "batchSize" : 500,
+    "executionOrder" : 5,
+    "expectedBatchExecutions" : 20,
+    "rounds" : [ {
+      "durationMillis" : 6921.522417,
+      "rowsPerSecond" : 1444.7688525054732,
+      "batchExecutions" : 20,
+      "acknowledgedRows" : 10000
+    }, {
+      "durationMillis" : 7155.43175,
+      "rowsPerSecond" : 1397.539708208383,
+      "batchExecutions" : 20,
+      "acknowledgedRows" : 10000
+    } ],
+    "durationMillis" : {
+      "sampleCount" : 2,
+      "minimum" : 6921.522417,
+      "p50" : 6921.522417,
+      "p95" : 7155.43175,
+      "maximum" : 7155.43175
+    },
+    "rowsPerSecond" : {
+      "sampleCount" : 2,
+      "minimum" : 1397.539708208383,
+      "p50" : 1397.539708208383,
+      "p95" : 1444.7688525054732,
+      "maximum" : 1444.7688525054732
+    },
+    "tableBytes" : 55984128,
+    "indexBytes" : 8396800,
+    "totalBytes" : 64380928
+  }, {
+    "rowCount" : 10000,
+    "batchSize" : 1000,
+    "executionOrder" : 6,
+    "expectedBatchExecutions" : 10,
+    "rounds" : [ {
+      "durationMillis" : 6519.939291,
+      "rowsPerSecond" : 1533.7566123972672,
+      "batchExecutions" : 10,
+      "acknowledgedRows" : 10000
+    }, {
+      "durationMillis" : 6494.799417,
+      "rowsPerSecond" : 1539.6934313052395,
+      "batchExecutions" : 10,
+      "acknowledgedRows" : 10000
+    } ],
+    "durationMillis" : {
+      "sampleCount" : 2,
+      "minimum" : 6494.799417,
+      "p50" : 6494.799417,
+      "p95" : 6519.939291,
+      "maximum" : 6519.939291
+    },
+    "rowsPerSecond" : {
+      "sampleCount" : 2,
+      "minimum" : 1533.7566123972672,
+      "p50" : 1533.7566123972672,
+      "p95" : 1539.6934313052395,
+      "maximum" : 1539.6934313052395
+    },
+    "tableBytes" : 55967744,
+    "indexBytes" : 8396800,
+    "totalBytes" : 64364544
+  }, {
+    "rowCount" : 10000,
+    "batchSize" : 1,
+    "executionOrder" : 7,
+    "expectedBatchExecutions" : 10000,
+    "rounds" : [ {
+      "durationMillis" : 8747.500417,
+      "rowsPerSecond" : 1143.1837122940717,
+      "batchExecutions" : 10000,
+      "acknowledgedRows" : 10000
+    }, {
+      "durationMillis" : 8707.683875,
+      "rowsPerSecond" : 1148.4110061356585,
+      "batchExecutions" : 10000,
+      "acknowledgedRows" : 10000
+    } ],
+    "durationMillis" : {
+      "sampleCount" : 2,
+      "minimum" : 8707.683875,
+      "p50" : 8707.683875,
+      "p95" : 8747.500417,
+      "maximum" : 8747.500417
+    },
+    "rowsPerSecond" : {
+      "sampleCount" : 2,
+      "minimum" : 1143.1837122940717,
+      "p50" : 1143.1837122940717,
+      "p95" : 1148.4110061356585,
+      "maximum" : 1148.4110061356585
+    },
+    "tableBytes" : 55967744,
+    "indexBytes" : 8396800,
+    "totalBytes" : 64364544
+  }, {
+    "rowCount" : 100000,
+    "batchSize" : 500,
+    "executionOrder" : 8,
+    "expectedBatchExecutions" : 200,
+    "rounds" : [ {
+      "durationMillis" : 62623.56975,
+      "rowsPerSecond" : 1596.8428564390485,
+      "batchExecutions" : 200,
+      "acknowledgedRows" : 100000
+    }, {
+      "durationMillis" : 63259.189042,
+      "rowsPerSecond" : 1580.7980076002316,
+      "batchExecutions" : 200,
+      "acknowledgedRows" : 100000
+    } ],
+    "durationMillis" : {
+      "sampleCount" : 2,
+      "minimum" : 62623.56975,
+      "p50" : 62623.56975,
+      "p95" : 63259.189042,
+      "maximum" : 63259.189042
+    },
+    "rowsPerSecond" : {
+      "sampleCount" : 2,
+      "minimum" : 1580.7980076002316,
+      "p50" : 1580.7980076002316,
+      "p95" : 1596.8428564390485,
+      "maximum" : 1596.8428564390485
+    },
+    "tableBytes" : 559120384,
+    "indexBytes" : 209182720,
+    "totalBytes" : 768303104
+  }, {
+    "rowCount" : 100000,
+    "batchSize" : 1000,
+    "executionOrder" : 9,
+    "expectedBatchExecutions" : 100,
+    "rounds" : [ {
+      "durationMillis" : 61300.273,
+      "rowsPerSecond" : 1631.314105240608,
+      "batchExecutions" : 100,
+      "acknowledgedRows" : 100000
+    }, {
+      "durationMillis" : 60589.525583,
+      "rowsPerSecond" : 1650.4502888541786,
+      "batchExecutions" : 100,
+      "acknowledgedRows" : 100000
+    } ],
+    "durationMillis" : {
+      "sampleCount" : 2,
+      "minimum" : 60589.525583,
+      "p50" : 60589.525583,
+      "p95" : 61300.273,
+      "maximum" : 61300.273
+    },
+    "rowsPerSecond" : {
+      "sampleCount" : 2,
+      "minimum" : 1631.314105240608,
+      "p50" : 1631.314105240608,
+      "p95" : 1650.4502888541786,
+      "maximum" : 1650.4502888541786
+    },
+    "tableBytes" : 559120384,
+    "indexBytes" : 211025920,
+    "totalBytes" : 770146304
+  }, {
+    "rowCount" : 100000,
+    "batchSize" : 1,
+    "executionOrder" : 10,
+    "expectedBatchExecutions" : 100000,
+    "rounds" : [ {
+      "durationMillis" : 88490.733125,
+      "rowsPerSecond" : 1130.0618321100612,
+      "batchExecutions" : 100000,
+      "acknowledgedRows" : 100000
+    }, {
+      "durationMillis" : 83220.220584,
+      "rowsPerSecond" : 1201.631037484009,
+      "batchExecutions" : 100000,
+      "acknowledgedRows" : 100000
+    } ],
+    "durationMillis" : {
+      "sampleCount" : 2,
+      "minimum" : 83220.220584,
+      "p50" : 83220.220584,
+      "p95" : 88490.733125,
+      "maximum" : 88490.733125
+    },
+    "rowsPerSecond" : {
+      "sampleCount" : 2,
+      "minimum" : 1130.0618321100612,
+      "p50" : 1130.0618321100612,
+      "p95" : 1201.631037484009,
+      "maximum" : 1201.631037484009
+    },
+    "tableBytes" : 559120384,
+    "indexBytes" : 209272832,
+    "totalBytes" : 768393216
+  }, {
+    "rowCount" : 100000,
+    "batchSize" : 100,
+    "executionOrder" : 11,
+    "expectedBatchExecutions" : 1000,
+    "rounds" : [ {
+      "durationMillis" : 64134.855333,
+      "rowsPerSecond" : 1559.2145562780418,
+      "batchExecutions" : 1000,
+      "acknowledgedRows" : 100000
+    }, {
+      "durationMillis" : 61826.909542,
+      "rowsPerSecond" : 1617.418705556816,
+      "batchExecutions" : 1000,
+      "acknowledgedRows" : 100000
+    } ],
+    "durationMillis" : {
+      "sampleCount" : 2,
+      "minimum" : 61826.909542,
+      "p50" : 61826.909542,
+      "p95" : 64134.855333,
+      "maximum" : 64134.855333
+    },
+    "rowsPerSecond" : {
+      "sampleCount" : 2,
+      "minimum" : 1559.2145562780418,
+      "p50" : 1559.2145562780418,
+      "p95" : 1617.418705556816,
+      "maximum" : 1617.418705556816
+    },
+    "tableBytes" : 559128576,
+    "indexBytes" : 209936384,
+    "totalBytes" : 769064960
+  } ]
+}

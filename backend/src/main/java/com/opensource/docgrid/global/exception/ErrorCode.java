@@ -102,6 +102,11 @@ public enum ErrorCode {
         "DOCUMENT-PARSING-002",
         "문서에서 처리할 텍스트를 찾을 수 없습니다."
     ),
+    DOCUMENT_CONTENT_NOT_AVAILABLE(
+        HttpStatus.CONFLICT,
+        "DOCUMENT-CONTENT-001",
+        "현재 문서 버전의 추출 본문을 아직 조회할 수 없습니다."
+    ),
     DOCUMENT_TEXT_DECODING_FAILED(
         HttpStatus.UNPROCESSABLE_ENTITY,
         "DOCUMENT-PARSING-003",

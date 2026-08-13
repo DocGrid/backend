@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,15 +25,23 @@ import org.springframework.data.domain.Pageable;
 
 import com.opensource.docgrid.domain.document.converter.DocumentStatusConverter;
 import com.opensource.docgrid.domain.document.converter.DocumentSummaryConverter;
+import com.opensource.docgrid.domain.document.converter.DocumentDetailConverter;
+import com.opensource.docgrid.domain.document.dto.response.DocumentContentResponse;
+import com.opensource.docgrid.domain.document.dto.response.DocumentDetailResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentStatusResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentSummaryResponse;
 import com.opensource.docgrid.domain.document.entity.Document;
+import com.opensource.docgrid.domain.document.entity.DocumentChunk;
+import com.opensource.docgrid.domain.document.entity.DocumentVersion;
+import com.opensource.docgrid.domain.document.entity.FileObject;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
 import com.opensource.docgrid.domain.document.enums.DocumentType;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
 import com.opensource.docgrid.domain.document.repository.DocumentStatusProjection;
+import com.opensource.docgrid.domain.document.repository.DocumentChunkRepository;
+import com.opensource.docgrid.domain.document.storage.StoredFile;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.global.common.response.PageResponse;
@@ -50,10 +59,139 @@ class DocumentQueryServiceTest {
     private DocumentQueryService service;
 
     @Mock private DocumentRepository documentRepository;
+    @Mock private DocumentChunkRepository documentChunkRepository;
     @Mock private PermissionQueryService permissionQueryService;
+    @Mock private DocumentDetailConverter documentDetailConverter;
     @Mock private DocumentStatusConverter documentStatusConverter;
     @Mock private DocumentSummaryConverter documentSummaryConverter;
     @Mock private DocumentStatusProjection projection;
+
+    @Test
+    @DisplayName("읽기 가능한 문서의 상세 정보와 본문 조회 가능 여부를 반환한다")
+    void getDocumentDetail_returnsResponseWithContentAvailability() {
+        Document document = mock(Document.class);
+        DocumentVersion currentVersion = mock(DocumentVersion.class);
+        DocumentDetailResponse expected = mock(DocumentDetailResponse.class);
+        givenReadableDocument(document);
+        given(document.getCurrentVersion()).willReturn(currentVersion);
+        given(currentVersion.getId()).willReturn(30L);
+        given(documentChunkRepository.existsByDocumentVersionId(30L)).willReturn(true);
+        given(documentDetailConverter.toResponse(document, true)).willReturn(expected);
+
+        DocumentDetailResponse result = service.getDocumentDetail(USER_ID, DOCUMENT_ID);
+
+        assertThat(result).isSameAs(expected);
+        then(documentDetailConverter).should().toResponse(document, true);
+    }
+
+    @Test
+    @DisplayName("문서 읽기 권한이 없으면 상세 Entity를 조회하지 않고 403 예외가 발생한다")
+    void getDocumentDetail_throws_whenReadPermissionIsDenied() {
+        given(permissionQueryService.canReadDocument(USER_ID, DOCUMENT_ID)).willReturn(false);
+
+        assertThatThrownBy(() -> service.getDocumentDetail(USER_ID, DOCUMENT_ID))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PERMISSION_DENIED);
+        then(documentRepository).should(never()).findByIdWithDetail(DOCUMENT_ID);
+    }
+
+    @Test
+    @DisplayName("Chunk 중첩과 Segment 경계를 제거해 Unicode 전체 본문을 복원한다")
+    void getDocumentContent_restoresOverlapsAndSegmentLineFeed() {
+        Document document = mock(Document.class);
+        DocumentVersion currentVersion = mock(DocumentVersion.class);
+        givenReadableDocument(document);
+        given(document.getId()).willReturn(DOCUMENT_ID);
+        given(document.getCurrentVersion()).willReturn(currentVersion);
+        given(currentVersion.getId()).willReturn(30L);
+        given(currentVersion.getVersionNo()).willReturn(2);
+        List<DocumentChunk> chunks = List.of(
+            chunk(0, "가나다라", 0, 4),
+            chunk(1, "다라마바", 2, 6),
+            chunk(2, "서울😀", 7, 10)
+        );
+        given(documentChunkRepository.findAllByDocumentVersionIdOrderByChunkIndexAsc(30L))
+            .willReturn(chunks);
+
+        DocumentContentResponse result = service.getDocumentContent(USER_ID, DOCUMENT_ID);
+
+        assertThat(result.content()).isEqualTo("가나다라마바\n서울😀");
+        assertThat(result.documentVersionId()).isEqualTo(30L);
+        assertThat(result.versionNo()).isEqualTo(2);
+        assertThat(result.chunkCount()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("본문 생성 전 상태에 Chunk가 없으면 조회 준비 전 예외가 발생한다")
+    void getDocumentContent_throws_whenContentIsNotAvailable() {
+        Document document = mock(Document.class);
+        DocumentVersion currentVersion = mock(DocumentVersion.class);
+        givenReadableDocument(document);
+        given(document.getCurrentVersion()).willReturn(currentVersion);
+        given(currentVersion.getId()).willReturn(30L);
+        given(currentVersion.getStatus()).willReturn(DocumentVersionStatus.PARSING);
+        given(documentChunkRepository.findAllByDocumentVersionIdOrderByChunkIndexAsc(30L)).willReturn(List.of());
+
+        assertThatThrownBy(() -> service.getDocumentContent(USER_ID, DOCUMENT_ID))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DOCUMENT_CONTENT_NOT_AVAILABLE);
+    }
+
+    @Test
+    @DisplayName("INDEXED 버전에 Chunk가 없으면 데이터 불일치 예외가 발생한다")
+    void getDocumentContent_throws_whenIndexedChunksAreMissing() {
+        Document document = mock(Document.class);
+        DocumentVersion currentVersion = mock(DocumentVersion.class);
+        givenReadableDocument(document);
+        given(document.getCurrentVersion()).willReturn(currentVersion);
+        given(currentVersion.getId()).willReturn(30L);
+        given(currentVersion.getStatus()).willReturn(DocumentVersionStatus.INDEXED);
+        given(documentChunkRepository.findAllByDocumentVersionIdOrderByChunkIndexAsc(30L)).willReturn(List.of());
+
+        assertThatThrownBy(() -> service.getDocumentContent(USER_ID, DOCUMENT_ID))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DOCUMENT_CHUNKS_INCONSISTENT);
+    }
+
+    @Test
+    @DisplayName("Chunk Offset이 Text 길이와 다르면 데이터 불일치 예외가 발생한다")
+    void getDocumentContent_throws_whenChunkOffsetsAreInvalid() {
+        Document document = mock(Document.class);
+        DocumentVersion currentVersion = mock(DocumentVersion.class);
+        givenReadableDocument(document);
+        given(document.getCurrentVersion()).willReturn(currentVersion);
+        given(currentVersion.getId()).willReturn(30L);
+        DocumentChunk invalidChunk = chunk(0, "본문", 0, 3);
+        given(documentChunkRepository.findAllByDocumentVersionIdOrderByChunkIndexAsc(30L))
+            .willReturn(List.of(invalidChunk));
+
+        assertThatThrownBy(() -> service.getDocumentContent(USER_ID, DOCUMENT_ID))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DOCUMENT_CHUNKS_INCONSISTENT);
+    }
+
+    @Test
+    @DisplayName("읽기 가능한 문서의 현재 버전 원본 위치를 Snapshot으로 반환한다")
+    void getDocumentFileSnapshot_returnsCurrentVersionFileMetadata() {
+        Document document = mock(Document.class);
+        DocumentVersion currentVersion = mock(DocumentVersion.class);
+        FileObject fileObject = mock(FileObject.class);
+        givenReadableDocument(document);
+        given(document.getCurrentVersion()).willReturn(currentVersion);
+        given(currentVersion.getFileObject()).willReturn(fileObject);
+        given(currentVersion.getOriginalFilename()).willReturn("guide.pdf");
+        given(currentVersion.getContentType()).willReturn("application/pdf");
+        given(fileObject.getBucketName()).willReturn("documents");
+        given(fileObject.getObjectKey()).willReturn("objects/guide.pdf");
+        given(fileObject.getFileSize()).willReturn(100L);
+
+        DocumentFileSnapshot result = service.getDocumentFileSnapshot(USER_ID, DOCUMENT_ID);
+
+        assertThat(result.storedFile()).isEqualTo(new StoredFile("documents", "objects/guide.pdf"));
+        assertThat(result.originalFilename()).isEqualTo("guide.pdf");
+        assertThat(result.contentType()).isEqualTo("application/pdf");
+        assertThat(result.fileSize()).isEqualTo(100L);
+    }
 
     @Test
     @DisplayName("읽을 수 있는 문서를 페이지 응답으로 변환해 반환한다")
@@ -236,5 +374,20 @@ class DocumentQueryServiceTest {
             null,
             null
         );
+    }
+
+    private void givenReadableDocument(Document document) {
+        given(permissionQueryService.canReadDocument(USER_ID, DOCUMENT_ID)).willReturn(true);
+        given(documentRepository.findByIdWithDetail(DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(document.getStatus()).willReturn(DocumentStatus.INDEXED);
+    }
+
+    private DocumentChunk chunk(int index, String text, int start, int end) {
+        DocumentChunk chunk = mock(DocumentChunk.class);
+        given(chunk.getChunkIndex()).willReturn(index);
+        given(chunk.getChunkText()).willReturn(text);
+        given(chunk.getCharStart()).willReturn(start);
+        given(chunk.getCharEnd()).willReturn(end);
+        return chunk;
     }
 }

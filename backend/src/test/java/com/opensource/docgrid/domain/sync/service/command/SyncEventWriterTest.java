@@ -2,6 +2,8 @@ package com.opensource.docgrid.domain.sync.service.command;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
@@ -9,12 +11,13 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Optional;
+import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -61,14 +64,49 @@ class SyncEventWriterTest {
         ReflectionTestUtils.setField(version, "id", 341L);
         EmbeddingModel model = EmbeddingModelFixture.createDefaultModel();
         ReflectionTestUtils.setField(model, "id", 7L);
-        given(syncOutboxEventRepository.save(any(SyncOutboxEvent.class)))
-            .willAnswer(invocation -> invocation.getArgument(0));
+        LocalDateTime occurredAt = LocalDateTime.ofInstant(FIXED_INSTANT, ZONE_ID);
+        SyncOutboxEvent persisted = SyncOutboxEvent.builder()
+            .eventId(UUID.randomUUID())
+            .idempotencyKey("DOCUMENT_VERSION:341:DOCUMENT_VERSION_CREATED:3")
+            .aggregateType(SyncAggregateType.DOCUMENT_VERSION)
+            .aggregateId(341L)
+            .aggregateVersion(3L)
+            .eventType(SyncEventType.DOCUMENT_VERSION_CREATED)
+            .payloadJson("{\"embeddingModelId\":7}")
+            .availableAt(occurredAt)
+            .occurredAt(occurredAt)
+            .maxRetryCount(5)
+            .build();
+        given(syncOutboxEventRepository.insertPendingIfAbsent(
+            any(UUID.class),
+            any(String.class),
+            any(String.class),
+            any(Long.class),
+            any(Long.class),
+            any(String.class),
+            any(String.class),
+            any(LocalDateTime.class),
+            any(LocalDateTime.class),
+            anyInt()
+        )).willReturn(1);
+        given(syncOutboxEventRepository.findByIdempotencyKey(persisted.getIdempotencyKey()))
+            .willReturn(Optional.of(persisted));
 
         SyncOutboxEvent result = syncEventWriter.recordDocumentVersionCreated(version, model);
 
-        ArgumentCaptor<SyncOutboxEvent> eventCaptor = ArgumentCaptor.forClass(SyncOutboxEvent.class);
-        then(syncOutboxEventRepository).should().save(eventCaptor.capture());
-        assertThat(result).isSameAs(eventCaptor.getValue());
+        then(syncOutboxEventRepository).should().insertPendingIfAbsent(
+            any(UUID.class),
+            eq("DOCUMENT_VERSION:341:DOCUMENT_VERSION_CREATED:3"),
+            eq("DOCUMENT_VERSION"),
+            eq(341L),
+            eq(3L),
+            eq("DOCUMENT_VERSION_CREATED"),
+            eq("{\"embeddingModelId\":7}"),
+            eq(occurredAt),
+            eq(occurredAt),
+            eq(5)
+        );
+        assertThat(result).isSameAs(persisted);
         assertThat(result.getEventId()).isNotNull();
         assertThat(result.getIdempotencyKey())
             .isEqualTo("DOCUMENT_VERSION:341:DOCUMENT_VERSION_CREATED:3");
@@ -78,8 +116,8 @@ class SyncEventWriterTest {
         assertThat(result.getEventType()).isEqualTo(SyncEventType.DOCUMENT_VERSION_CREATED);
         assertThat(result.getPayloadJson()).isEqualTo("{\"embeddingModelId\":7}");
         assertThat(result.getStatus()).isEqualTo(SyncEventStatus.PENDING);
-        assertThat(result.getAvailableAt()).isEqualTo(LocalDateTime.ofInstant(FIXED_INSTANT, ZONE_ID));
-        assertThat(result.getOccurredAt()).isEqualTo(LocalDateTime.ofInstant(FIXED_INSTANT, ZONE_ID));
+        assertThat(result.getAvailableAt()).isEqualTo(occurredAt);
+        assertThat(result.getOccurredAt()).isEqualTo(occurredAt);
         assertThat(result.getRetryCount()).isZero();
         assertThat(result.getMaxRetryCount()).isEqualTo(5);
     }

@@ -1,18 +1,22 @@
 package com.opensource.docgrid.domain.sync.repository;
 
-import java.util.Optional;
-import java.util.List;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import jakarta.persistence.LockModeType;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.opensource.docgrid.domain.sync.entity.SyncOutboxEvent;
+import com.opensource.docgrid.domain.sync.enums.SyncEventStatus;
+import com.opensource.docgrid.domain.sync.enums.SyncEventType;
 
 /**
  * 동기화 Outbox Event의 영속성과 멱등 식별자 조회를 담당한다.
@@ -21,6 +25,31 @@ import com.opensource.docgrid.domain.sync.entity.SyncOutboxEvent;
  * 만료 Lease 복구 경쟁을 직렬화한다.
  */
 public interface SyncOutboxEventRepository extends JpaRepository<SyncOutboxEvent, Long> {
+
+    long countByStatus(SyncEventStatus status);
+
+    long countByStatusAndProcessedAtGreaterThanEqual(SyncEventStatus status, LocalDateTime since);
+
+    long countByStatusAndUpdatedAtGreaterThanEqual(SyncEventStatus status, LocalDateTime since);
+
+    long countByUpdatedAtGreaterThanEqualAndRetryCountGreaterThan(LocalDateTime since, int retryCount);
+
+    @Query("SELECT MIN(event.occurredAt) FROM SyncOutboxEvent event WHERE event.status = :status")
+    Optional<LocalDateTime> findOldestOccurredAtByStatus(@Param("status") SyncEventStatus status);
+
+    Optional<SyncOutboxEvent> findTopByStatusOrderByProcessedAtDescIdDesc(SyncEventStatus status);
+
+    @Query("""
+        SELECT event
+          FROM SyncOutboxEvent event
+         WHERE (:status IS NULL OR event.status = :status)
+           AND (:eventType IS NULL OR event.eventType = :eventType)
+        """)
+    Page<SyncOutboxEvent> findAdminEvents(
+        @Param("status") SyncEventStatus status,
+        @Param("eventType") SyncEventType eventType,
+        Pageable pageable
+    );
 
     Optional<SyncOutboxEvent> findByEventId(UUID eventId);
 

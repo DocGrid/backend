@@ -50,11 +50,12 @@ test("server-renders every prototype route", async () => {
 });
 
 test("renders navigation and detailed feature content", async () => {
-  const [home, login, document, job] = await Promise.all([
+  const [home, login, document, job, dashboard] = await Promise.all([
     render("/"),
     render("/login"),
     render("/documents/1024"),
     render("/admin/indexing-jobs/4402"),
+    render("/admin/dashboard"),
   ]);
 
   const homeHtml = await home.text();
@@ -67,5 +68,10 @@ test("renders navigation and detailed feature content", async () => {
   assert.match(await login.text(), /로그인 없이 둘러보기/);
   assert.match(await document.text(), /인덱싱 진행 상태/);
   assert.match(await job.text(), /이벤트 타임라인/);
+  const dashboardHtml = await dashboard.text();
+  assert.match(dashboardHtml, /SYNC CONTROL PLANE/);
+  assert.match(dashboardHtml, /동기화 원장과 정합성/);
+  assert.match(dashboardHtml, /정합성 검사/);
+  assert.doesNotMatch(dashboardHtml, /25,368|21,742/);
   assert.doesNotMatch(homeHtml, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });

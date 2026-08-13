@@ -30,6 +30,7 @@ import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.domain.user.repository.DepartmentRepository;
 import com.opensource.docgrid.domain.user.repository.RoleRepository;
 import com.opensource.docgrid.domain.user.repository.UserRepository;
+import com.opensource.docgrid.domain.sync.service.command.SyncEventWriter;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
@@ -48,6 +49,7 @@ class DocumentPermissionCommandServiceTest {
     @Mock private DepartmentRepository departmentRepository;
     @Mock private PermissionConverter permissionConverter;
     @Mock private PermissionQueryService permissionQueryService;
+    @Mock private SyncEventWriter syncEventWriter;
 
     @Test
     @DisplayName("USER 대상 문서 권한을 부여하면 캐시도 함께 갱신된다")

@@ -37,6 +37,7 @@ import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.domain.user.repository.DepartmentRepository;
 import com.opensource.docgrid.domain.user.repository.RoleRepository;
 import com.opensource.docgrid.domain.user.repository.UserRepository;
+import com.opensource.docgrid.domain.sync.service.command.SyncEventWriter;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
@@ -56,6 +57,7 @@ class CollectionPermissionCommandServiceTest {
     @Mock private DepartmentRepository departmentRepository;
     @Mock private PermissionConverter permissionConverter;
     @Mock private PermissionQueryService permissionQueryService;
+    @Mock private SyncEventWriter syncEventWriter;
 
     // ==================== grantPermission ====================
 

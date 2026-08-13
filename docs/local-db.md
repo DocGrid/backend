@@ -55,7 +55,7 @@ PostgreSQL의 공식 Entry Point가 새 Data Volume을 초기화할 때
 Health 상태가 `healthy`가 된 뒤 Application을 기동한다.
 
 ```bash
-./gradlew bootRun --args='--spring.profiles.active=local'
+./backend/gradlew -p backend bootRun --args='--spring.profiles.active=local'
 ```
 
 Spring Boot 기동 과정에서 Flyway 전체 Migration과 Hibernate `ddl-auto=validate`가 통과해야 한다.
@@ -91,7 +91,7 @@ docker compose exec postgres psql -U app -d app -c "SELECT indexdef FROM pg_inde
 전체 단위 테스트:
 
 ```bash
-./gradlew test
+./backend/gradlew -p backend test
 ```
 
 실제 PostgreSQL 통합 테스트를 실행할 때는 Test Profile이 격리 Schema와 `public` Search Path를
@@ -104,7 +104,7 @@ DB_NAME=app \
 DB_USER=app \
 DB_PASSWORD=local_password \
 DB_SSLMODE=disable \
-./gradlew test -Dgroups=integration
+./backend/gradlew -p backend test -Dgroups=integration
 ```
 
 로컬 `.env`에서 접속값을 바꿨다면 명령의 값도 동일하게 맞춘다. 실제 비밀번호가 포함된 명령 출력은
@@ -178,7 +178,7 @@ DB_NAME=<database> \
 DB_USER=<user> \
 DB_PASSWORD=<secret> \
 DB_SSLMODE=<server-policy> \
-./gradlew test -Dgroups=integration
+./backend/gradlew -p backend test -Dgroups=integration
 ```
 
 위 Placeholder를 실제 값으로 바꾼 명령은 Shell History, 문서와 CI Log에 남지 않도록 실행 환경의

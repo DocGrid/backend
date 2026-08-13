@@ -42,7 +42,7 @@ services:
 
   embedding-server:
     build:
-      context: ./embedding-server
+      context: ./backend/embedding-server
       dockerfile: Dockerfile
     container_name: docgrid-embedding
     ports:

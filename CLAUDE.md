@@ -28,7 +28,7 @@ Don't assume. Don't hide confusion. Surface tradeoffs.
 
 ### 🔵 작업 직전 항상
 - 프로젝트 구조 → 이 파일 (CLAUDE.md)
-- 도메인 목록 → `src/main/java/com/opensource/docgrid/domain/`
+- 도메인 목록 → `backend/src/main/java/com/opensource/docgrid/domain/`
 
 ### 🟢 상황별 룰 (`.claude/rules/`) — 자동 로드됨
 - 항상 로드 → `git-conventions.md` (브랜치·커밋·환경설정)
@@ -58,7 +58,7 @@ Don't assume. Don't hide confusion. Surface tradeoffs.
 ## 프로젝트 구조
 
 ```
-src/main/java/com/opensource/docgrid/
+backend/src/main/java/com/opensource/docgrid/
 ├── global/
 │   ├── common/       # 공통 응답 (ApiResponse, ErrorResponse, BaseEntity)
 │   ├── config/       # 설정 (SecurityConfig, CorsConfig, SwaggerConfig)
@@ -87,10 +87,10 @@ docs/
 ## 주요 명령어
 
 ```bash
-./gradlew build
-./gradlew clean build
-./gradlew build -x test
-./gradlew test
+./backend/gradlew -p backend build
+./backend/gradlew -p backend clean build
+./backend/gradlew -p backend build -x test
+./backend/gradlew -p backend test
 ```
 
 ---

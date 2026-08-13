@@ -12,9 +12,9 @@ reviews:
     enabled: true
     drafts: false
   path_instructions:
-    - path: "src/main/java/**/*.java"
+    - path: "backend/src/main/java/**/*.java"
       instructions: "SOLID 원칙, 스프링 어노테이션, 의존성 주입 패턴, 예외 처리에 중점을 둔다"
-    - path: "src/test/**/*.java"
+    - path: "backend/src/test/**/*.java"
       instructions: "테스트 커버리지, 스프링 테스트 어노테이션, mock 사용법, 네이밍 규칙을 확인한다"
     - path: "**/*.{yml,yaml,properties}"
       instructions: "스프링 설정, 보안 설정, DB 연결, 환경 설정을 검증한다"

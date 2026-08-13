@@ -1,5 +1,5 @@
 ---
-globs: "src/main/resources/db/migration/**"
+globs: "backend/src/main/resources/db/migration/**"
 ---
 
 # DB 마이그레이션 규칙

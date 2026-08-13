@@ -57,6 +57,17 @@ indexing:
     retry-max-delay: ${INDEXING_WORKER_RETRY_MAX_DELAY:5m}
     shutdown-grace-period: ${INDEXING_WORKER_SHUTDOWN_GRACE_PERIOD:30s}
 
+sync:
+  dispatcher:
+    enabled: ${SYNC_DISPATCHER_ENABLED:false}
+    name: ${SYNC_DISPATCHER_NAME:sync-dispatcher}
+    polling-interval: ${SYNC_DISPATCHER_POLLING_INTERVAL:1s}
+    lease-duration: ${SYNC_DISPATCHER_LEASE_DURATION:30s}
+    lease-recovery-interval: ${SYNC_DISPATCHER_LEASE_RECOVERY_INTERVAL:10s}
+    lease-recovery-batch-size: ${SYNC_DISPATCHER_LEASE_RECOVERY_BATCH_SIZE:100}
+    retry-initial-delay: ${SYNC_DISPATCHER_RETRY_INITIAL_DELAY:5s}
+    retry-max-delay: ${SYNC_DISPATCHER_RETRY_MAX_DELAY:1m}
+
 server:
   port: 8080
 

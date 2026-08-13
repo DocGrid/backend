@@ -44,9 +44,9 @@
       "Bash(find:*)",
       "Bash(grep:*)",
       "Bash(ls:*)",
-      "Bash(./gradlew compileJava:*)",
-      "Bash(./gradlew build -x test:*)",
-      "Bash(./gradlew test:*)"
+      "Bash(./backend/gradlew -p backend compileJava:*)",
+      "Bash(./backend/gradlew -p backend build -x test:*)",
+      "Bash(./backend/gradlew -p backend test:*)"
     ]
   }
 }

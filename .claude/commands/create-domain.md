@@ -24,7 +24,7 @@
 ## 생성할 파일 목록
 
 ### 1. Entity
-`src/main/java/com/opensource/docgrid/domain/{domain}/entity/{Domain}.java`
+`backend/src/main/java/com/opensource/docgrid/domain/{domain}/entity/{Domain}.java`
 
 ```java
 package com.opensource.docgrid.domain.{domain}.entity;
@@ -48,7 +48,7 @@ public class {Domain} extends BaseEntity {
 ```
 
 ### 2. Repository
-`src/main/java/com/opensource/docgrid/domain/{domain}/repository/{Domain}Repository.java`
+`backend/src/main/java/com/opensource/docgrid/domain/{domain}/repository/{Domain}Repository.java`
 
 ```java
 package com.opensource.docgrid.domain.{domain}.repository;
@@ -61,7 +61,7 @@ public interface {Domain}Repository extends JpaRepository<{Domain}, Long> {
 ```
 
 ### 3. QueryService
-`src/main/java/com/opensource/docgrid/domain/{domain}/service/query/{Domain}QueryService.java`
+`backend/src/main/java/com/opensource/docgrid/domain/{domain}/service/query/{Domain}QueryService.java`
 
 ```java
 package com.opensource.docgrid.domain.{domain}.service.query;
@@ -91,7 +91,7 @@ public class {Domain}QueryService {
 ```
 
 ### 4. CommandService
-`src/main/java/com/opensource/docgrid/domain/{domain}/service/command/{Domain}CommandService.java`
+`backend/src/main/java/com/opensource/docgrid/domain/{domain}/service/command/{Domain}CommandService.java`
 
 ```java
 package com.opensource.docgrid.domain.{domain}.service.command;
@@ -111,7 +111,7 @@ public class {Domain}CommandService {
 ```
 
 ### 5. Controller
-`src/main/java/com/opensource/docgrid/domain/{domain}/controller/{Domain}Controller.java`
+`backend/src/main/java/com/opensource/docgrid/domain/{domain}/controller/{Domain}Controller.java`
 
 ```java
 package com.opensource.docgrid.domain.{domain}.controller;
@@ -135,7 +135,7 @@ public class {Domain}Controller {
 ```
 
 ### 6. Request DTO
-`src/main/java/com/opensource/docgrid/domain/{domain}/dto/request/{Domain}Request.java`
+`backend/src/main/java/com/opensource/docgrid/domain/{domain}/dto/request/{Domain}Request.java`
 
 ```java
 package com.opensource.docgrid.domain.{domain}.dto.request;
@@ -145,7 +145,7 @@ public record {Domain}Request() {
 ```
 
 ### 7. Response DTO
-`src/main/java/com/opensource/docgrid/domain/{domain}/dto/response/{Domain}Response.java`
+`backend/src/main/java/com/opensource/docgrid/domain/{domain}/dto/response/{Domain}Response.java`
 
 ```java
 package com.opensource.docgrid.domain.{domain}.dto.response;
@@ -155,7 +155,7 @@ public record {Domain}Response() {
 ```
 
 ### 8. Converter
-`src/main/java/com/opensource/docgrid/domain/{domain}/converter/{Domain}Converter.java`
+`backend/src/main/java/com/opensource/docgrid/domain/{domain}/converter/{Domain}Converter.java`
 
 ```java
 package com.opensource.docgrid.domain.{domain}.converter;

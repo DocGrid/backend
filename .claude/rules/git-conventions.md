@@ -23,11 +23,11 @@
 
 ## 빌드
 ```bash
-./gradlew build -x test   # CI용 (테스트 제외)
-./gradlew build            # 전체 빌드 + 테스트
+./backend/gradlew -p backend build -x test   # CI용 (테스트 제외)
+./backend/gradlew -p backend build            # 전체 빌드 + 테스트
 ```
 
 ## 트러블슈팅
 - LazyInitializationException: 트랜잭션 범위 밖 연관관계 접근, JOIN FETCH 추가
 - PostgreSQL 연결 실패: `application-local.yml` DB 설정 및 PostgreSQL 실행 여부 확인
-- 빌드 실패: `./gradlew clean build` 후 재시도
+- 빌드 실패: `./backend/gradlew -p backend clean build` 후 재시도

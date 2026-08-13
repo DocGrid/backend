@@ -1,5 +1,5 @@
 ---
-globs: "src/test/**/*.java"
+globs: "backend/src/test/**/*.java"
 ---
 
 # 테스트 컨벤션
@@ -48,7 +48,7 @@ class XxxServiceTest {
 ```
 
 ## Fixture 클래스
-- 위치: `src/test/java/com/opensource/docgrid/{domain}/fixture/`
+- 위치: `backend/src/test/java/com/opensource/docgrid/{domain}/fixture/`
 - 상수: `public static final`
 - 팩토리 메서드: `public static`
 
@@ -71,4 +71,4 @@ public class XxxFixture {
 class XxxIntegrationTest { }
 ```
 - 반드시 `@Tag("integration")` 추가
-- `./gradlew test -Dgroups=integration` 으로 분리 실행
+- `./backend/gradlew -p backend test -Dgroups=integration` 으로 분리 실행

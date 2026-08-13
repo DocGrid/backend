@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -40,6 +41,7 @@ class SyncEventDispatchServiceTest {
 
     @Mock private SyncOutboxEventRepository syncOutboxEventRepository;
     @Mock private SyncEventHandlerRegistry syncEventHandlerRegistry;
+    @Mock private SyncEventDeliveryAttemptService syncEventDeliveryAttemptService;
 
     private SyncEventDispatchService service;
     private SyncOutboxEvent event;
@@ -48,7 +50,12 @@ class SyncEventDispatchServiceTest {
     @BeforeEach
     void setUp() {
         Clock clock = Clock.fixed(NOW, ZONE_ID);
-        service = new SyncEventDispatchService(syncOutboxEventRepository, syncEventHandlerRegistry, clock);
+        service = new SyncEventDispatchService(
+            syncOutboxEventRepository,
+            syncEventHandlerRegistry,
+            syncEventDeliveryAttemptService,
+            clock
+        );
         LocalDateTime now = LocalDateTime.ofInstant(NOW, ZONE_ID);
         event = event(now);
         UUID claimToken = UUID.randomUUID();
@@ -64,6 +71,11 @@ class SyncEventDispatchServiceTest {
         service.dispatch(claim);
 
         then(syncEventHandlerRegistry).should().handle(event);
+        then(syncEventDeliveryAttemptService).should().succeed(
+            event.getEventId(),
+            claim.claimToken(),
+            LocalDateTime.ofInstant(NOW, ZONE_ID)
+        );
         assertThat(event.getStatus()).isEqualTo(SyncEventStatus.PROCESSED);
         assertThat(event.getProcessedAt()).isNotNull();
     }
@@ -76,6 +88,11 @@ class SyncEventDispatchServiceTest {
 
         assertThatThrownBy(() -> service.dispatch(claim))
             .isInstanceOf(IllegalStateException.class);
+        then(syncEventDeliveryAttemptService).should(never()).succeed(
+            event.getEventId(),
+            claim.claimToken(),
+            LocalDateTime.ofInstant(NOW, ZONE_ID)
+        );
         assertThat(event.getStatus()).isEqualTo(SyncEventStatus.PROCESSING);
         assertThat(event.getProcessedAt()).isNull();
     }

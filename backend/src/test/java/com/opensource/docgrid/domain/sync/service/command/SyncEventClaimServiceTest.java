@@ -2,6 +2,7 @@ package com.opensource.docgrid.domain.sync.service.command;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -37,6 +38,7 @@ class SyncEventClaimServiceTest {
     private static final ZoneId ZONE_ID = ZoneId.of("Asia/Seoul");
 
     @Mock private SyncOutboxEventRepository syncOutboxEventRepository;
+    @Mock private SyncEventDeliveryAttemptService syncEventDeliveryAttemptService;
 
     private SyncEventClaimService service;
     private SyncDispatcherProperties properties;
@@ -49,6 +51,7 @@ class SyncEventClaimServiceTest {
         service = new SyncEventClaimService(
             syncOutboxEventRepository,
             properties,
+            syncEventDeliveryAttemptService,
             Clock.fixed(NOW, ZONE_ID)
         );
     }
@@ -68,6 +71,11 @@ class SyncEventClaimServiceTest {
         assertThat(event.getStatus()).isEqualTo(SyncEventStatus.PROCESSING);
         assertThat(event.getLockedBy()).isEqualTo("dispatcher-test");
         assertThat(event.getLockExpiresAt()).isEqualTo(claimedAt.plusSeconds(30));
+        then(syncEventDeliveryAttemptService).should().start(
+            event,
+            result.orElseThrow().claimToken(),
+            claimedAt
+        );
     }
 
     private SyncOutboxEvent event(LocalDateTime availableAt) {

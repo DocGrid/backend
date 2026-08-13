@@ -13,6 +13,22 @@ public interface CollectionPermissionRepository extends JpaRepository<Collection
     // 컬렉션에 속한 권한 전체 조회 (soft delete 시 캐시 무효화 + 권한 삭제용)
     List<CollectionPermission> findAllByCollectionId(Long collectionId);
 
+    /**
+     * 컬렉션에 직접 부여된 권한을 대상·부여자 정보와 함께 최신순으로 조회한다.
+     */
+    @Query("""
+            SELECT cp
+            FROM CollectionPermission cp
+            JOIN FETCH cp.collection
+            LEFT JOIN FETCH cp.user
+            LEFT JOIN FETCH cp.role
+            LEFT JOIN FETCH cp.department
+            LEFT JOIN FETCH cp.grantedBy
+            WHERE cp.collection.id = :collectionId
+            ORDER BY cp.grantedAt DESC, cp.id DESC
+            """)
+    List<CollectionPermission> findAllWithTargetsByCollectionId(@Param("collectionId") Long collectionId);
+
     // ROLE live — 사용자 역할 기반 컬렉션→문서 읽기 권한 존재 여부
     @Query("""
             SELECT COUNT(cp) > 0 FROM CollectionPermission cp

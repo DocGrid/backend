@@ -1,5 +1,7 @@
 package com.opensource.docgrid.domain.permission.controller;
 
+import java.util.List;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -47,6 +49,30 @@ public class PermissionController {
             @PathVariable Long documentId,
             @Parameter(hidden = true) @CurrentUser Long userId) {
         return ResponseUtils.ok(permissionQueryService.checkDocumentPermission(userId, documentId));
+    }
+
+    @Operation(
+            summary = "문서 직접 권한 목록 조회",
+            description = "문서 ADMIN 권한 보유자가 해당 문서에 직접 부여된 USER/ROLE/DEPARTMENT 권한 전체를 조회합니다. " +
+                    "계산되거나 컬렉션에서 상속된 권한은 포함하지 않으며 만료된 직접 권한은 포함합니다."
+    )
+    @GetMapping("/documents/{documentId}")
+    public ResponseEntity<ApiResponse<List<DocumentPermissionResponse>>> getDocumentPermissions(
+            @PathVariable Long documentId,
+            @Parameter(hidden = true) @CurrentUser Long userId) {
+        return ResponseUtils.ok(permissionQueryService.getDocumentPermissions(userId, documentId));
+    }
+
+    @Operation(
+            summary = "컬렉션 직접 권한 목록 조회",
+            description = "컬렉션 ADMIN 권한 보유자가 해당 컬렉션에 직접 부여된 USER/ROLE/DEPARTMENT 권한 전체를 조회합니다. " +
+                    "계산된 권한은 포함하지 않으며 만료된 직접 권한은 포함합니다."
+    )
+    @GetMapping("/collections/{collectionId}")
+    public ResponseEntity<ApiResponse<List<CollectionPermissionResponse>>> getCollectionPermissions(
+            @PathVariable Long collectionId,
+            @Parameter(hidden = true) @CurrentUser Long userId) {
+        return ResponseUtils.ok(permissionQueryService.getCollectionPermissions(userId, collectionId));
     }
 
     @Operation(

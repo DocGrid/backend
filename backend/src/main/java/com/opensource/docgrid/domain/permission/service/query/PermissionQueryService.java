@@ -12,6 +12,9 @@ import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
+import com.opensource.docgrid.domain.permission.converter.PermissionConverter;
+import com.opensource.docgrid.domain.permission.dto.response.CollectionPermissionResponse;
+import com.opensource.docgrid.domain.permission.dto.response.DocumentPermissionResponse;
 import com.opensource.docgrid.domain.permission.dto.response.DocumentPermissionSummaryResponse;
 import com.opensource.docgrid.domain.permission.enums.PermissionSourceType;
 import com.opensource.docgrid.domain.permission.repository.CollectionPermissionRepository;
@@ -34,6 +37,37 @@ public class PermissionQueryService {
     private final UserDocumentAccessCacheRepository cacheRepository;
     private final DocumentPermissionRepository documentPermissionRepository;
     private final CollectionPermissionRepository collectionPermissionRepository;
+    private final PermissionConverter permissionConverter;
+
+    /**
+     * 문서 ADMIN 권한 보유자에게 문서에 직접 부여된 전체 권한을 반환한다.
+     */
+    public List<DocumentPermissionResponse> getDocumentPermissions(Long userId, Long documentId) {
+        // 1. 목록 조회 전에 소유권·직접·상속 ADMIN 권한을 공통 규칙으로 검증한다.
+        if (!canAdminDocument(userId, documentId)) {
+            throw new DocGridException(ErrorCode.PERMISSION_DENIED);
+        }
+
+        // 2. 만료된 기록도 회수·감사 화면에서 관리할 수 있도록 직접 부여 기록 전체를 반환한다.
+        return documentPermissionRepository.findAllWithTargetsByDocumentId(documentId).stream()
+                .map(permissionConverter::toDocumentPermissionResponse)
+                .toList();
+    }
+
+    /**
+     * 컬렉션 ADMIN 권한 보유자에게 컬렉션에 직접 부여된 전체 권한을 반환한다.
+     */
+    public List<CollectionPermissionResponse> getCollectionPermissions(Long userId, Long collectionId) {
+        // 1. 삭제 컬렉션 차단과 ADMIN 권한 판단을 기존 컬렉션 권한 규칙에 위임한다.
+        if (!canAdminCollection(userId, collectionId)) {
+            throw new DocGridException(ErrorCode.PERMISSION_DENIED);
+        }
+
+        // 2. 계산·상속 권한은 포함하지 않고 회수 API가 참조할 직접 권한 ID만 반환한다.
+        return collectionPermissionRepository.findAllWithTargetsByCollectionId(collectionId).stream()
+                .map(permissionConverter::toCollectionPermissionResponse)
+                .toList();
+    }
 
     // 문서 읽기 권한 판단 (5단계)
     public boolean canReadDocument(Long userId, Long documentId) {

@@ -7,6 +7,9 @@ import com.opensource.docgrid.domain.permission.dto.response.DocumentPermissionR
 import com.opensource.docgrid.domain.permission.entity.CollectionPermission;
 import com.opensource.docgrid.domain.permission.entity.DocumentPermission;
 
+/**
+ * 문서·컬렉션 직접 권한 Entity를 권한 관리 API의 공개 응답으로 변환한다.
+ */
 @Component
 public class PermissionConverter {
 

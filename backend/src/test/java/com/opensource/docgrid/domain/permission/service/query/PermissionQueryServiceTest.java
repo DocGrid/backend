@@ -6,6 +6,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
@@ -21,7 +22,12 @@ import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
+import com.opensource.docgrid.domain.permission.converter.PermissionConverter;
+import com.opensource.docgrid.domain.permission.dto.response.CollectionPermissionResponse;
+import com.opensource.docgrid.domain.permission.dto.response.DocumentPermissionResponse;
 import com.opensource.docgrid.domain.permission.dto.response.DocumentPermissionSummaryResponse;
+import com.opensource.docgrid.domain.permission.entity.CollectionPermission;
+import com.opensource.docgrid.domain.permission.entity.DocumentPermission;
 import com.opensource.docgrid.domain.permission.enums.PermissionSourceType;
 import com.opensource.docgrid.domain.permission.repository.CollectionPermissionRepository;
 import com.opensource.docgrid.domain.permission.repository.DocumentPermissionRepository;
@@ -30,6 +36,9 @@ import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
+/**
+ * 문서·컬렉션 권한 계산과 ADMIN 전용 직접 권한 목록 조회 계약을 검증한다.
+ */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("PermissionQueryService 단위 테스트")
 class PermissionQueryServiceTest {
@@ -42,6 +51,7 @@ class PermissionQueryServiceTest {
     @Mock private UserDocumentAccessCacheRepository cacheRepository;
     @Mock private DocumentPermissionRepository documentPermissionRepository;
     @Mock private CollectionPermissionRepository collectionPermissionRepository;
+    @Mock private PermissionConverter permissionConverter;
 
     // ==================== canReadDocument ====================
 
@@ -750,5 +760,58 @@ class PermissionQueryServiceTest {
         boolean result = service.canAdminCollection(otherUserId, CollectionFixture.COLLECTION_ID);
 
         assertThat(result).isFalse();
+    }
+
+    @Test
+    @DisplayName("문서 소유자는 직접 부여된 문서 권한 전체를 조회한다")
+    void getDocumentPermissions_returnsDirectPermissions_whenUserCanAdmin() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        DocumentPermission permission = org.mockito.Mockito.mock(DocumentPermission.class);
+        DocumentPermissionResponse response = org.mockito.Mockito.mock(DocumentPermissionResponse.class);
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(documentPermissionRepository.findAllWithTargetsByDocumentId(CollectionFixture.DOCUMENT_ID))
+                .willReturn(List.of(permission));
+        given(permissionConverter.toDocumentPermissionResponse(permission)).willReturn(response);
+
+        List<DocumentPermissionResponse> result = service.getDocumentPermissions(
+                CollectionFixture.USER_ID,
+                CollectionFixture.DOCUMENT_ID
+        );
+
+        assertThat(result).containsExactly(response);
+    }
+
+    @Test
+    @DisplayName("컬렉션 소유자는 직접 부여된 컬렉션 권한 전체를 조회한다")
+    void getCollectionPermissions_returnsDirectPermissions_whenUserCanAdmin() {
+        DocumentCollection collection = CollectionFixture.createCollection();
+        CollectionPermission permission = org.mockito.Mockito.mock(CollectionPermission.class);
+        CollectionPermissionResponse response = org.mockito.Mockito.mock(CollectionPermissionResponse.class);
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+        given(collectionPermissionRepository.findAllWithTargetsByCollectionId(CollectionFixture.COLLECTION_ID))
+                .willReturn(List.of(permission));
+        given(permissionConverter.toCollectionPermissionResponse(permission)).willReturn(response);
+
+        List<CollectionPermissionResponse> result = service.getCollectionPermissions(
+                CollectionFixture.USER_ID,
+                CollectionFixture.COLLECTION_ID
+        );
+
+        assertThat(result).containsExactly(response);
+    }
+
+    @Test
+    @DisplayName("문서 ADMIN 권한이 없으면 직접 권한 목록을 조회하지 않는다")
+    void getDocumentPermissions_throwsBeforeListQuery_whenAdminPermissionIsDenied() {
+        Document document = CollectionFixture.createDocument(CollectionFixture.createOwner());
+        Long otherUserId = 99L;
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+
+        assertThatThrownBy(() -> service.getDocumentPermissions(otherUserId, CollectionFixture.DOCUMENT_ID))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PERMISSION_DENIED);
+        then(documentPermissionRepository).should(never())
+                .findAllWithTargetsByDocumentId(CollectionFixture.DOCUMENT_ID);
     }
 }

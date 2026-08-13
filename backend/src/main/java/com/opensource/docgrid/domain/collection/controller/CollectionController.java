@@ -3,31 +3,41 @@ package com.opensource.docgrid.domain.collection.controller;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.opensource.docgrid.domain.auth.annotation.CurrentUser;
 import com.opensource.docgrid.domain.collection.dto.request.AddDocumentRequest;
 import com.opensource.docgrid.domain.collection.dto.request.CreateCollectionRequest;
+import com.opensource.docgrid.domain.collection.dto.response.CollectionDocumentListItemResponse;
 import com.opensource.docgrid.domain.collection.dto.response.CollectionDocumentResponse;
 import com.opensource.docgrid.domain.collection.dto.response.CollectionResponse;
 import com.opensource.docgrid.domain.collection.service.command.CollectionCommandService;
 import com.opensource.docgrid.domain.collection.service.query.CollectionQueryService;
 import com.opensource.docgrid.global.common.response.ApiResponse;
+import com.opensource.docgrid.global.common.response.PageResponse;
 import com.opensource.docgrid.global.common.response.ResponseUtils;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * 컬렉션 생성·조회·삭제와 컬렉션 문서 구성 및 읽기 가능한 문서 목록 API를 제공한다.
+ */
 @Tag(name = "Collection", description = "컬렉션 관련 API")
+@Validated
 @RestController
 @RequestMapping("/collections")
 @RequiredArgsConstructor
@@ -93,6 +103,20 @@ public class CollectionController {
             @PathVariable Long collectionId,
             @Parameter(hidden = true) @CurrentUser Long userId) {
         return ResponseUtils.ok(collectionQueryService.getCollection(userId, collectionId));
+    }
+
+    @Operation(
+            summary = "컬렉션 문서 목록 조회",
+            description = "컬렉션을 읽을 수 있는 사용자가 개별 문서 읽기 권한도 가진 항목만 추가 최신순으로 페이지 조회합니다. " +
+                    "숨김 문서는 응답 데이터와 전체 개수에 포함하지 않습니다."
+    )
+    @GetMapping("/{collectionId}/documents")
+    public ResponseEntity<ApiResponse<PageResponse<CollectionDocumentListItemResponse>>> getCollectionDocuments(
+            @PathVariable Long collectionId,
+            @Parameter(hidden = true) @CurrentUser Long userId,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        return ResponseUtils.ok(collectionQueryService.getCollectionDocuments(userId, collectionId, page, size));
     }
 
     @Operation(

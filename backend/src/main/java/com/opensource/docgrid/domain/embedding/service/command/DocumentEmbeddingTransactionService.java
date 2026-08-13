@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +40,7 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>두 단계는 Job을 먼저, Version을 다음 순서로 잠가 Claim 교체와 같은 Version의 동시 실행을
  * 직렬화한다. 준비 단계는 Job에 고정된 Model과 Chunk 불변 Snapshot만 외부 호출 구간에 전달한다.
+ * Reconciler 복구 Job은 기존 Vector를 보존하고 같은 Version·Model에서 실제 누락된 Chunk만 채운다.
  */
 @Service
 @RequiredArgsConstructor
@@ -150,7 +152,7 @@ public class DocumentEmbeddingTransactionService {
         validateChunks(documentVersion, chunks);
         validatePreparedChunks(preparedWork, chunks);
 
-        // 4. 동시 요청이 먼저 전체 저장했으면 기존 결과를 재생하고 부분 저장은 내부 모순으로 거부한다.
+        // 4. 동시 요청이 먼저 전체 저장했으면 재생하고 Reconciler 복구의 부분 Set은 누락분만 채운다.
         EmbeddingState state = resolveState(documentVersion, embeddingModel, chunks.size());
         if (state == EmbeddingState.REPLAY) {
             return result(jobId, attemptId, documentVersion, embeddingModel, chunks.size(), false);
@@ -159,16 +161,18 @@ public class DocumentEmbeddingTransactionService {
             throw new DocGridException(ErrorCode.DOCUMENT_VERSION_EMBEDDING_NOT_ALLOWED);
         }
 
-        // 5. 모든 Draft를 다시 검증하고 같은 Version·Model의 ACTIVE Embedding Set으로 원자 저장한다.
+        // 5. 모든 Draft를 다시 검증하고 아직 없는 Chunk의 ACTIVE Embedding만 원자 저장한다.
         List<Embedding> embeddings = toEntities(
             documentVersion,
             embeddingModel,
             chunks,
             drafts
         );
-        embeddingRepository.saveAllAndFlush(embeddings);
+        if (!embeddings.isEmpty()) {
+            embeddingRepository.saveAllAndFlush(embeddings);
+        }
 
-        return result(jobId, attemptId, documentVersion, embeddingModel, embeddings.size(), true);
+        return result(jobId, attemptId, documentVersion, embeddingModel, chunks.size(), true);
     }
 
     private EmbeddingJob findLockedJob(Long jobId) {
@@ -282,14 +286,17 @@ public class DocumentEmbeddingTransactionService {
             embeddingModel.getId()
         );
 
+        if (embeddingCount > chunkCount) {
+            throw new DocGridException(ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT);
+        }
         if (documentVersion.getStatus() == DocumentVersionStatus.CHUNKED) {
-            if (embeddingCount != 0) {
-                throw new DocGridException(ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT);
+            if (embeddingCount == chunkCount) {
+                return EmbeddingState.REPLAY;
             }
             return EmbeddingState.WORK;
         }
         if (documentVersion.getStatus() == DocumentVersionStatus.EMBEDDING) {
-            if (embeddingCount == 0) {
+            if (embeddingCount < chunkCount) {
                 return EmbeddingState.WORK;
             }
             if (embeddingCount == chunkCount) {
@@ -317,10 +324,20 @@ public class DocumentEmbeddingTransactionService {
         }
 
         List<Embedding> embeddings = new ArrayList<>(drafts.size());
+        Set<Long> existingChunkIds = Set.copyOf(
+            embeddingRepository.findChunkIdsByDocumentVersionIdAndEmbeddingModelId(
+                documentVersion.getId(),
+                embeddingModel.getId()
+            )
+        );
         for (int index = 0; index < drafts.size(); index++) {
             DocumentChunk chunk = chunks.get(index);
             DocumentEmbeddingDraft draft = drafts.get(index);
             float[] vector = validateDraft(draft, chunk, embeddingModel.getDimension());
+            if (existingChunkIds.contains(chunk.getId())) {
+                // 기존 Vector는 보존하고 누락 Chunk만 채워 자동복구가 물리 삭제를 요구하지 않게 한다.
+                continue;
+            }
             embeddings.add(Embedding.builder()
                 .chunk(chunk)
                 .document(documentVersion.getDocument())

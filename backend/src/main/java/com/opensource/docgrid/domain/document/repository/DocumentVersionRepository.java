@@ -1,6 +1,7 @@
 package com.opensource.docgrid.domain.document.repository;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 import jakarta.persistence.LockModeType;
@@ -9,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Pageable;
 
 import com.opensource.docgrid.domain.document.entity.DocumentVersion;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
@@ -20,6 +22,22 @@ import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
  * 상태 변경과 동일 Version의 Chunk Set 생성을 직렬화한다.
  */
 public interface DocumentVersionRepository extends JpaRepository<DocumentVersion, Long> {
+
+    /**
+     * Reconciler가 전체 Version을 Offset 없이 작은 ID Cursor Batch로 순회한다.
+     */
+    @Query("""
+        SELECT version
+        FROM DocumentVersion version
+        JOIN FETCH version.document document
+        LEFT JOIN FETCH document.currentVersion
+        WHERE version.id > :cursor
+        ORDER BY version.id ASC
+        """)
+    List<DocumentVersion> findReconciliationBatchAfterId(
+        @Param("cursor") Long cursor,
+        Pageable pageable
+    );
 
     boolean existsByDocumentIdAndStatusIn(Long documentId, Collection<DocumentVersionStatus> statuses);
 

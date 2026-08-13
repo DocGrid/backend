@@ -410,7 +410,6 @@ public class DocumentIndexingCompletionService {
 
         if (activeJobCount != 1
             || chunkCount <= 0
-            || allEmbeddingCount != chunkCount
             || modelEmbeddingCount != chunkCount
             || activeEmbeddingCount != chunkCount
             || invalidEmbeddingCount != 0) {

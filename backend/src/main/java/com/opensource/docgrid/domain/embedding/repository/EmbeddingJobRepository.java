@@ -33,6 +33,11 @@ public interface EmbeddingJobRepository extends JpaRepository<EmbeddingJob, Long
         Long embeddingModelId
     );
 
+    boolean existsByDocumentVersionIdAndStatusIn(
+        Long documentVersionId,
+        Collection<EmbeddingJobStatus> statuses
+    );
+
     /**
      * 관리자 목록 화면에 필요한 연관관계를 함께 조회하면서 선택 필터와 Pagination을 적용한다.
      *

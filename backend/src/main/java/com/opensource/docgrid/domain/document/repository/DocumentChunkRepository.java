@@ -3,6 +3,7 @@ package com.opensource.docgrid.domain.document.repository;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
 import com.opensource.docgrid.domain.document.entity.DocumentChunk;
 
@@ -18,6 +19,18 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, Lo
     boolean existsByDocumentVersionId(Long documentVersionId);
 
     long countByDocumentVersionId(Long documentVersionId);
+
+    /**
+     * FK가 비정상적으로 우회된 경우 Version 또는 Document 원장이 없는 Chunk를 탐지한다.
+     */
+    @Query(value = """
+        SELECT COUNT(*)
+          FROM document_chunks chunk
+          LEFT JOIN document_versions version ON version.id = chunk.document_version_id
+          LEFT JOIN documents document ON document.id = chunk.document_id
+         WHERE version.id IS NULL OR document.id IS NULL
+        """, nativeQuery = true)
+    long countOrphanedRows();
 
     List<DocumentChunk> findAllByDocumentVersionIdOrderByChunkIndexAsc(Long documentVersionId);
 }

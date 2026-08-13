@@ -79,6 +79,10 @@ class DocumentUploadIntegrationTest {
     void tearDown() {
         for (DocumentUploadResponse response : createdResponses) {
             jdbcTemplate.update("DELETE FROM embedding_jobs WHERE id = ?", response.embeddingJobId());
+            jdbcTemplate.update(
+                "DELETE FROM sync_outbox_events WHERE aggregate_type = 'DOCUMENT_VERSION' AND aggregate_id = ?",
+                response.documentVersionId()
+            );
             jdbcTemplate.update("UPDATE documents SET current_version_id = NULL WHERE id = ?", response.documentId());
             jdbcTemplate.update("DELETE FROM document_versions WHERE id = ?", response.documentVersionId());
             jdbcTemplate.update("DELETE FROM documents WHERE id = ?", response.documentId());
@@ -118,6 +122,20 @@ class DocumentUploadIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
             "SELECT max_retry_count FROM embedding_jobs WHERE id = ?", Integer.class, response.embeddingJobId()
         )).isEqualTo(3);
+        UUID sourceEventId = jdbcTemplate.queryForObject(
+            "SELECT source_event_id FROM embedding_jobs WHERE id = ?",
+            UUID.class,
+            response.embeddingJobId()
+        );
+        assertThat(sourceEventId).isNotNull();
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM sync_outbox_events "
+                + "WHERE event_id = ? AND aggregate_type = 'DOCUMENT_VERSION' AND aggregate_id = ? "
+                + "AND event_type = 'DOCUMENT_VERSION_CREATED' AND status = 'PENDING'",
+            Integer.class,
+            sourceEventId,
+            response.documentVersionId()
+        )).isOne();
     }
 
     @Test

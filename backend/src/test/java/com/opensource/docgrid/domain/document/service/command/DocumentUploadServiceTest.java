@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
 import java.util.Optional;
+import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,6 +36,8 @@ import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.fixture.EmbeddingModelFixture;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.embedding.service.query.EmbeddingModelQueryService;
+import com.opensource.docgrid.domain.sync.entity.SyncOutboxEvent;
+import com.opensource.docgrid.domain.sync.service.command.SyncEventWriter;
 import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.domain.user.enums.UserStatus;
 import com.opensource.docgrid.domain.user.repository.UserRepository;
@@ -47,6 +50,7 @@ class DocumentUploadServiceTest {
 
     private static final Long USER_ID = 1L;
     private static final String FILE_HASH = "hash";
+    private static final UUID SOURCE_EVENT_ID = UUID.fromString("00000000-0000-0000-0000-000000000162");
 
     @Mock private UserRepository userRepository;
     @Mock private FileObjectRepository fileObjectRepository;
@@ -54,6 +58,8 @@ class DocumentUploadServiceTest {
     @Mock private DocumentVersionRepository documentVersionRepository;
     @Mock private EmbeddingJobRepository embeddingJobRepository;
     @Mock private EmbeddingModelQueryService embeddingModelQueryService;
+    @Mock private SyncEventWriter syncEventWriter;
+    @Mock private SyncOutboxEvent syncOutboxEvent;
 
     private DocumentUploadService documentUploadService;
     private User user;
@@ -68,7 +74,8 @@ class DocumentUploadServiceTest {
             documentRepository,
             documentVersionRepository,
             embeddingJobRepository,
-            embeddingModelQueryService
+            embeddingModelQueryService,
+            syncEventWriter
         );
         user = User.builder()
             .email("user@test.com")
@@ -102,6 +109,7 @@ class DocumentUploadServiceTest {
         given(documentVersionRepository.save(any(DocumentVersion.class)))
             .willAnswer(invocation -> withId(invocation.getArgument(0), 11L));
         given(embeddingModelQueryService.getActiveModel()).willReturn(embeddingModel);
+        givenSourceEvent();
         given(embeddingJobRepository.save(any(EmbeddingJob.class)))
             .willAnswer(invocation -> withId(invocation.getArgument(0), 12L));
 
@@ -130,6 +138,8 @@ class DocumentUploadServiceTest {
         assertThat(jobCaptor.getValue().getRetryCount()).isZero();
         assertThat(jobCaptor.getValue().getMaxRetryCount()).isEqualTo(3);
         assertThat(jobCaptor.getValue().getEmbeddingModel()).isSameAs(embeddingModel);
+        assertThat(jobCaptor.getValue().getSourceEventId()).isEqualTo(SOURCE_EVENT_ID);
+        then(syncEventWriter).should().recordDocumentVersionCreated(versionCaptor.getValue(), embeddingModel);
     }
 
     @Test
@@ -145,6 +155,7 @@ class DocumentUploadServiceTest {
         given(documentVersionRepository.save(any(DocumentVersion.class)))
             .willAnswer(invocation -> withId(invocation.getArgument(0), 11L));
         given(embeddingModelQueryService.getActiveModel()).willReturn(embeddingModel);
+        givenSourceEvent();
         given(embeddingJobRepository.save(any(EmbeddingJob.class)))
             .willAnswer(invocation -> withId(invocation.getArgument(0), 12L));
 
@@ -179,6 +190,12 @@ class DocumentUploadServiceTest {
             existingFileObjectId,
             storedFile
         );
+    }
+
+    private void givenSourceEvent() {
+        given(syncEventWriter.recordDocumentVersionCreated(any(DocumentVersion.class), any(EmbeddingModel.class)))
+            .willReturn(syncOutboxEvent);
+        given(syncOutboxEvent.getEventId()).willReturn(SOURCE_EVENT_ID);
     }
 
     private <T> T withId(T entity, Long id) {

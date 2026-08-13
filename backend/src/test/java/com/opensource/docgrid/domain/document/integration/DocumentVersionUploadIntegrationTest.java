@@ -78,6 +78,11 @@ class DocumentVersionUploadIntegrationTest {
             );
             jdbcTemplate.update("DELETE FROM embedding_jobs WHERE document_version_id IN "
                 + "(SELECT id FROM document_versions WHERE document_id = ?)", documentId);
+            jdbcTemplate.update(
+                "DELETE FROM sync_outbox_events WHERE aggregate_type = 'DOCUMENT_VERSION' "
+                    + "AND aggregate_id IN (SELECT id FROM document_versions WHERE document_id = ?)",
+                documentId
+            );
             jdbcTemplate.update("UPDATE documents SET current_version_id = NULL WHERE id = ?", documentId);
             jdbcTemplate.update("DELETE FROM document_versions WHERE document_id = ?", documentId);
             jdbcTemplate.update("DELETE FROM documents WHERE id = ?", documentId);
@@ -118,6 +123,13 @@ class DocumentVersionUploadIntegrationTest {
             String.class,
             response.documentVersionId()
         )).isEqualTo("text/plain");
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM sync_outbox_events "
+                + "WHERE aggregate_type = 'DOCUMENT_VERSION' AND aggregate_id = ? "
+                + "AND event_type = 'DOCUMENT_VERSION_CREATED' AND status = 'PENDING'",
+            Integer.class,
+            response.documentVersionId()
+        )).isOne();
     }
 
     @Test

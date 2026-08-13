@@ -5,25 +5,37 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 
+import java.util.Collection;
 import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import com.opensource.docgrid.domain.document.converter.DocumentStatusConverter;
+import com.opensource.docgrid.domain.document.converter.DocumentSummaryConverter;
 import com.opensource.docgrid.domain.document.dto.response.DocumentStatusResponse;
+import com.opensource.docgrid.domain.document.dto.response.DocumentSummaryResponse;
+import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
+import com.opensource.docgrid.domain.document.enums.DocumentType;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
+import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
 import com.opensource.docgrid.domain.document.repository.DocumentStatusProjection;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
+import com.opensource.docgrid.global.common.response.PageResponse;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
@@ -40,7 +52,77 @@ class DocumentQueryServiceTest {
     @Mock private DocumentRepository documentRepository;
     @Mock private PermissionQueryService permissionQueryService;
     @Mock private DocumentStatusConverter documentStatusConverter;
+    @Mock private DocumentSummaryConverter documentSummaryConverter;
     @Mock private DocumentStatusProjection projection;
+
+    @Test
+    @DisplayName("읽을 수 있는 문서를 페이지 응답으로 변환해 반환한다")
+    void getMyDocuments_returnsPage_when_readableDocumentsExist() {
+        Document document = mock(Document.class);
+        DocumentSummaryResponse expected = summaryResponse();
+        given(documentRepository.findReadableDocumentIds(
+            org.mockito.ArgumentMatchers.eq(USER_ID), anyCollection()
+        )).willReturn(List.of(DOCUMENT_ID));
+        given(documentRepository.findAllByIdIn(
+            org.mockito.ArgumentMatchers.eq(List.of(DOCUMENT_ID)),
+            org.mockito.ArgumentMatchers.any(Pageable.class)
+        )).willReturn(new PageImpl<>(List.of(document), PageRequest.of(0, 20), 1));
+        given(documentSummaryConverter.toResponse(document)).willReturn(expected);
+
+        PageResponse<DocumentSummaryResponse> result = service.getMyDocuments(USER_ID, null, 0, 20);
+
+        assertThat(result.content()).containsExactly(expected);
+        assertThat(result.totalElements()).isEqualTo(1);
+        assertThat(result.first()).isTrue();
+    }
+
+    @Test
+    @DisplayName("읽을 수 있는 문서가 없으면 문서를 조회하지 않고 빈 페이지를 반환한다")
+    void getMyDocuments_returnsEmptyPage_when_noReadableDocument() {
+        given(documentRepository.findReadableDocumentIds(
+            org.mockito.ArgumentMatchers.eq(USER_ID), anyCollection()
+        )).willReturn(List.of());
+
+        PageResponse<DocumentSummaryResponse> result = service.getMyDocuments(USER_ID, null, 0, 20);
+
+        assertThat(result.content()).isEmpty();
+        assertThat(result.totalElements()).isZero();
+        then(documentRepository).should(never()).findAllByIdIn(anyCollection(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("status를 지정하지 않으면 DELETED를 제외한 전체 상태로 조회한다")
+    void getMyDocuments_excludesDeletedStatus_when_statusIsNotGiven() {
+        ArgumentCaptor<Collection<String>> captor = ArgumentCaptor.captor();
+        given(documentRepository.findReadableDocumentIds(
+            org.mockito.ArgumentMatchers.eq(USER_ID), anyCollection()
+        )).willReturn(List.of());
+
+        service.getMyDocuments(USER_ID, null, 0, 20);
+
+        then(documentRepository).should().findReadableDocumentIds(
+            org.mockito.ArgumentMatchers.eq(USER_ID), captor.capture()
+        );
+        assertThat(captor.getValue())
+            .contains(DocumentStatus.INDEXED.name(), DocumentStatus.INDEXING.name(), DocumentStatus.FAILED.name())
+            .doesNotContain(DocumentStatus.DELETED.name());
+    }
+
+    @Test
+    @DisplayName("status를 지정하면 해당 상태만으로 조회한다")
+    void getMyDocuments_usesGivenStatus_when_statusIsGiven() {
+        ArgumentCaptor<Collection<String>> captor = ArgumentCaptor.captor();
+        given(documentRepository.findReadableDocumentIds(
+            org.mockito.ArgumentMatchers.eq(USER_ID), anyCollection()
+        )).willReturn(List.of());
+
+        service.getMyDocuments(USER_ID, DocumentStatus.FAILED, 0, 20);
+
+        then(documentRepository).should().findReadableDocumentIds(
+            org.mockito.ArgumentMatchers.eq(USER_ID), captor.capture()
+        );
+        assertThat(captor.getValue()).containsExactly(DocumentStatus.FAILED.name());
+    }
 
     @Test
     @DisplayName("읽기 권한이 있고 상태가 일관되면 문서 상태를 반환한다")
@@ -138,5 +220,21 @@ class DocumentQueryServiceTest {
         assertThatThrownBy(() -> service.getDocumentStatus(USER_ID, DOCUMENT_ID))
             .isInstanceOf(DocGridException.class)
             .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DOCUMENT_NOT_FOUND);
+    }
+
+    private DocumentSummaryResponse summaryResponse() {
+        return new DocumentSummaryResponse(
+            DOCUMENT_ID,
+            "문서 목록 테스트",
+            null,
+            DocumentType.TXT,
+            DocumentStatus.INDEXED,
+            VisibilityType.PRIVATE,
+            USER_ID,
+            1,
+            DocumentVersionStatus.INDEXED,
+            null,
+            null
+        );
     }
 }

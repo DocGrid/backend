@@ -16,7 +16,11 @@ public class CorsConfig implements WebMvcConfigurer {
     // WebSocketConfig가 STOMP endpoint 허용 origin으로 재사용하므로 package-private으로 둔다.
     static final List<String> ALLOWED_ORIGINS = List.of(
         "http://localhost:3000",
-        "http://localhost:8080"
+        "http://localhost:5173",
+        "http://localhost:8080",
+        "http://52.79.212.118:3000",
+        "http://52.79.212.118:5173",
+        "http://52.79.212.118:8080"
     );
 
     @Override

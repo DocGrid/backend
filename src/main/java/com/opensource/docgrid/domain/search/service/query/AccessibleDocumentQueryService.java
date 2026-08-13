@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.opensource.docgrid.domain.document.enums.DocumentStatus;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,9 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class AccessibleDocumentQueryService {
 
+    // 검색은 인덱싱이 끝난 문서만 대상으로 한다. 처리 중인 버전은 벡터가 아직 없다.
+    private static final List<String> SEARCHABLE_STATUSES = List.of(DocumentStatus.INDEXED.name());
+
     private final DocumentRepository documentRepository;
 
     /**
@@ -40,8 +44,10 @@ public class AccessibleDocumentQueryService {
      */
     public List<Long> findReadableDocumentIds(Long userId, Long collectionId) {
         if (collectionId != null) {
-            return documentRepository.findReadableDocumentIdsInCollection(userId, collectionId);
+            return documentRepository.findReadableDocumentIdsInCollection(
+                userId, collectionId, SEARCHABLE_STATUSES
+            );
         }
-        return documentRepository.findReadableDocumentIds(userId);
+        return documentRepository.findReadableDocumentIds(userId, SEARCHABLE_STATUSES);
     }
 }

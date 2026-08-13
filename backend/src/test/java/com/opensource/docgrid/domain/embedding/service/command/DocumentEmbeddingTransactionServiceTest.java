@@ -161,17 +161,17 @@ class DocumentEmbeddingTransactionServiceTest {
     }
 
     @Test
-    @DisplayName("일부 Chunk의 Embedding만 저장된 상태는 내부 데이터 모순으로 거부한다")
-    void prepare_rejectsPartialEmbeddings() {
+    @DisplayName("Reconciler가 확인한 일부 Embedding Set은 누락 Vector 생성을 재개한다")
+    void prepare_resumesPartialEmbeddings() {
         prepareEntities(DocumentVersionStatus.EMBEDDING);
         givenValidContext(List.of(chunk(0, "첫 번째"), chunk(1, "두 번째")));
         given(embeddingRepository.countByDocumentVersionIdAndEmbeddingModelId(VERSION_ID, MODEL_ID))
             .willReturn(1L);
 
-        assertThatThrownBy(() -> service.prepare(JOB_ID, ATTEMPT_ID, WORKER_ID, CLAIM_TOKEN))
-            .isInstanceOfSatisfying(DocGridException.class,
-                exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT));
+        PreparationResult result = service.prepare(JOB_ID, ATTEMPT_ID, WORKER_ID, CLAIM_TOKEN);
+
+        assertThat(result.isReplay()).isFalse();
+        assertThat(result.work().chunks()).hasSize(2);
     }
 
     @Test
@@ -252,6 +252,36 @@ class DocumentEmbeddingTransactionServiceTest {
         assertThat(first.getVector()).hasSize(EmbeddingModelFixture.DIMENSION);
         assertThat(first.getStatus()).isEqualTo(EmbeddingStatus.ACTIVE);
         then(indexingEventRepository).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("부분 Embedding Set 복구는 기존 Vector를 보존하고 누락 Chunk만 저장한다")
+    @SuppressWarnings("unchecked")
+    void complete_preservesExistingEmbeddingAndSavesMissingChunk() {
+        prepareEntities(DocumentVersionStatus.EMBEDDING);
+        List<DocumentChunk> chunks = List.of(chunk(0, "첫 번째"), chunk(1, "두 번째"));
+        givenValidContext(chunks);
+        given(embeddingRepository.countByDocumentVersionIdAndEmbeddingModelId(VERSION_ID, MODEL_ID))
+            .willReturn(1L);
+        given(embeddingRepository.findChunkIdsByDocumentVersionIdAndEmbeddingModelId(VERSION_ID, MODEL_ID))
+            .willReturn(List.of(chunks.get(0).getId()));
+
+        CompletionResult result = service.complete(
+            JOB_ID,
+            ATTEMPT_ID,
+            WORKER_ID,
+            CLAIM_TOKEN,
+            work(chunks),
+            List.of(draft(chunks.get(0), 0.1f), draft(chunks.get(1), 0.2f))
+        );
+
+        assertThat(result.embeddingCount()).isEqualTo(2);
+        ArgumentCaptor<List<Embedding>> embeddingsCaptor = ArgumentCaptor.forClass(List.class);
+        then(embeddingRepository).should().saveAllAndFlush(embeddingsCaptor.capture());
+        assertThat(embeddingsCaptor.getValue())
+            .singleElement()
+            .extracting(Embedding::getChunk)
+            .isSameAs(chunks.get(1));
     }
 
     @Test

@@ -30,6 +30,7 @@ import com.opensource.docgrid.domain.embedding.fixture.EmbeddingModelFixture;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingModelRepository;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobManualRetryService;
+import com.opensource.docgrid.domain.embedding.service.command.IndexedVersionVectorRepairService;
 import com.opensource.docgrid.domain.sync.entity.SyncOutboxEvent;
 import com.opensource.docgrid.domain.sync.enums.SyncAggregateType;
 import com.opensource.docgrid.domain.sync.enums.SyncEventType;
@@ -46,6 +47,7 @@ class DocumentVersionSyncEventHandlerTest {
     @Mock private EmbeddingModelRepository embeddingModelRepository;
     @Mock private EmbeddingJobRepository embeddingJobRepository;
     @Mock private EmbeddingJobManualRetryService embeddingJobManualRetryService;
+    @Mock private IndexedVersionVectorRepairService indexedVersionVectorRepairService;
 
     private DocumentVersionSyncEventHandler handler;
     private DocumentVersion version;
@@ -59,6 +61,7 @@ class DocumentVersionSyncEventHandlerTest {
             embeddingModelRepository,
             embeddingJobRepository,
             embeddingJobManualRetryService,
+            indexedVersionVectorRepairService,
             new SyncEventPayloadReader(new ObjectMapper())
         );
         version = DocumentVersion.builder().versionNo(1).status(DocumentVersionStatus.UPLOADED).build();

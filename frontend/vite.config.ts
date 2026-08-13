@@ -14,6 +14,9 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const localBindingConfig = {
   main: "./worker/index.ts",
   compatibility_flags: ["nodejs_compat"],
+  vars: {
+    BACKEND_API_URL: process.env.BACKEND_API_URL ?? "http://localhost:8080",
+  },
   d1_databases: d1
     ? [
         {
@@ -44,6 +47,10 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    optimizeDeps: {
+      // vinext provides its own Next.js shims; prebundling next/link creates a second React runtime in dev.
+      exclude: ["next/link"],
+    },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,

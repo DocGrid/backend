@@ -42,24 +42,10 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
 
     // currentVersion은 LAZY라, OSIV가 꺼진 경로(/mcp)에서 findById만 쓰면
     // 트랜잭션 종료 후 지연 로딩 시 LazyInitializationException이 난다. JOIN FETCH로 즉시 로딩한다.
+    // 상세 조회는 이 쿼리 뒤의 읽기 전용 Transaction 안에서 owner와 fileObject를 개별 로딩해
+    // 배포 데이터의 선택적 연관관계까지 한 번에 묶는 다중 JOIN FETCH를 피한다.
     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.currentVersion WHERE d.id = :documentId")
     Optional<Document> findByIdWithCurrentVersion(@Param("documentId") Long documentId);
-
-    /**
-     * 문서 상세·본문·원본 파일 조회에 필요한 소유자, 현재 버전과 파일 정보를 한 번에 조회한다.
-     *
-     * @param documentId 조회할 문서 식별자
-     * @return 상세 조회에 필요한 연관관계가 초기화된 문서
-     */
-    @Query("""
-        SELECT d
-        FROM Document d
-        JOIN FETCH d.owner
-        LEFT JOIN FETCH d.currentVersion currentVersion
-        LEFT JOIN FETCH currentVersion.fileObject
-        WHERE d.id = :documentId
-        """)
-    Optional<Document> findByIdWithDetail(@Param("documentId") Long documentId);
 
     @Query("""
         SELECT d.id AS documentId,

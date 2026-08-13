@@ -1,0 +1,139 @@
+"use client";
+
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { ApiError, apiRequest, errorMessage } from "../lib/api";
+import type { Collection, DocumentSummary, PageResponse, PermissionGrant, PermissionSummary } from "../lib/api-types";
+import { ErrorState, LoadingState, Notice, PageHeading, StatusPill, formatDate } from "../components/ui";
+
+export function PermissionsPage({ notify }: { notify: (message: string) => void }) {
+  const [documents, setDocuments] = useState<DocumentSummary[]>([]);
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [resourceType, setResourceType] = useState<"documents" | "collections">("documents");
+  const [resourceId, setResourceId] = useState("");
+  const [summary, setSummary] = useState<PermissionSummary | null>(null);
+  const [directPermissions, setDirectPermissions] = useState<PermissionGrant[]>([]);
+  const [permissionsLoading, setPermissionsLoading] = useState(false);
+  const [permissionsError, setPermissionsError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadResources = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [documentPage, collectionList] = await Promise.all([apiRequest<PageResponse<DocumentSummary>>("/api/documents?page=0&size=100"), apiRequest<Collection[]>("/collections")]);
+      setDocuments(documentPage.content);
+      setCollections(collectionList);
+      if (documentPage.content[0]) setResourceId(String(documentPage.content[0].documentId));
+    } catch (reason) { setError(errorMessage(reason)); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadResources(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadResources]);
+
+  useEffect(() => {
+    if (resourceType !== "documents" || !resourceId) return;
+    apiRequest<PermissionSummary>(`/permissions/documents/${resourceId}/me`).then(setSummary).catch(() => setSummary(null));
+  }, [resourceId, resourceType]);
+
+  const loadDirectPermissions = useCallback(async () => {
+    if (!resourceId) {
+      setDirectPermissions([]);
+      return;
+    }
+    setPermissionsLoading(true);
+    setPermissionsError("");
+    try {
+      // Direct grants require ADMIN permission on the selected resource and intentionally exclude inherited grants.
+      setDirectPermissions(await apiRequest<PermissionGrant[]>(`/permissions/${resourceType}/${resourceId}`));
+    } catch (reason) {
+      setDirectPermissions([]);
+      setPermissionsError(reason instanceof ApiError && reason.status === 405
+        ? "배포된 백엔드가 직접 권한 목록 API를 아직 지원하지 않습니다. 최신 백엔드를 배포한 뒤 다시 조회해 주세요."
+        : errorMessage(reason));
+    } finally {
+      setPermissionsLoading(false);
+    }
+  }, [resourceId, resourceType]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadDirectPermissions(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadDirectPermissions]);
+
+  async function grant(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!resourceId) return;
+    setBusy(true);
+    setError("");
+    const form = new FormData(event.currentTarget);
+    const targetType = String(form.get("targetType"));
+    const targetId = Number(form.get("targetId"));
+    const request = {
+      targetType,
+      userId: targetType === "USER" ? targetId : null,
+      roleId: targetType === "ROLE" ? targetId : null,
+      departmentId: targetType === "DEPARTMENT" ? targetId : null,
+      permissionType: String(form.get("permissionType")),
+      expiresAt: form.get("expiresAt") || null,
+    };
+    try {
+      const created = await apiRequest<PermissionGrant>(`/permissions/${resourceType}/${resourceId}`, { method: "POST", body: request });
+      notify(`${created.permissionType} 권한을 부여했습니다.`);
+      await loadDirectPermissions();
+    } catch (reason) { setError(errorMessage(reason)); }
+    finally { setBusy(false); }
+  }
+
+  async function revoke(permissionId: number) {
+    if (!resourceId) return;
+    setBusy(true);
+    try {
+      await apiRequest(`/permissions/${resourceType}/${resourceId}/${permissionId}`, { method: "DELETE" });
+      notify("권한을 회수했습니다.");
+      await loadDirectPermissions();
+    } catch (reason) { setError(errorMessage(reason)); }
+    finally { setBusy(false); }
+  }
+
+  const resources = resourceType === "documents"
+    ? documents.map((item) => ({ id: item.documentId, label: `#${item.documentId} · ${item.title}` }))
+    : collections.map((item) => ({ id: item.collectionId, label: `#${item.collectionId} · ${item.name}` }));
+
+  function changeResourceType(next: "documents" | "collections") {
+    setResourceType(next);
+    setSummary(null);
+    setDirectPermissions([]);
+    setPermissionsError("");
+    const first = next === "documents" ? documents[0]?.documentId : collections[0]?.collectionId;
+    setResourceId(first ? String(first) : "");
+  }
+
+  return <section className="content page-view">
+    <PageHeading kicker="ACCESS CONTROL" title="권한 관리" description="문서 또는 컬렉션에 사용자·역할·부서 단위 권한을 부여하세요." />
+    {error ? <ErrorState message={error} /> : null}
+    {loading ? <LoadingState label="권한 리소스를 불러오는 중입니다." /> : null}
+    {!loading ? <>
+      <div className="resource-selector"><div><span className="modal-symbol">⌘</span><div><strong>대상 리소스</strong><span>관리할 문서 또는 컬렉션을 선택하세요.</span></div></div><div className="resource-controls"><select value={resourceType} onChange={(event) => changeResourceType(event.target.value as "documents" | "collections")}><option value="documents">문서</option><option value="collections">컬렉션</option></select><select value={resourceId} onChange={(event) => { setSummary(null); setResourceId(event.target.value); }}><option value="">대상을 선택하세요</option>{resources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div></div>
+      <div className="permission-layout">
+        <div className="panel-card permission-summary"><div className="panel-heading"><div><h2>{resourceType === "documents" ? "내 문서 권한" : "컬렉션 권한"}</h2><p>{resourceId ? `resourceId ${resourceId}` : "대상 없음"}</p></div></div>{resourceType === "documents" && summary ? <><div className="permission-checks"><StatusPill value={`READ ${summary.canRead ? "✓" : "✕"}`} /><StatusPill value={`WRITE ${summary.canWrite ? "✓" : "✕"}`} /><StatusPill value={`ADMIN ${summary.canAdmin ? "✓" : "✕"}`} /></div><span className="field-label">권한 경로</span><div className="source-chips">{summary.sources.map((source) => <b key={source}>{source}</b>)}</div></> : <Notice>컬렉션의 현재 사용자 권한 요약은 제공되지 않으며 직접 부여 목록만 확인합니다.</Notice>}</div>
+        <form className="panel-card permission-list" onSubmit={grant}><div className="panel-heading"><div><h2>권한 부여</h2><p>대상 타입에 맞는 실제 ID를 입력하세요.</p></div></div><label className="form-field">대상 타입<select name="targetType" defaultValue="USER"><option value="USER">USER</option><option value="ROLE">ROLE</option><option value="DEPARTMENT">DEPARTMENT</option></select></label><label className="form-field">대상 ID<input name="targetId" type="number" min="1" required /></label><label className="form-field">권한 종류<select name="permissionType" defaultValue="READ"><option value="READ">READ</option><option value="WRITE">WRITE</option><option value="ADMIN">ADMIN</option></select></label><label className="form-field">만료 시각<input name="expiresAt" type="datetime-local" /></label><button className="primary-button full-button action-submit" disabled={!resourceId || busy}>{busy ? "처리 중…" : "권한 부여"}</button></form>
+      </div>
+      <div className="panel-card latest-result"><div className="panel-heading"><div><h2>직접 부여된 권한</h2><p>상속·계산 권한을 제외한 USER·ROLE·DEPARTMENT 권한입니다.</p></div><span>{directPermissions.length}건</span></div>
+        {permissionsLoading ? <LoadingState label="직접 권한을 불러오는 중입니다." /> : null}
+        {!permissionsLoading && permissionsError ? <Notice>직접 권한 목록을 조회할 수 없습니다. {permissionsError}</Notice> : null}
+        {!permissionsLoading && !permissionsError && !directPermissions.length ? <Notice>이 리소스에 직접 부여된 권한이 없습니다.</Notice> : null}
+        {!permissionsLoading && directPermissions.length ? <div className="mini-table permission-table"><div className="table-labels"><span>대상</span><span>권한</span><span>만료</span><span /></div>{directPermissions.map((permission) => <div key={permission.permissionId}><span><strong>{targetLabel(permission)}</strong><small>#{permission.permissionId} · user #{permission.grantedBy} · {formatDate(permission.grantedAt)}</small></span><StatusPill value={permission.permissionType} /><span>{permission.expiresAt ? formatDate(permission.expiresAt) : "제한 없음"}</span><button className="danger-text" disabled={busy} onClick={() => void revoke(permission.permissionId)}>회수</button></div>)}</div> : null}
+      </div>
+    </> : null}
+  </section>;
+}
+
+function targetLabel(permission: PermissionGrant) {
+  const targetId = permission.userId ?? permission.roleId ?? permission.departmentId;
+  return `${permission.targetType} #${targetId ?? "—"}`;
+}

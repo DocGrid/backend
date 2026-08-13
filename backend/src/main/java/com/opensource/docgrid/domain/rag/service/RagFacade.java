@@ -27,7 +27,7 @@ import lombok.extern.slf4j.Slf4j;
  * 2. PromptBuilder로 프롬프트 조립
  * 3. OllamaClient 호출
  * 4. rag_responses 저장 (성공/실패)
- * 5. 성공 시 response_citations 저장
+ * 5. 성공 시 response_citations 저장, 실패 시 검색 후보와 안내 답변 반환
  * </pre>
  *
  * <p>SearchFacade와 별도 트랜잭션으로 분리되어 있다(SearchController가 순차 호출) — 검색 DB 작업과
@@ -38,6 +38,9 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 @Slf4j
 public class RagFacade {
+
+    private static final String LLM_FALLBACK_ANSWER =
+        "관련 문서는 찾았지만 AI 답변 생성이 지연되고 있습니다. 아래 검색 결과와 근거 문서를 확인해 주세요.";
 
     private final PromptBuilder promptBuilder;
     private final OllamaClient ollamaClient;
@@ -59,15 +62,20 @@ public class RagFacade {
 
         // 검색 후보가 있으면 프롬프트 조립 후 LLM 호출
         String prompt = promptBuilder.build(queryText, candidates);
+        OllamaGenerateResult result;
         try {
-            OllamaGenerateResult result = ollamaClient.generate(prompt);
-            RagResponse ragResponse = ragResponseCommandService.createSuccess(queryRef, prompt, result);
-            responseCitationCommandService.saveAll(ragResponse, candidates, searchResults);
-            log.info("[RAG] done queryId={} responseId={} latencyMs={}", queryId, ragResponse.getId(), result.latencyMs());
-            return RagAnswer.of(result.answerText(), candidates);
+            result = ollamaClient.generate(prompt);
         } catch (DocGridException e) {
             ragResponseCommandService.createFailed(queryRef, prompt, e.getMessage());
-            throw e;
+            // LLM 장애가 권한 검증을 통과한 벡터 검색 결과까지 숨기지 않도록 저하 응답으로 마무리한다.
+            log.warn("[RAG] fallback queryId={} errorCode={}", queryId, e.getErrorCode().getCode());
+            return RagAnswer.of(LLM_FALLBACK_ANSWER, candidates);
         }
+
+        // LLM 이후의 영속화 실패는 검색 저하 응답으로 숨기지 않고 Transaction 오류로 전달한다.
+        RagResponse ragResponse = ragResponseCommandService.createSuccess(queryRef, prompt, result);
+        responseCitationCommandService.saveAll(ragResponse, candidates, searchResults);
+        log.info("[RAG] done queryId={} responseId={} latencyMs={}", queryId, ragResponse.getId(), result.latencyMs());
+        return RagAnswer.of(result.answerText(), candidates);
     }
 }

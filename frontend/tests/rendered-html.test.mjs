@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 async function render(path = "/") {
@@ -22,7 +23,7 @@ async function render(path = "/") {
   );
 }
 
-test("server-renders every prototype route", async () => {
+test("server-renders every application route", async () => {
   const routes = [
     "/",
     "/login",
@@ -49,29 +50,43 @@ test("server-renders every prototype route", async () => {
   }
 });
 
-test("renders navigation and detailed feature content", async () => {
-  const [home, login, document, job, dashboard] = await Promise.all([
+test("renders DocGrid auth and protected loading boundaries", async () => {
+  const [home, login, signup] = await Promise.all([
     render("/"),
     render("/login"),
-    render("/documents/1024"),
-    render("/admin/indexing-jobs/4402"),
-    render("/admin/dashboard"),
+    render("/signup"),
   ]);
 
   const homeHtml = await home.text();
+  const loginHtml = await login.text();
+  const signupHtml = await signup.text();
   assert.match(homeHtml, /<html lang="ko">/i);
   assert.match(homeHtml, /<title>DocGrid — 팀의 지식에서 정확한 답을<\/title>/i);
-  assert.match(homeHtml, /AI KNOWLEDGE SEARCH/);
-  assert.match(homeHtml, /MCP 토큰/);
-  assert.match(homeHtml, /사용자·역할/);
+  assert.match(homeHtml, /세션을 확인하는 중입니다/);
+  assert.match(loginHtml, /DocGrid 이메일과 비밀번호/);
+  assert.match(loginHtml, /<a href="\/signup" target="_top">회원가입<\/a>/);
+  assert.match(signupHtml, /가입 가능한 부서 목록을 불러오는 중입니다/);
+  assert.match(signupHtml, /<button class="primary-button auth-submit" disabled="">부서 목록 불러오는 중…<\/button>/);
+  assert.doesNotMatch(`${homeHtml}${loginHtml}${signupHtml}`, /로그인 없이 둘러보기|signin-with-chatgpt|codex-preview|Your site is taking shape/i);
+});
 
-  assert.match(await login.text(), /로그인 없이 둘러보기/);
-  assert.match(await document.text(), /인덱싱 진행 상태/);
-  assert.match(await job.text(), /이벤트 타임라인/);
-  const dashboardHtml = await dashboard.text();
-  assert.match(dashboardHtml, /SYNC CONTROL PLANE/);
-  assert.match(dashboardHtml, /동기화 원장과 정합성/);
-  assert.match(dashboardHtml, /정합성 검사/);
-  assert.doesNotMatch(dashboardHtml, /25,368|21,742/);
-  assert.doesNotMatch(homeHtml, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
+test("uses full-page navigation for vinext catch-all routes", async () => {
+  const navigationFiles = [
+    "../app/components/AppShell.tsx",
+    "../app/components/AuthPage.tsx",
+    "../app/features/CollectionsPage.tsx",
+    "../app/features/DocumentsPage.tsx",
+    "../app/features/SearchPage.tsx",
+    "../app/features/AdminPages.tsx",
+  ];
+  const sources = await Promise.all(navigationFiles.map((file) => readFile(new URL(file, import.meta.url), "utf8")));
+  const source = sources.join("\n");
+  assert.doesNotMatch(source, /from ["']next\/link["']|<Link\b/);
+
+  const internalAnchors = source.match(/<a\b[^>]*\bhref=(?:["']\/|\{(?:`\/|[^}]*["']\/))[^>]*>/g) ?? [];
+  assert.ok(internalAnchors.length > 0, "internal links should be present");
+  for (const anchor of internalAnchors) {
+    assert.match(anchor, /\btarget=["']_top["']/, `${anchor} should bypass vinext client navigation`);
+  }
+  assert.match(source, /AbortSignal\.timeout\(SEARCH_TIMEOUT_MS\)/, "search should finish before the Sites request limit");
 });

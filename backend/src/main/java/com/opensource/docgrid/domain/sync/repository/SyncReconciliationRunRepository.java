@@ -13,4 +13,6 @@ import com.opensource.docgrid.domain.sync.entity.SyncReconciliationRun;
 public interface SyncReconciliationRunRepository extends JpaRepository<SyncReconciliationRun, Long> {
 
     Optional<SyncReconciliationRun> findByRunId(UUID runId);
+
+    Optional<SyncReconciliationRun> findTopByOrderByStartedAtDescIdDesc();
 }

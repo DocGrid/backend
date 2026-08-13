@@ -261,6 +261,21 @@ public enum ErrorCode {
         "SYNC-004",
         "최종 실패한 동기화 Event만 재처리할 수 있습니다."
     ),
+    SYNC_ISSUE_NOT_FOUND(
+        HttpStatus.NOT_FOUND,
+        "SYNC-005",
+        "동기화 정합성 Issue를 찾을 수 없습니다."
+    ),
+    SYNC_ISSUE_REPAIR_NOT_ALLOWED(
+        HttpStatus.CONFLICT,
+        "SYNC-006",
+        "현재 Issue는 안전한 자동 복구를 요청할 수 없습니다."
+    ),
+    SYNC_ISSUE_IGNORE_NOT_ALLOWED(
+        HttpStatus.CONFLICT,
+        "SYNC-007",
+        "OPEN 상태의 Issue만 무시할 수 있습니다."
+    ),
 
     // SEARCH
     EMBEDDING_SERVER_UNAVAILABLE(

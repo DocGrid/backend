@@ -90,6 +90,9 @@ public class SyncConsistencyIssue extends BaseEntity {
     @Column(name = "actual_json", columnDefinition = "TEXT")
     private String actualJson;
 
+    @Column(nullable = false)
+    private boolean repairable;
+
     @Column(name = "detected_at", nullable = false, updatable = false)
     private LocalDateTime detectedAt;
 
@@ -118,6 +121,7 @@ public class SyncConsistencyIssue extends BaseEntity {
         EmbeddingModel embeddingModel,
         String expectedJson,
         String actualJson,
+        boolean repairable,
         LocalDateTime detectedAt
     ) {
         this.issueKey = issueKey;
@@ -129,6 +133,7 @@ public class SyncConsistencyIssue extends BaseEntity {
         this.embeddingModel = embeddingModel;
         this.expectedJson = expectedJson;
         this.actualJson = actualJson;
+        this.repairable = repairable;
         this.detectedAt = detectedAt;
         this.lastDetectedAt = detectedAt;
     }
@@ -137,11 +142,13 @@ public class SyncConsistencyIssue extends BaseEntity {
         SyncConsistencySeverity newSeverity,
         String newExpectedJson,
         String newActualJson,
+        boolean newRepairable,
         LocalDateTime detectedAgainAt
     ) {
         severity = newSeverity;
         expectedJson = newExpectedJson;
         actualJson = newActualJson;
+        repairable = newRepairable;
         lastDetectedAt = detectedAgainAt;
         if (status == SyncConsistencyIssueStatus.RESOLVED) {
             status = SyncConsistencyIssueStatus.OPEN;

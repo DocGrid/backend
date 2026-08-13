@@ -47,6 +47,7 @@ public class SyncConsistencyIssueService {
                     .embeddingModel(observation.embeddingModel())
                     .expectedJson(observation.expectedJson())
                     .actualJson(observation.actualJson())
+                    .repairable(observation.repairable())
                     .detectedAt(detectedAt)
                     .build()
             ));
@@ -84,6 +85,7 @@ public class SyncConsistencyIssueService {
             observation.severity(),
             observation.expectedJson(),
             observation.actualJson(),
+            observation.repairable(),
             detectedAt
         );
         return issue;

@@ -18,6 +18,8 @@ import com.opensource.docgrid.domain.embedding.entity.EmbeddingModel;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.embedding.service.query.EmbeddingModelQueryService;
+import com.opensource.docgrid.domain.sync.entity.SyncOutboxEvent;
+import com.opensource.docgrid.domain.sync.service.command.SyncEventWriter;
 import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.domain.user.repository.UserRepository;
 import com.opensource.docgrid.global.exception.DocGridException;
@@ -40,6 +42,7 @@ public class DocumentUploadService {
     private final DocumentVersionRepository documentVersionRepository;
     private final EmbeddingJobRepository embeddingJobRepository;
     private final EmbeddingModelQueryService embeddingModelQueryService;
+    private final SyncEventWriter syncEventWriter;
 
     @Transactional(readOnly = true)
     public Optional<Long> findReusableFileObjectId(String fileHash, long fileSize) {
@@ -84,10 +87,13 @@ public class DocumentUploadService {
         document.updateCurrentVersion(documentVersion);
 
         EmbeddingModel embeddingModel = embeddingModelQueryService.getActiveModel();
+        // Version과 최초 인덱싱 의도를 같은 Transaction에 기록해 둘 중 하나만 Commit되는 상태를 막는다.
+        SyncOutboxEvent sourceEvent = syncEventWriter.recordDocumentVersionCreated(documentVersion, embeddingModel);
         EmbeddingJob embeddingJob = embeddingJobRepository.save(
             EmbeddingJob.builder()
                 .documentVersion(documentVersion)
                 .embeddingModel(embeddingModel)
+                .sourceEventId(sourceEvent.getEventId())
                 .status(EmbeddingJobStatus.PENDING)
                 .priority(DEFAULT_JOB_PRIORITY)
                 .maxRetryCount(MAX_RETRY_COUNT)

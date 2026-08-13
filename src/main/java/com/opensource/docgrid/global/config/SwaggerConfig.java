@@ -6,8 +6,7 @@ import org.springdoc.core.properties.SwaggerUiConfigProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
-import org.springframework.core.env.Environment;
-import org.springframework.core.env.Profiles;
+import lombok.RequiredArgsConstructor;
 
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -15,13 +14,10 @@ import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.servers.Server;
-import lombok.RequiredArgsConstructor;
 
 @Configuration
 @RequiredArgsConstructor
 public class SwaggerConfig {
-
-    private final Environment env;
 
     @Bean
     public OpenAPI openAPI() {
@@ -36,14 +32,13 @@ public class SwaggerConfig {
         SecurityRequirement securityRequirement = new SecurityRequirement()
             .addList("accessTokenAuth");
 
-        Server server = new Server();
-        if (env.acceptsProfiles(Profiles.of("prod"))) {
-            server.setUrl("https://docgrid.com");
-            server.setDescription("운영 서버");
-        } else {
-            server.setUrl("http://localhost:8080");
-            server.setDescription("로컬 서버");
-        }
+        Server localServer = new Server()
+            .url("http://localhost:8080")
+            .description("로컬 서버");
+
+        Server awsServer = new Server()
+            .url("http://52.79.212.118:8080")
+            .description("운영 서버 (AWS)");
 
         return new OpenAPI()
             .info(new Info()
@@ -53,7 +48,7 @@ public class SwaggerConfig {
             .components(new Components()
                 .addSecuritySchemes("accessTokenAuth", accessTokenAuth))
             .addSecurityItem(securityRequirement)
-            .servers(List.of(server));
+            .servers(List.of(localServer, awsServer));
     }
 
     @Bean

@@ -92,7 +92,7 @@ class DocumentQueryServiceTest {
         assertThatThrownBy(() -> service.getDocumentDetail(USER_ID, DOCUMENT_ID))
             .isInstanceOf(DocGridException.class)
             .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PERMISSION_DENIED);
-        then(documentRepository).should(never()).findByIdWithDetail(DOCUMENT_ID);
+        then(documentRepository).should(never()).findByIdWithCurrentVersion(DOCUMENT_ID);
     }
 
     @Test
@@ -378,7 +378,7 @@ class DocumentQueryServiceTest {
 
     private void givenReadableDocument(Document document) {
         given(permissionQueryService.canReadDocument(USER_ID, DOCUMENT_ID)).willReturn(true);
-        given(documentRepository.findByIdWithDetail(DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(documentRepository.findByIdWithCurrentVersion(DOCUMENT_ID)).willReturn(Optional.of(document));
         given(document.getStatus()).willReturn(DocumentStatus.INDEXED);
     }
 

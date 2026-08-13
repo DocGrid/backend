@@ -1,7 +1,6 @@
 package com.opensource.docgrid.domain.rag.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -115,8 +114,8 @@ class RagFacadeTest {
     }
 
     @Test
-    @DisplayName("Ollama 호출 실패: FAILED로 기록하고 예외를 다시 던진다")
-    void generate_ollamaFails_savesFailedAndRethrows() {
+    @DisplayName("Ollama 호출 실패: FAILED로 기록하고 검색 후보가 포함된 저하 응답을 반환한다")
+    void generate_ollamaFails_savesFailedAndReturnsFallback() {
         SearchQuery queryRef = mock(SearchQuery.class);
         given(entityManager.getReference(SearchQuery.class, QUERY_ID)).willReturn(queryRef);
 
@@ -129,9 +128,11 @@ class RagFacadeTest {
         given(ollamaClient.generate("조립된 프롬프트"))
             .willThrow(new DocGridException(ErrorCode.RAG_SERVICE_UNAVAILABLE));
 
-        assertThatThrownBy(() -> ragFacade.generate(QUERY_ID, "질문", candidates, List.of()))
-            .isInstanceOf(DocGridException.class)
-            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.RAG_SERVICE_UNAVAILABLE);
+        RagAnswer answer = ragFacade.generate(QUERY_ID, "질문", candidates, List.of());
+
+        assertThat(answer.answerText()).contains("AI 답변 생성이 지연");
+        assertThat(answer.citations()).hasSize(1);
+        assertThat(answer.citations().get(0).documentId()).isEqualTo(100L);
 
         then(ragResponseCommandService).should(times(1))
             .createFailed(eq(queryRef), eq("조립된 프롬프트"), anyString());

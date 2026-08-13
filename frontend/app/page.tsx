@@ -1,5 +1,5 @@
-import PrototypeApp from "./components/PrototypeApp";
+import DocGridApp from "./components/DocGridApp";
 
 export default function Home() {
-  return <PrototypeApp initialRoute="/search" />;
+  return <DocGridApp initialRoute="/search" />;
 }

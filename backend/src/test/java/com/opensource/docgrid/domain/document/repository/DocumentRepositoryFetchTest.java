@@ -38,7 +38,7 @@ class DocumentRepositoryFetchTest {
     @Autowired private EntityManager entityManager;
 
     @Test
-    @DisplayName("정상 케이스: currentVersion이 JOIN FETCH로 즉시 로딩되어 영속성 컨텍스트 초기화 후에도 지연 로딩 없이 접근 가능하다")
+    @DisplayName("정상 케이스: 현재 버전을 즉시 로딩하고 선택적 파일이 없어도 상세 연관관계에 접근할 수 있다")
     void findByIdWithCurrentVersion_eagerlyFetchesCurrentVersion() {
         // Given
         User owner = saveOwner();
@@ -55,6 +55,8 @@ class DocumentRepositoryFetchTest {
         // Then
         assertThat(Hibernate.isInitialized(found.getCurrentVersion())).isTrue();
         assertThat(found.getCurrentVersion().getVersionNo()).isEqualTo(1);
+        assertThat(found.getCurrentVersion().getFileObject()).isNull();
+        assertThat(found.getOwner().getName()).isEqualTo("JOIN FETCH 테스트 사용자");
     }
 
     @Test

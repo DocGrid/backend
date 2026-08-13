@@ -198,7 +198,8 @@ public class DocumentQueryService {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 
-        Document document = documentRepository.findByIdWithDetail(documentId)
+        // 현재 버전만 JOIN FETCH하고 소유자·파일은 이 읽기 전용 Transaction 안에서 필요할 때 로딩한다.
+        Document document = documentRepository.findByIdWithCurrentVersion(documentId)
             .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
         if (document.getStatus() == DocumentStatus.DELETED) {
             throw new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND);

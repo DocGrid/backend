@@ -22,6 +22,8 @@ import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.domain.user.repository.DepartmentRepository;
 import com.opensource.docgrid.domain.user.repository.RoleRepository;
 import com.opensource.docgrid.domain.user.repository.UserRepository;
+import com.opensource.docgrid.domain.sync.enums.SyncPermissionOperation;
+import com.opensource.docgrid.domain.sync.service.command.SyncEventWriter;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
@@ -40,6 +42,7 @@ public class DocumentPermissionCommandService {
     private final DepartmentRepository departmentRepository;
     private final PermissionConverter permissionConverter;
     private final PermissionQueryService permissionQueryService;
+    private final SyncEventWriter syncEventWriter;
 
     // 문서 단건 예외 권한 부여
     public DocumentPermissionResponse grantPermission(Long documentId, Long grantorId,
@@ -94,6 +97,13 @@ public class DocumentPermissionCommandService {
                     AccessSourceType.DIRECT_DOCUMENT_PERMISSION, permission.getId(), request.expiresAt());
         }
 
+        // 권한 원장과 같은 Transaction에 캐시 재투영 의도를 남겨 후속 누락을 복구할 수 있게 한다.
+        syncEventWriter.recordPermissionCacheRefresh(
+            AccessSourceType.DIRECT_DOCUMENT_PERMISSION,
+            permission.getId(),
+            SyncPermissionOperation.GRANTED
+        );
+
         return permissionConverter.toDocumentPermissionResponse(permission);
     }
 
@@ -116,6 +126,11 @@ public class DocumentPermissionCommandService {
         }
 
         documentPermissionRepository.delete(permission);
+        syncEventWriter.recordPermissionCacheRefresh(
+            AccessSourceType.DIRECT_DOCUMENT_PERMISSION,
+            permissionId,
+            SyncPermissionOperation.REVOKED
+        );
     }
 
     // targetType과 ID 필드 조합 유효성 검사

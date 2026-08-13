@@ -27,6 +27,8 @@ import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.domain.user.repository.DepartmentRepository;
 import com.opensource.docgrid.domain.user.repository.RoleRepository;
 import com.opensource.docgrid.domain.user.repository.UserRepository;
+import com.opensource.docgrid.domain.sync.enums.SyncPermissionOperation;
+import com.opensource.docgrid.domain.sync.service.command.SyncEventWriter;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
@@ -46,6 +48,7 @@ public class CollectionPermissionCommandService {
     private final DepartmentRepository departmentRepository;
     private final PermissionConverter permissionConverter;
     private final PermissionQueryService permissionQueryService;
+    private final SyncEventWriter syncEventWriter;
 
     // 컬렉션 권한 부여
     public CollectionPermissionResponse grantPermission(Long collectionId, Long grantorId,
@@ -99,6 +102,13 @@ public class CollectionPermissionCommandService {
             updateCacheForCollection(collectionId, targetUser, permissions, permission.getId(), request.expiresAt());
         }
 
+        // 권한 원장과 같은 Transaction에 컬렉션 캐시 재투영 의도를 기록한다.
+        syncEventWriter.recordPermissionCacheRefresh(
+            AccessSourceType.DIRECT_COLLECTION_PERMISSION,
+            permission.getId(),
+            SyncPermissionOperation.GRANTED
+        );
+
         return permissionConverter.toCollectionPermissionResponse(permission);
     }
 
@@ -121,6 +131,11 @@ public class CollectionPermissionCommandService {
         }
 
         collectionPermissionRepository.delete(permission);
+        syncEventWriter.recordPermissionCacheRefresh(
+            AccessSourceType.DIRECT_COLLECTION_PERMISSION,
+            permissionId,
+            SyncPermissionOperation.REVOKED
+        );
     }
 
     // targetType과 ID 필드 조합 유효성 검사

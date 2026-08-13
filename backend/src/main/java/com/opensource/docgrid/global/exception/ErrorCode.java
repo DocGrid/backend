@@ -240,6 +240,28 @@ public enum ErrorCode {
         "사용 가능한 임베딩 모델이 여러 개 설정되어 있습니다."
     ),
 
+    // SYNC
+    SYNC_EVENT_NOT_FOUND(
+        HttpStatus.NOT_FOUND,
+        "SYNC-001",
+        "동기화 Event를 찾을 수 없습니다."
+    ),
+    SYNC_EVENT_OWNERSHIP_INVALID(
+        HttpStatus.CONFLICT,
+        "SYNC-002",
+        "현재 동기화 Event 소유권과 요청이 일치하지 않습니다."
+    ),
+    SYNC_EVENT_INCONSISTENT(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "SYNC-003",
+        "동기화 Event와 도메인 상태가 일치하지 않습니다."
+    ),
+    SYNC_EVENT_RETRY_NOT_ALLOWED(
+        HttpStatus.CONFLICT,
+        "SYNC-004",
+        "최종 실패한 동기화 Event만 재처리할 수 있습니다."
+    ),
+
     // SEARCH
     EMBEDDING_SERVER_UNAVAILABLE(
         HttpStatus.SERVICE_UNAVAILABLE,

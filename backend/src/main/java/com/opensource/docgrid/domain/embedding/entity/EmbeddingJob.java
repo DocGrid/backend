@@ -1,6 +1,7 @@
 package com.opensource.docgrid.domain.embedding.entity;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 import com.opensource.docgrid.domain.document.entity.DocumentVersion;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
@@ -33,6 +34,7 @@ import lombok.NoArgsConstructor;
  * -> Worker가 파싱/청킹/임베딩 -> embeddings 저장).
  * 관계: document_version_id -> DocumentVersion, embedding_model_id -> EmbeddingModel,
  * locked_by_worker_id -> WorkerNode(nullable, lock을 잡은 Worker).
+ * source_event_id는 이 Job을 처음 만든 Sync Outbox Event를 가리키며 Event 재전달의 중복 Job 생성을 막는다.
  * index: (status, priority, created_at) 우선순위 큐 조회용, (status, next_retry_at) Retry 실행 가능 시각 조회용,
  * lock_expires_at, (document_version_id, embedding_model_id), locked_by_worker_id.
  *
@@ -118,15 +120,20 @@ public class EmbeddingJob extends BaseEntity {
     @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
 
+    // 최초 Job 생성 원인을 식별하며 UNIQUE 제약으로 같은 Event의 중복 Job 생성을 차단한다.
+    @Column(name = "source_event_id", unique = true)
+    private UUID sourceEventId;
+
     @Builder
     public EmbeddingJob(DocumentVersion documentVersion, EmbeddingModel embeddingModel, EmbeddingJobStatus status,
-                        int priority, int maxRetryCount) {
+                        int priority, int maxRetryCount, UUID sourceEventId) {
         this.documentVersion = documentVersion;
         this.embeddingModel = embeddingModel;
         this.status = status != null ? status : EmbeddingJobStatus.PENDING;
         this.priority = priority;
         this.retryCount = 0;
         this.maxRetryCount = maxRetryCount;
+        this.sourceEventId = sourceEventId;
     }
 
     /**

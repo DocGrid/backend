@@ -27,6 +27,7 @@ public class SyncEventLeaseRecoveryService {
 
     private final SyncOutboxEventRepository syncOutboxEventRepository;
     private final SyncEventRetrySchedule syncEventRetrySchedule;
+    private final SyncEventDeliveryAttemptService syncEventDeliveryAttemptService;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public RecoveryResult recover(UUID eventId, LocalDateTime recoveredAt) {
@@ -37,6 +38,13 @@ public class SyncEventLeaseRecoveryService {
         }
 
         SyncOutboxEvent event = candidate.get();
+        syncEventDeliveryAttemptService.fail(
+            event.getEventId(),
+            event.getClaimToken(),
+            LEASE_EXPIRED_CODE,
+            LEASE_EXPIRED_MESSAGE,
+            recoveredAt
+        );
         event.recoverExpiredLease(
             LEASE_EXPIRED_CODE,
             LEASE_EXPIRED_MESSAGE,

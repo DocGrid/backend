@@ -27,7 +27,7 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, Lo
         SELECT COUNT(*)
           FROM document_chunks chunk
           LEFT JOIN document_versions version ON version.id = chunk.document_version_id
-          LEFT JOIN documents document ON document.id = chunk.document_id
+          LEFT JOIN documents document ON document.id = version.document_id
          WHERE version.id IS NULL OR document.id IS NULL
         """, nativeQuery = true)
     long countOrphanedRows();

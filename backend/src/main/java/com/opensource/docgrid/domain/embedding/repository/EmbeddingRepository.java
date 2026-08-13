@@ -1,5 +1,7 @@
 package com.opensource.docgrid.domain.embedding.repository;
 
+import java.util.List;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -30,6 +32,36 @@ public interface EmbeddingRepository extends JpaRepository<Embedding, Long> {
         Long embeddingModelId,
         EmbeddingStatus status
     );
+
+    @Query("""
+        SELECT embedding.chunk.id
+          FROM Embedding embedding
+         WHERE embedding.documentVersion.id = :documentVersionId
+           AND embedding.embeddingModel.id = :embeddingModelId
+        """)
+    List<Long> findChunkIdsByDocumentVersionIdAndEmbeddingModelId(
+        @Param("documentVersionId") Long documentVersionId,
+        @Param("embeddingModelId") Long embeddingModelId
+    );
+
+    long countByDocumentIdAndStatus(Long documentId, EmbeddingStatus status);
+
+    /**
+     * Chunk·Document·Version·Model 원장 중 하나라도 사라진 Embedding 행을 탐지한다.
+     */
+    @Query(value = """
+        SELECT COUNT(*)
+          FROM embeddings embedding
+          LEFT JOIN document_chunks chunk ON chunk.id = embedding.chunk_id
+          LEFT JOIN documents document ON document.id = embedding.document_id
+          LEFT JOIN document_versions version ON version.id = embedding.document_version_id
+          LEFT JOIN embedding_models model ON model.id = embedding.embedding_model_id
+         WHERE chunk.id IS NULL
+            OR document.id IS NULL
+            OR version.id IS NULL
+            OR model.id IS NULL
+        """, nativeQuery = true)
+    long countOrphanedRows();
 
     /**
      * 인덱싱 완료 시 이전 현재 Version 또는 최종 실패 대상의 검색 가능한 Embedding을 한 SQL로 비활성화한다.

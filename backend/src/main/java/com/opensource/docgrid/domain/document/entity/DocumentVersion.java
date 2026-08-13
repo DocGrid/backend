@@ -156,6 +156,19 @@ public class DocumentVersion extends BaseEntity {
     }
 
     /**
+     * 현재 검색 Version의 Vector 손상이 확인됐을 때 기존 Chunk Set부터 다시 임베딩하도록 되돌린다.
+     *
+     * <p>호출 Service가 현재 Version·Chunk 존재·Job 부재를 잠금 상태에서 검증해야 한다.
+     */
+    public void reopenIndexedForVectorRepair() {
+        if (status != DocumentVersionStatus.INDEXED) {
+            throw new IllegalStateException("INDEXED 상태의 문서 버전만 Vector 복구를 시작할 수 있습니다.");
+        }
+        status = DocumentVersionStatus.CHUNKED;
+        indexedAt = null;
+    }
+
+    /**
      * 최종 실패한 Version을 수동 재처리가 다시 진행할 수 있는 재개 지점으로 되돌린다.
      *
      * <p>파이프라인 각 단계는 Version 상태로 재개 지점을 판단하므로, 이미 저장된 Chunk Set이 있으면

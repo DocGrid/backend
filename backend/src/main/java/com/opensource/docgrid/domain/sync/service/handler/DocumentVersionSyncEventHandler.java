@@ -16,6 +16,7 @@ import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingModelRepository;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobManualRetryService;
+import com.opensource.docgrid.domain.embedding.service.command.IndexedVersionVectorRepairService;
 import com.opensource.docgrid.domain.sync.entity.SyncOutboxEvent;
 import com.opensource.docgrid.domain.sync.enums.SyncEventType;
 import com.opensource.docgrid.domain.sync.service.SyncEventHandler;
@@ -41,11 +42,18 @@ public class DocumentVersionSyncEventHandler implements SyncEventHandler {
         SyncEventType.DOCUMENT_VERSION_CREATED,
         SyncEventType.DOCUMENT_REINDEX_REQUESTED
     );
+    private static final Set<DocumentVersionStatus> RECOVERABLE_PROCESSING_STATUSES = EnumSet.of(
+        DocumentVersionStatus.UPLOADED,
+        DocumentVersionStatus.PARSING,
+        DocumentVersionStatus.CHUNKED,
+        DocumentVersionStatus.EMBEDDING
+    );
 
     private final DocumentVersionRepository documentVersionRepository;
     private final EmbeddingModelRepository embeddingModelRepository;
     private final EmbeddingJobRepository embeddingJobRepository;
     private final EmbeddingJobManualRetryService embeddingJobManualRetryService;
+    private final IndexedVersionVectorRepairService indexedVersionVectorRepairService;
     private final SyncEventPayloadReader payloadReader;
 
     @Override
@@ -72,10 +80,10 @@ public class DocumentVersionSyncEventHandler implements SyncEventHandler {
         Optional<EmbeddingJob> latestJob = embeddingJobRepository
             .findTopByDocumentVersionIdAndEmbeddingModelIdOrderByIdDesc(version.getId(), model.getId());
         if (event.getEventType() == SyncEventType.DOCUMENT_REINDEX_REQUESTED && latestJob.isPresent()) {
-            retryOrReuse(latestJob.get());
+            retryOrReuse(latestJob.get(), event, version, model);
             return;
         }
-        if (latestJob.isPresent() || version.getStatus() != DocumentVersionStatus.UPLOADED) {
+        if (latestJob.isPresent() || !RECOVERABLE_PROCESSING_STATUSES.contains(version.getStatus())) {
             throw new DocGridException(ErrorCode.SYNC_EVENT_INCONSISTENT);
         }
 
@@ -91,13 +99,22 @@ public class DocumentVersionSyncEventHandler implements SyncEventHandler {
         );
     }
 
-    private void retryOrReuse(EmbeddingJob job) {
+    private void retryOrReuse(
+        EmbeddingJob job,
+        SyncOutboxEvent event,
+        DocumentVersion version,
+        EmbeddingModel model
+    ) {
         if (job.getStatus() == EmbeddingJobStatus.FAILED) {
             embeddingJobManualRetryService.retry(job.getId());
             return;
         }
         if (job.getStatus() == EmbeddingJobStatus.PENDING
             || job.getStatus() == EmbeddingJobStatus.PROCESSING) {
+            return;
+        }
+        if (job.getStatus() == EmbeddingJobStatus.INDEXED) {
+            indexedVersionVectorRepairService.repair(version.getId(), model, event.getEventId());
             return;
         }
         throw new DocGridException(ErrorCode.SYNC_EVENT_INCONSISTENT);

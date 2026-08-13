@@ -67,6 +67,12 @@ sync:
     lease-recovery-batch-size: ${SYNC_DISPATCHER_LEASE_RECOVERY_BATCH_SIZE:100}
     retry-initial-delay: ${SYNC_DISPATCHER_RETRY_INITIAL_DELAY:5s}
     retry-max-delay: ${SYNC_DISPATCHER_RETRY_MAX_DELAY:1m}
+  reconciliation:
+    enabled: ${SYNC_RECONCILIATION_ENABLED:false}
+    mode: ${SYNC_RECONCILIATION_MODE:DRY_RUN}
+    batch-size: ${SYNC_RECONCILIATION_BATCH_SIZE:100}
+    interval: ${SYNC_RECONCILIATION_INTERVAL:5m}
+    stalled-threshold: ${SYNC_RECONCILIATION_STALLED_THRESHOLD:15m}
 
 server:
   port: 8080

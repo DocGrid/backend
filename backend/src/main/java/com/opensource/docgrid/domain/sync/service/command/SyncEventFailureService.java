@@ -29,6 +29,7 @@ public class SyncEventFailureService {
 
     private final SyncOutboxEventRepository syncOutboxEventRepository;
     private final SyncEventRetrySchedule syncEventRetrySchedule;
+    private final SyncEventDeliveryAttemptService syncEventDeliveryAttemptService;
     private final Clock clock;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -37,6 +38,7 @@ public class SyncEventFailureService {
         SyncOutboxEvent event = syncOutboxEventRepository.findByEventIdForUpdate(eventId)
             .orElseThrow(() -> new DocGridException(ErrorCode.SYNC_EVENT_NOT_FOUND));
         validateOwnership(event, claimToken, failedAt);
+        syncEventDeliveryAttemptService.fail(eventId, claimToken, errorCode, errorMessage, failedAt);
 
         // 이번 실패가 허용 횟수를 채우면 다시 Claim되지 않는 최종 상태로 종결한다.
         if (event.getRetryCount() + 1 >= event.getMaxRetryCount()) {

@@ -30,6 +30,7 @@ public class SyncEventDispatchService {
 
     private final SyncOutboxEventRepository syncOutboxEventRepository;
     private final SyncEventHandlerRegistry syncEventHandlerRegistry;
+    private final SyncEventDeliveryAttemptService syncEventDeliveryAttemptService;
     private final Clock clock;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -41,7 +42,9 @@ public class SyncEventDispatchService {
 
         // Handler 부작용과 완료 상태가 같은 Commit 경계를 공유해야 부분 완료가 남지 않는다.
         syncEventHandlerRegistry.handle(event);
-        event.complete(claimedEvent.claimToken(), LocalDateTime.now(clock));
+        LocalDateTime completedAt = LocalDateTime.now(clock);
+        syncEventDeliveryAttemptService.succeed(event.getEventId(), claimedEvent.claimToken(), completedAt);
+        event.complete(claimedEvent.claimToken(), completedAt);
     }
 
     private void validateOwnership(

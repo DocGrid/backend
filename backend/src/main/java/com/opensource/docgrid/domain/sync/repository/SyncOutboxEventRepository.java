@@ -11,6 +11,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -54,6 +55,38 @@ public interface SyncOutboxEventRepository extends JpaRepository<SyncOutboxEvent
     Optional<SyncOutboxEvent> findByEventId(UUID eventId);
 
     Optional<SyncOutboxEvent> findByIdempotencyKey(String idempotencyKey);
+
+    /**
+     * 동일 비즈니스 변경을 여러 Transaction이 동시에 기록해도 최초 Event 한 건만 생성한다.
+     *
+     * <p>Unique 예외를 잡은 Transaction은 이미 rollback-only가 되므로 PostgreSQL의 원자적
+     * {@code ON CONFLICT DO NOTHING}을 사용하고 호출자가 같은 Key의 확정 행을 다시 읽는다.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query(value = """
+        INSERT INTO sync_outbox_events (
+            event_id, idempotency_key, aggregate_type, aggregate_id, aggregate_version,
+            event_type, payload_json, status, available_at, occurred_at,
+            retry_count, max_retry_count, created_at, updated_at
+        ) VALUES (
+            :eventId, :idempotencyKey, :aggregateType, :aggregateId, :aggregateVersion,
+            :eventType, :payloadJson, 'PENDING', :availableAt, :occurredAt,
+            0, :maxRetryCount, :occurredAt, :occurredAt
+        )
+        ON CONFLICT (idempotency_key) DO NOTHING
+        """, nativeQuery = true)
+    int insertPendingIfAbsent(
+        @Param("eventId") UUID eventId,
+        @Param("idempotencyKey") String idempotencyKey,
+        @Param("aggregateType") String aggregateType,
+        @Param("aggregateId") Long aggregateId,
+        @Param("aggregateVersion") Long aggregateVersion,
+        @Param("eventType") String eventType,
+        @Param("payloadJson") String payloadJson,
+        @Param("availableAt") LocalDateTime availableAt,
+        @Param("occurredAt") LocalDateTime occurredAt,
+        @Param("maxRetryCount") int maxRetryCount
+    );
 
     /**
      * 현재 실행 가능한 가장 오래된 PENDING Event 한 건을 다른 Dispatcher의 잠금을 기다리지 않고 Claim한다.

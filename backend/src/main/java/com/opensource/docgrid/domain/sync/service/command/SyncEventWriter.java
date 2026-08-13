@@ -2,6 +2,7 @@ package com.opensource.docgrid.domain.sync.service.command;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -15,6 +16,8 @@ import com.opensource.docgrid.domain.sync.enums.SyncAggregateType;
 import com.opensource.docgrid.domain.sync.enums.SyncEventType;
 import com.opensource.docgrid.domain.sync.enums.SyncPermissionOperation;
 import com.opensource.docgrid.domain.sync.repository.SyncOutboxEventRepository;
+import com.opensource.docgrid.global.exception.DocGridException;
+import com.opensource.docgrid.global.exception.ErrorCode;
 
 import lombok.RequiredArgsConstructor;
 
@@ -52,19 +55,14 @@ public class SyncEventWriter {
         String payloadJson = String.format("{\"embeddingModelId\":%d}", embeddingModel.getId());
 
         // Version·Job 생성 Transaction과 함께 Commit돼야 Dispatcher가 부분 상태를 관측하지 않는다.
-        return syncOutboxEventRepository.save(
-            SyncOutboxEvent.builder()
-                .eventId(UUID.randomUUID())
-                .idempotencyKey(idempotencyKey)
-                .aggregateType(SyncAggregateType.DOCUMENT_VERSION)
-                .aggregateId(documentVersion.getId())
-                .aggregateVersion((long) documentVersion.getVersionNo())
-                .eventType(SyncEventType.DOCUMENT_VERSION_CREATED)
-                .payloadJson(payloadJson)
-                .occurredAt(occurredAt)
-                .availableAt(occurredAt)
-                .maxRetryCount(DEFAULT_MAX_RETRY_COUNT)
-                .build()
+        return saveEvent(
+            idempotencyKey,
+            SyncAggregateType.DOCUMENT_VERSION,
+            documentVersion.getId(),
+            (long) documentVersion.getVersionNo(),
+            SyncEventType.DOCUMENT_VERSION_CREATED,
+            payloadJson,
+            occurredAt
         );
     }
 
@@ -138,19 +136,42 @@ public class SyncEventWriter {
         String payloadJson,
         LocalDateTime occurredAt
     ) {
-        return syncOutboxEventRepository.save(
-            SyncOutboxEvent.builder()
-                .eventId(UUID.randomUUID())
-                .idempotencyKey(idempotencyKey)
-                .aggregateType(aggregateType)
-                .aggregateId(aggregateId)
-                .aggregateVersion(aggregateVersion)
-                .eventType(eventType)
-                .payloadJson(payloadJson)
-                .occurredAt(occurredAt)
-                .availableAt(occurredAt)
-                .maxRetryCount(DEFAULT_MAX_RETRY_COUNT)
-                .build()
+        // 1. DB Unique Key와 ON CONFLICT를 한 문장으로 실행해 동시 요청도 예외 없이 한 행에 수렴시킨다.
+        syncOutboxEventRepository.insertPendingIfAbsent(
+            UUID.randomUUID(),
+            idempotencyKey,
+            aggregateType.name(),
+            aggregateId,
+            aggregateVersion,
+            eventType.name(),
+            payloadJson,
+            occurredAt,
+            occurredAt,
+            DEFAULT_MAX_RETRY_COUNT
         );
+
+        // 2. 최초 생성자와 중복 요청자 모두 DB가 선택한 동일 Event를 반환한다.
+        SyncOutboxEvent event = syncOutboxEventRepository.findByIdempotencyKey(idempotencyKey)
+            .orElseThrow(() -> new DocGridException(ErrorCode.SYNC_EVENT_INCONSISTENT));
+        validateExistingEvent(event, aggregateType, aggregateId, aggregateVersion, eventType, payloadJson);
+        return event;
+    }
+
+    private void validateExistingEvent(
+        SyncOutboxEvent event,
+        SyncAggregateType aggregateType,
+        Long aggregateId,
+        Long aggregateVersion,
+        SyncEventType eventType,
+        String payloadJson
+    ) {
+        // 같은 Key가 다른 명령을 가리키면 중복 성공으로 숨기지 않고 원장 충돌로 중단한다.
+        if (event.getAggregateType() != aggregateType
+            || !Objects.equals(event.getAggregateId(), aggregateId)
+            || !Objects.equals(event.getAggregateVersion(), aggregateVersion)
+            || event.getEventType() != eventType
+            || !Objects.equals(event.getPayloadJson(), payloadJson)) {
+            throw new DocGridException(ErrorCode.SYNC_EVENT_INCONSISTENT);
+        }
     }
 }

@@ -1,8 +1,119 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type ModalName = "upload" | "version" | "collection" | "add-document" | "permission" | "token" | "role" | null;
+
+type RagOpsSummary = {
+  documents: { total: number; searchable: number; pendingIndex: number };
+  jobs: { pending: number; processing: number; failed: number; avgProcessMs: number | null };
+  workers: { activeCount: number; totalCount: number };
+  search: { recent24hCount: number };
+};
+
+type SyncSummary = {
+  capturedAt: string;
+  events: {
+    pendingCount: number;
+    processingCount: number;
+    failedCount: number;
+    oldestPendingAgeSeconds: number | null;
+    processedLast24hCount: number;
+    failedLast24hCount: number;
+    retriedLast24hCount: number;
+    successRateLast24h: number;
+    lastProcessedEventId: string | null;
+    lastProcessedAt: string | null;
+  };
+  issues: {
+    openCount: number;
+    repairingCount: number;
+    autoResolvedLast24hCount: number;
+    failedRepairCount: number;
+  };
+  reconciliation: {
+    runId: string;
+    mode: string;
+    status: string;
+    scannedCount: number;
+    detectedCount: number;
+    repairRequestedCount: number;
+    startedAt: string;
+    completedAt: string | null;
+  } | null;
+};
+
+type SyncEvent = {
+  eventId: string;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: number;
+  status: string;
+  retryCount: number;
+  maxRetryCount: number;
+  occurredAt: string;
+  lastErrorCode: string | null;
+};
+
+type SyncIssue = {
+  issueId: number;
+  issueType: string;
+  severity: string;
+  status: string;
+  documentId: number | null;
+  documentVersionId: number | null;
+  actualJson: string | null;
+  repairable: boolean;
+  lastDetectedAt: string;
+  repairAttemptCount: number;
+};
+
+type PageData<T> = { content: T[] };
+type ApiEnvelope<T> = { success: boolean; data: T };
+
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080").replace(/\/$/, "");
+
+function accessToken() {
+  if (typeof window === "undefined") return "";
+  return window.sessionStorage.getItem("accessToken")
+    ?? window.localStorage.getItem("accessToken")
+    ?? window.localStorage.getItem("docgridAccessToken")
+    ?? "";
+}
+
+async function adminRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = accessToken();
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
+  });
+  const payload = await response.json().catch(() => null) as ApiEnvelope<T> | { message?: string } | null;
+  if (!response.ok || !payload || !("data" in payload)) {
+    const message = payload && "message" in payload ? payload.message : null;
+    throw new Error(message || `운영 API 요청에 실패했습니다. (${response.status})`);
+  }
+  return payload.data;
+}
+
+function formatMetric(value: number | null | undefined) {
+  return value == null ? "—" : value.toLocaleString("ko-KR");
+}
+
+function formatAge(seconds: number | null) {
+  if (seconds == null) return "대기 없음";
+  if (seconds < 60) return `${seconds}초`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}분`;
+  return `${Math.floor(seconds / 3600)}시간 ${Math.floor((seconds % 3600) / 60)}분`;
+}
+
+function formatTimestamp(value: string | null | undefined) {
+  if (!value) return "—";
+  return value.replace("T", " ").slice(5, 16);
+}
 
 const navSections = [
   {
@@ -119,10 +230,37 @@ function EmptyState({ symbol, title, description }: { symbol: string; title: str
 
 function AuthPage({ mode }: { mode: "login" | "signup" }) {
   const signup = mode === "signup";
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    window.location.href = "/search";
+    if (signup) {
+      window.location.href = "/search";
+      return;
+    }
+    setSubmitting(true);
+    setAuthError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const payload = await response.json() as ApiEnvelope<{ accessToken: string; roles: string[] }> & { message?: string };
+      if (!response.ok || !payload.data?.accessToken) {
+        throw new Error(payload.message || "이메일 또는 비밀번호를 확인하세요.");
+      }
+      // 관리자 API와 STOMP CONNECT가 같은 JWT를 재사용하도록 브라우저 Session에 저장한다.
+      window.sessionStorage.setItem("accessToken", payload.data.accessToken);
+      window.location.href = payload.data.roles.includes("ADMIN") ? "/admin/dashboard" : "/search";
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "로그인에 실패했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -143,10 +281,11 @@ function AuthPage({ mode }: { mode: "login" | "signup" }) {
           <span className="page-kicker">{signup ? "CREATE ACCOUNT" : "WELCOME BACK"}</span>
           <h2>{signup ? "회원가입" : "로그인"}</h2>
           <p>{signup ? "모든 항목은 필수입니다." : "이메일과 비밀번호를 입력하세요."}</p>
-          <label>이메일 <input type="email" defaultValue={signup ? "" : "gimin@docgrid.io"} placeholder="name@company.com" required /></label>
-          <label>비밀번호 <input type="password" defaultValue={signup ? "" : "docgrid123"} placeholder="8자 이상" required /></label>
+          <label>이메일 <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@company.com" required /></label>
+          <label>비밀번호 <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="8자 이상" required /></label>
           {signup && <><label>이름 <input placeholder="홍길동" required /></label><label>부서 <select defaultValue="3"><option value="3">플랫폼개발팀 · PLT</option><option value="5">People 팀 · PPL</option><option value="7">보안팀 · SEC</option></select></label></>}
-          <button className="primary-button auth-submit">{signup ? "가입하고 시작하기" : "로그인"}</button>
+          {authError && <div className="auth-error" role="alert">{authError}</div>}
+          <button className="primary-button auth-submit" disabled={submitting}>{submitting ? "확인 중…" : signup ? "가입하고 시작하기" : "로그인"}</button>
           <span className="auth-switch">{signup ? "이미 계정이 있나요?" : "계정이 없으신가요?"} <a href={signup ? "/login" : "/signup"}>{signup ? "로그인" : "회원가입"}</a></span>
         </form>
       </section>
@@ -173,12 +312,80 @@ export default function PrototypeApp({ initialRoute }: { initialRoute: string })
     { id: 49, target: "DOCUMENT_MANAGER", type: "ROLE", permission: "ADMIN", expires: "없음" },
   ]);
   const [users, setUsers] = useState(initialUsers);
+  const [ragOpsSummary, setRagOpsSummary] = useState<RagOpsSummary | null>(null);
+  const [syncSummary, setSyncSummary] = useState<SyncSummary | null>(null);
+  const [syncEvents, setSyncEvents] = useState<SyncEvent[]>([]);
+  const [syncIssues, setSyncIssues] = useState<SyncIssue[]>([]);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncError, setSyncError] = useState("");
+  const [syncConnection, setSyncConnection] = useState<"CONNECTING" | "LIVE" | "POLLING">("CONNECTING");
+  const [syncBusyKey, setSyncBusyKey] = useState("");
+
+  const loadSyncDashboard = useCallback(async (showLoading = false) => {
+    if (showLoading) setSyncLoading(true);
+    try {
+      const [dashboard, summary, eventsPage, issuesPage] = await Promise.all([
+        adminRequest<RagOpsSummary>("/admin/dashboard/summary"),
+        adminRequest<SyncSummary>("/admin/sync/summary"),
+        adminRequest<PageData<SyncEvent>>("/admin/sync/events?size=8"),
+        adminRequest<PageData<SyncIssue>>("/admin/sync/issues?size=8"),
+      ]);
+      setRagOpsSummary(dashboard);
+      setSyncSummary(summary);
+      setSyncEvents(eventsPage.content);
+      setSyncIssues(issuesPage.content);
+      setSyncError("");
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : "운영 데이터를 불러오지 못했습니다.");
+    } finally {
+      if (showLoading) setSyncLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(""), 2500);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (route !== "/admin/dashboard") return;
+    const initialLoad = window.setTimeout(() => void loadSyncDashboard(true), 0);
+    const timer = window.setInterval(() => void loadSyncDashboard(), 10_000);
+    return () => {
+      window.clearTimeout(initialLoad);
+      window.clearInterval(timer);
+    };
+  }, [loadSyncDashboard, route]);
+
+  useEffect(() => {
+    if (route !== "/admin/dashboard") return;
+    const token = accessToken();
+    if (!token) {
+      const fallback = window.setTimeout(() => setSyncConnection("POLLING"), 0);
+      return () => window.clearTimeout(fallback);
+    }
+
+    // 1. 기존 관리자 Dashboard STOMP Topic에 직접 연결해 상태 전이 push를 수신한다.
+    const socketUrl = `${API_BASE_URL.replace(/^http/, "ws")}/ws/websocket`;
+    const socket = new WebSocket(socketUrl);
+    socket.onopen = () => socket.send(
+      `CONNECT\naccept-version:1.2\nAuthorization:Bearer ${token}\nheart-beat:10000,10000\n\n\0`,
+    );
+    socket.onmessage = (event) => {
+      const frame = String(event.data);
+      if (frame.startsWith("CONNECTED")) {
+        socket.send("SUBSCRIBE\nid:ragops-sync\ndestination:/topic/dashboard\nack:auto\n\n\0");
+        setSyncConnection("LIVE");
+        return;
+      }
+      // 2. 기존 RAGOps push를 신호로 사용하고 민감한 Frame 본문 대신 최신 관리자 API를 다시 읽는다.
+      if (frame.startsWith("MESSAGE")) void loadSyncDashboard();
+    };
+    socket.onerror = () => setSyncConnection("POLLING");
+    socket.onclose = () => setSyncConnection("POLLING");
+    return () => socket.close();
+  }, [loadSyncDashboard, route]);
 
   const routeTitle = useMemo(() => {
     if (route.startsWith("/documents/")) return "문서 상세";
@@ -230,6 +437,38 @@ export default function PrototypeApp({ initialRoute }: { initialRoute: string })
     setTokens((current) => [{ id: 52, created: "방금", lastUsed: "—", status: "사용 가능" }, ...current]);
     setModal(null);
     setToast("새 MCP 토큰을 발급했습니다. 원문은 한 번만 표시됩니다.");
+  }
+
+  async function runSyncCommand(
+    busyKey: string,
+    path: string,
+    successMessage: string,
+    body?: unknown,
+  ) {
+    setSyncBusyKey(busyKey);
+    try {
+      await adminRequest(path, {
+        method: "POST",
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      setToast(successMessage);
+      await loadSyncDashboard();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "운영 명령 실행에 실패했습니다.");
+    } finally {
+      setSyncBusyKey("");
+    }
+  }
+
+  function ignoreSyncIssue(issue: SyncIssue) {
+    const reason = window.prompt("이 Issue를 자동 조치하지 않는 이유를 입력하세요.");
+    if (!reason?.trim()) return;
+    void runSyncCommand(
+      `ignore-${issue.issueId}`,
+      `/admin/sync/issues/${issue.issueId}/ignore`,
+      `Issue #${issue.issueId}를 감사 사유와 함께 무시했습니다.`,
+      { reason: reason.trim() },
+    );
   }
 
   function renderPage() {
@@ -298,7 +537,84 @@ export default function PrototypeApp({ initialRoute }: { initialRoute: string })
     );
 
     if (route === "/admin/dashboard") return (
-      <section className="content page-view"><PageHeading kicker="RAGOPS" title="운영 현황" description="문서 인덱싱과 검색 시스템 상태를 실시간으로 확인하세요." actions={<div className="live-indicator"><span /> 실시간 연결 · /topic/dashboard</div>} /><div className="metric-grid"><div className="metric-card"><span>전체 문서</span><b>25,368</b><small>soft-delete 제외</small></div><div className="metric-card success-metric"><span>검색 가능</span><b>21,742</b><small>INDEXED</small></div><div className="metric-card"><span>인덱싱 대기</span><b>132</b><small>UPLOADED · INDEXING</small></div><div className="metric-card"><span>최근 24시간 검색</span><b>342</b><small>search.recent24hCount</small></div></div><div className="metric-grid job-metrics"><div className="metric-card"><span>대기</span><b>132</b><small>PENDING</small></div><div className="metric-card"><span>처리 중</span><b>8</b><small>PROCESSING</small></div><div className="metric-card danger-metric"><span>실패</span><b>27</b><button onClick={() => setToast("실패한 작업 27건을 대기열에 추가했습니다.")}>실패 전체 재처리</button></div><div className="metric-card"><span>평균 처리 시간</span><b>3,200<em>ms</em></b><small>Queue 대기 제외</small></div><div className="metric-card"><span>정상 Worker</span><b>5<em>/ 6</em></b><small>ACTIVE · IDLE</small></div></div><div className="alert-row"><div className="danger-alert">▣ <strong>Worker 1대가 DEAD 상태입니다.</strong> docgrid-api-03 · 마지막 heartbeat 6분 전 <a href="/admin/workers">확인 →</a></div><div className="warning-alert">⚠ <strong>실패 27건이 재시도 한도에 도달했습니다.</strong></div></div><div className="dashboard-grid"><div className="panel-card"><div className="panel-heading"><div><h2>최근 실패 Job</h2><p>클릭하면 Attempt와 Event를 추적할 수 있어요.</p></div><a href="/admin/indexing-jobs">전체 보기 →</a></div><div className="mini-table failed-jobs">{jobs.filter((job) => job.status === "FAILED").map((job) => <div key={job.id}><a href={`/admin/indexing-jobs/${job.id}`}>#{job.id}</a><span>{job.document}</span><code>{job.error}</code><span>{job.retry}</span><button onClick={() => retryJob(job.id)}>재처리</button></div>)}</div></div><div className="panel-card"><div className="panel-heading"><div><h2>실패 유형 분포</h2><p>FAILED 27건</p></div></div><div className="failure-bars">{[["EMBEDDING_PROVIDER_UNAVAILABLE",14],["DOCUMENT_CONTENT_INVALID",7],["STORAGE_UNAVAILABLE",4],["WORKER_INTERNAL_ERROR",2]].map(([name,count]) => <div key={String(name)}><span><b>{name}</b><em>{count}</em></span><i><b style={{ width: `${Number(count) * 6}%` }} /></i></div>)}</div></div></div></section>
+      <section className="content page-view sync-dashboard">
+        <PageHeading
+          kicker="RAGOPS · SYNC CONTROL PLANE"
+          title="운영 현황"
+          description="문서 인덱싱과 Outbox 원장, Vector 정합성을 한 화면에서 확인하세요."
+          actions={<div className="sync-page-actions">
+            <div className={`live-indicator connection-${syncConnection.toLowerCase()}`}><span /> {syncConnection === "LIVE" ? "실시간 연결" : syncConnection === "CONNECTING" ? "연결 중" : "10초 자동 갱신"}</div>
+            <button className="secondary-button" disabled={syncLoading} onClick={() => void loadSyncDashboard(true)}>새로고침</button>
+            <button className="primary-button" disabled={Boolean(syncBusyKey)} onClick={() => void runSyncCommand("reconcile", "/admin/sync/reconcile", "정합성 검사와 안전한 복구 요청을 완료했습니다.", { mode: "REPAIR", cursor: 0 })}>{syncBusyKey === "reconcile" ? "검사 중…" : "정합성 검사"}</button>
+          </div>}
+        />
+
+        {syncError && <div className="danger-alert sync-api-error">▣ <strong>운영 API를 연결할 수 없습니다.</strong> {syncError} <small>ADMIN JWT를 브라우저의 accessToken에 저장했는지 확인하세요.</small></div>}
+
+        <div className="metric-grid">
+          <div className="metric-card"><span>전체 문서</span><b>{formatMetric(ragOpsSummary?.documents.total)}</b><small>soft-delete 제외</small></div>
+          <div className="metric-card success-metric"><span>검색 가능</span><b>{formatMetric(ragOpsSummary?.documents.searchable)}</b><small>INDEXED</small></div>
+          <div className="metric-card"><span>인덱싱 대기</span><b>{formatMetric(ragOpsSummary?.documents.pendingIndex)}</b><small>UPLOADED · INDEXING</small></div>
+          <div className="metric-card"><span>최근 24시간 검색</span><b>{formatMetric(ragOpsSummary?.search.recent24hCount)}</b><small>실제 Query 집계</small></div>
+        </div>
+        <div className="metric-grid job-metrics">
+          <div className="metric-card"><span>Job 대기</span><b>{formatMetric(ragOpsSummary?.jobs.pending)}</b><small>PENDING</small></div>
+          <div className="metric-card"><span>Job 처리 중</span><b>{formatMetric(ragOpsSummary?.jobs.processing)}</b><small>PROCESSING</small></div>
+          <div className="metric-card danger-metric"><span>Job 실패</span><b>{formatMetric(ragOpsSummary?.jobs.failed)}</b><a href="/admin/indexing-jobs">실패 Job 확인 →</a></div>
+          <div className="metric-card"><span>평균 처리 시간</span><b>{formatMetric(ragOpsSummary?.jobs.avgProcessMs)}<em>ms</em></b><small>Queue 대기 제외</small></div>
+          <div className="metric-card"><span>정상 Worker</span><b>{formatMetric(ragOpsSummary?.workers.activeCount)}<em>/ {formatMetric(ragOpsSummary?.workers.totalCount)}</em></b><small>ACTIVE · IDLE</small></div>
+        </div>
+
+        <div className="sync-section-heading">
+          <div><span className="page-kicker">TRANSACTIONAL OUTBOX</span><h2>동기화 원장과 정합성</h2></div>
+          <p>마지막 갱신 {formatTimestamp(syncSummary?.capturedAt)} · 마지막 처리 Event {syncSummary?.events.lastProcessedEventId?.slice(0, 8) ?? "—"}</p>
+        </div>
+        <div className="metric-grid sync-metrics">
+          <div className="metric-card"><span>Outbox 대기</span><b>{formatMetric(syncSummary?.events.pendingCount)}</b><small>최대 지연 {formatAge(syncSummary?.events.oldestPendingAgeSeconds ?? null)}</small></div>
+          <div className="metric-card"><span>Dispatcher 처리 중</span><b>{formatMetric(syncSummary?.events.processingCount)}</b><small>Lease 소유 Event</small></div>
+          <div className={`metric-card ${(syncSummary?.events.failedCount ?? 0) > 0 ? "danger-metric" : "success-metric"}`}><span>Event 최종 실패</span><b>{formatMetric(syncSummary?.events.failedCount)}</b><small>최근 24시간 {formatMetric(syncSummary?.events.failedLast24hCount)}</small></div>
+          <div className="metric-card success-metric"><span>24시간 처리 성공률</span><b>{syncSummary ? `${syncSummary.events.successRateLast24h}%` : "—"}</b><small>성공 {formatMetric(syncSummary?.events.processedLast24hCount)} · 재시도 {formatMetric(syncSummary?.events.retriedLast24hCount)}</small></div>
+          <div className={`metric-card ${(syncSummary?.issues.openCount ?? 0) > 0 ? "danger-metric" : "success-metric"}`}><span>미해결 정합성 Issue</span><b>{formatMetric(syncSummary?.issues.openCount)}</b><small>복구 중 {formatMetric(syncSummary?.issues.repairingCount)}</small></div>
+          <div className="metric-card success-metric"><span>24시간 자동 복구</span><b>{formatMetric(syncSummary?.issues.autoResolvedLast24hCount)}</b><small>실패 {formatMetric(syncSummary?.issues.failedRepairCount)}</small></div>
+          <div className="metric-card"><span>마지막 Reconciliation</span><b className="metric-status">{syncSummary?.reconciliation?.status ?? "미실행"}</b><small>{syncSummary?.reconciliation ? `${syncSummary.reconciliation.scannedCount}개 검사 · ${syncSummary.reconciliation.detectedCount}개 탐지` : "실행 이력 없음"}</small></div>
+          <div className="metric-card"><span>복구 요청</span><b>{formatMetric(syncSummary?.reconciliation?.repairRequestedCount)}</b><small>{syncSummary?.reconciliation?.mode ?? "DRY_RUN / REPAIR"}</small></div>
+        </div>
+
+        {((syncSummary?.events.failedCount ?? 0) > 0 || (syncSummary?.issues.failedRepairCount ?? 0) > 0) && <div className="alert-row">
+          {(syncSummary?.events.failedCount ?? 0) > 0 && <div className="danger-alert">▣ <strong>최종 실패 Sync Event가 {syncSummary?.events.failedCount}건 있습니다.</strong> 원인을 확인한 뒤 개별 재시도하세요.</div>}
+          {(syncSummary?.issues.failedRepairCount ?? 0) > 0 && <div className="warning-alert">⚠ <strong>자동 복구에 실패한 Issue가 {syncSummary?.issues.failedRepairCount}건 있습니다.</strong></div>}
+        </div>}
+
+        <div className="dashboard-grid sync-operations-grid">
+          <div className="panel-card">
+            <div className="panel-heading"><div><h2>최근 Sync Event</h2><p>Event ID로 장애 전후 처리 지점을 추적합니다.</p></div><code>GET /admin/sync/events</code></div>
+            <div className="mini-table sync-event-table">
+              {syncEvents.length === 0 ? <EmptyState symbol="✓" title="표시할 Event가 없습니다" description="Outbox가 비어 있거나 API 연결을 기다리는 중입니다." /> : syncEvents.map((event) => <div key={event.eventId}>
+                <code>{event.eventId.slice(0, 8)}</code>
+                <span><strong>{event.eventType}</strong><small>{event.aggregateType} #{event.aggregateId}</small></span>
+                <StatusPill value={event.status} />
+                <span>{event.retryCount} / {event.maxRetryCount}</span>
+                <span>{event.lastErrorCode ?? formatTimestamp(event.occurredAt)}</span>
+                {event.status === "FAILED" ? <button className="retry-button" disabled={Boolean(syncBusyKey)} onClick={() => void runSyncCommand(`event-${event.eventId}`, `/admin/sync/events/${event.eventId}/retry`, `${event.eventId.slice(0, 8)} Event를 재시도 대기열에 추가했습니다.`)}>{syncBusyKey === `event-${event.eventId}` ? "처리 중" : "재시도"}</button> : <span />}
+              </div>)}
+            </div>
+          </div>
+          <div className="panel-card">
+            <div className="panel-heading"><div><h2>정합성 Issue</h2><p>위험한 변경은 보고만 하고 관리자 판단을 기다립니다.</p></div><code>GET /admin/sync/issues</code></div>
+            <div className="mini-table sync-issue-table">
+              {syncIssues.length === 0 ? <EmptyState symbol="✓" title="열린 Issue가 없습니다" description="최근 검사에서 원장과 Vector 상태가 일치합니다." /> : syncIssues.map((issue) => <div key={issue.issueId}>
+                <span><strong>#{issue.issueId} · {issue.issueType}</strong><small>document {issue.documentId ?? "GLOBAL"} · {formatTimestamp(issue.lastDetectedAt)}</small></span>
+                <StatusPill value={issue.severity} />
+                <StatusPill value={issue.status} />
+                <span className="sync-issue-actions">
+                  {issue.status === "OPEN" && issue.repairable && <button className="retry-button" disabled={Boolean(syncBusyKey)} onClick={() => void runSyncCommand(`repair-${issue.issueId}`, `/admin/sync/issues/${issue.issueId}/repair`, `Issue #${issue.issueId} 복구 Event를 생성했습니다.`)}>복구</button>}
+                  {issue.status === "OPEN" && <button className="danger-text" disabled={Boolean(syncBusyKey)} onClick={() => ignoreSyncIssue(issue)}>무시</button>}
+                </span>
+              </div>)}
+            </div>
+          </div>
+        </div>
+      </section>
     );
 
     if (route === "/admin/indexing-jobs") return (

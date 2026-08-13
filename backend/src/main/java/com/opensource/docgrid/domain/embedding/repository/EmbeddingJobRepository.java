@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import jakarta.persistence.LockModeType;
 
@@ -24,6 +25,13 @@ import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
  * 제어하고, 단일 Job의 후속 상태·Attempt 변경에는 표준 JPA 쓰기 행 잠금을 제공한다.
  */
 public interface EmbeddingJobRepository extends JpaRepository<EmbeddingJob, Long> {
+
+    Optional<EmbeddingJob> findBySourceEventId(UUID sourceEventId);
+
+    Optional<EmbeddingJob> findTopByDocumentVersionIdAndEmbeddingModelIdOrderByIdDesc(
+        Long documentVersionId,
+        Long embeddingModelId
+    );
 
     /**
      * 관리자 목록 화면에 필요한 연관관계를 함께 조회하면서 선택 필터와 Pagination을 적용한다.

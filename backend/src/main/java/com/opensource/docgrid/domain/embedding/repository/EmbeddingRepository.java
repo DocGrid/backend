@@ -49,6 +49,19 @@ public interface EmbeddingRepository extends JpaRepository<Embedding, Long> {
     );
 
     /**
+     * 삭제 문서의 모든 ACTIVE Vector를 즉시 검색 대상에서 제외한다.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query(value = """
+        UPDATE embeddings
+        SET status = 'STALE',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE document_id = :documentId
+          AND status = 'ACTIVE'
+        """, nativeQuery = true)
+    int markActiveAsStaleByDocumentId(@Param("documentId") Long documentId);
+
+    /**
      * 수동 재처리로 다시 인덱싱할 Version의 Embedding 행을 한 SQL로 제거한다.
      *
      * <p>최종 실패 시 이미 STALE로 전환돼 검색에서 제외된 행만 대상이 되며, 남겨두면 재처리가

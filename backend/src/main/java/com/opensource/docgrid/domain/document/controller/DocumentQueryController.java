@@ -1,6 +1,13 @@
 package com.opensource.docgrid.domain.document.controller;
 
+import java.nio.charset.StandardCharsets;
+
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.InvalidMediaTypeException;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -9,9 +16,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.opensource.docgrid.domain.auth.annotation.CurrentUser;
+import com.opensource.docgrid.domain.document.dto.response.DocumentContentResponse;
+import com.opensource.docgrid.domain.document.dto.response.DocumentDetailResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentStatusResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentSummaryResponse;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
+import com.opensource.docgrid.domain.document.service.DocumentFileDownload;
+import com.opensource.docgrid.domain.document.service.DocumentFileService;
 import com.opensource.docgrid.domain.document.service.query.DocumentQueryService;
 import com.opensource.docgrid.global.common.response.ApiResponse;
 import com.opensource.docgrid.global.common.response.PageResponse;
@@ -22,6 +33,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 
 @Tag(name = "Document", description = "문서 관련 API")
@@ -32,6 +44,7 @@ import lombok.RequiredArgsConstructor;
 public class DocumentQueryController {
 
     private final DocumentQueryService documentQueryService;
+    private final DocumentFileService documentFileService;
 
     @Operation(
         summary = "내 문서 목록 조회",
@@ -51,6 +64,59 @@ public class DocumentQueryController {
     }
 
     @Operation(
+        summary = "문서 상세 조회",
+        description = "문서 Metadata, 소유자와 현재 버전 정보를 조회합니다. 추출 본문과 원본 파일은 포함하지 않습니다. "
+            + "문서 읽기 권한이 필요하며 삭제된 문서는 조회할 수 없습니다."
+    )
+    @GetMapping("/{documentId}")
+    public ResponseEntity<ApiResponse<DocumentDetailResponse>> getDocumentDetail(
+        @PathVariable Long documentId,
+        @Parameter(hidden = true) @CurrentUser Long userId
+    ) {
+        return ResponseUtils.ok(documentQueryService.getDocumentDetail(userId, documentId));
+    }
+
+    @Operation(
+        summary = "문서 추출 본문 조회",
+        description = "현재 버전의 Chunk 중복을 제거하고 페이지·섹션 순서대로 복원한 정규화 Text 전체를 반환합니다. "
+            + "원본 PDF·DOCX의 Layout, Image와 Font는 포함하지 않으며 문서 읽기 권한이 필요합니다."
+    )
+    @GetMapping("/{documentId}/content")
+    public ResponseEntity<ApiResponse<DocumentContentResponse>> getDocumentContent(
+        @PathVariable Long documentId,
+        @Parameter(hidden = true) @CurrentUser Long userId
+    ) {
+        return ResponseUtils.ok(documentQueryService.getDocumentContent(userId, documentId));
+    }
+
+    @Operation(
+        summary = "문서 원본 파일 조회",
+        description = "현재 버전의 원본 PDF·DOCX·TXT 파일을 반환합니다. disposition은 inline 또는 attachment이며 "
+            + "기본값 inline은 브라우저 표시, attachment는 다운로드에 사용합니다. 문서 읽기 권한이 필요합니다."
+    )
+    @GetMapping("/{documentId}/file")
+    public ResponseEntity<byte[]> getDocumentFile(
+        @PathVariable Long documentId,
+        @RequestParam(defaultValue = "inline")
+        @Pattern(regexp = "inline|attachment", message = "disposition은 inline 또는 attachment여야 합니다.")
+        String disposition,
+        @Parameter(hidden = true) @CurrentUser Long userId
+    ) {
+        // 1. Service가 권한을 검증하고 현재 버전의 원본 Byte와 안전한 파일 Metadata를 반환한다.
+        DocumentFileDownload download = documentFileService.getDocumentFile(userId, documentId);
+
+        // 2. 저장소 내부 위치는 숨기고 브라우저 표시·다운로드에 필요한 표준 Header만 설정한다.
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(resolveMediaType(download.contentType()));
+        headers.setContentLength(download.fileSize());
+        headers.setContentDisposition(ContentDisposition.builder(disposition)
+            .filename(download.originalFilename(), StandardCharsets.UTF_8)
+            .build());
+        headers.setCacheControl("no-store");
+        return ResponseEntity.ok().headers(headers).body(download.content());
+    }
+
+    @Operation(
         summary = "문서 인덱싱 상태 조회",
         description = "현재 검색 가능한 INDEXED 버전과 처리 중인 버전 및 임베딩 작업 상태를 함께 조회합니다. "
             + "최초 버전이 아직 처리 중이면 currentVersion은 null입니다. 문서 읽기 권한이 필요합니다."
@@ -61,5 +127,16 @@ public class DocumentQueryController {
         @Parameter(hidden = true) @CurrentUser Long userId
     ) {
         return ResponseUtils.ok(documentQueryService.getDocumentStatus(userId, documentId));
+    }
+
+    private MediaType resolveMediaType(String contentType) {
+        if (!StringUtils.hasText(contentType)) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
+        try {
+            return MediaType.parseMediaType(contentType);
+        } catch (InvalidMediaTypeException exception) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
     }
 }

@@ -1,4 +1,5 @@
 import type { ApiEnvelope, ApiErrorBody } from "./api-types";
+import { parseContentDispositionFilename } from "./content-disposition";
 
 export const ACCESS_TOKEN_KEY = "docgrid.access-token";
 export const AUTH_EXPIRED_EVENT = "docgrid:auth-expired";
@@ -109,9 +110,8 @@ async function fetchBackendFile(path: string): Promise<{ blob: Blob; filename: s
     throw new ApiError(response.status, payload?.message ?? "원본 파일을 불러오지 못했습니다.", payload?.code);
   }
 
-  // 2. Preserve the backend MIME type in the Blob and decode its RFC 5987 filename.
-  const encodedFilename = response.headers.get("content-disposition")?.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i)?.[1];
-  const filename = encodedFilename ? decodeURIComponent(encodedFilename.replace(/"/g, "")) : "docgrid-document";
+  // 2. Preserve the MIME type and decode both browser and Spring filename formats.
+  const filename = parseContentDispositionFilename(response.headers.get("content-disposition"));
   return { blob: await response.blob(), filename };
 }
 

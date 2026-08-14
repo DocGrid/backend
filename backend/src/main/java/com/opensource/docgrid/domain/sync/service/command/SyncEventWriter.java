@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.entity.DocumentVersion;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingModel;
 import com.opensource.docgrid.domain.permission.enums.AccessSourceType;
@@ -62,6 +63,28 @@ public class SyncEventWriter {
             (long) documentVersion.getVersionNo(),
             SyncEventType.DOCUMENT_VERSION_CREATED,
             payloadJson,
+            occurredAt
+        );
+    }
+
+    /**
+     * Soft-delete된 문서의 검색 Vector를 비활성화할 의도를 같은 Transaction에 기록한다.
+     */
+    public SyncOutboxEvent recordDocumentDeleted(Document document) {
+        LocalDateTime occurredAt = LocalDateTime.now(clock);
+        String idempotencyKey = String.format(
+            "%s:%d:%s",
+            SyncAggregateType.DOCUMENT,
+            document.getId(),
+            SyncEventType.DOCUMENT_DELETED
+        );
+        return saveEvent(
+            idempotencyKey,
+            SyncAggregateType.DOCUMENT,
+            document.getId(),
+            null,
+            SyncEventType.DOCUMENT_DELETED,
+            "{}",
             occurredAt
         );
     }

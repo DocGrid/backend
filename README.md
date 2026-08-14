@@ -20,6 +20,7 @@ DocGrid는 문서 업로드·인덱싱·검색과 웹 인터페이스를 하나�
 - Java 17
 - Node.js 22.13.0 이상
 - Docker Desktop과 Docker Compose
+- OpenSSH Client(`ssh`), netcat(`nc`), curl
 - Rocky Linux 9.7 EC2의 OpenSQL 개발 DB에 접속할 SSH Key와 DB 계정
 
 EC2 주소, SSH Key, DB 비밀번호, OpenSQL License는 저장소에 포함하지 않습니다. 팀 구성원은 해당 값을
@@ -61,6 +62,9 @@ SPRING_PROFILES_ACTIVE=local
 # 자동 인덱싱 Worker를 로컬에서 실행합니다.
 INDEXING_WORKER_ENABLED=true
 INDEXING_WORKER_MAX_CONCURRENCY=1
+
+# RAG 답변에 사용할 Ollama 모델입니다.
+OLLAMA_MODEL=qwen2.5:3b
 ```
 
 `DB_SSLMODE=disable`은 DB 자체 TLS가 비활성화되어 있고 아래 SSH Tunnel로 전송 구간을 암호화하는
@@ -100,10 +104,13 @@ Docker Desktop을 실행한 뒤 로컬 인프라를 기동합니다. 이 구성�
 docker compose up -d --build minio embedding-server ollama
 ```
 
-Ollama 모델은 최초 한 번 내려받습니다.
+Ollama API가 준비될 때까지 Compose Health Check를 기다린 뒤, 루트 `.env`의 `OLLAMA_MODEL`에 지정한
+모델을 최초 한 번 내려받습니다. 값을 생략하면 Spring Boot 기본값인 `qwen2.5:3b`를 사용합니다.
 
 ```bash
-docker compose exec ollama ollama pull qwen2.5:3b
+docker compose up -d --wait --wait-timeout 120 ollama
+OLLAMA_MODEL_NAME=$(sed -n 's/^OLLAMA_MODEL=//p' .env | tail -n 1)
+docker compose exec ollama ollama pull "${OLLAMA_MODEL_NAME:-qwen2.5:3b}"
 ```
 
 BGE-M3는 첫 실행 시 약 3GB 모델을 내려받으므로 준비까지 10~15분 정도 걸릴 수 있습니다. 모델이
@@ -186,15 +193,22 @@ npm --prefix frontend run dev
 
 ## 종료
 
-프론트엔드, Spring Boot, SSH Tunnel Terminal에서 각각 `Ctrl+C`를 누릅니다. Docker Service는 다음
-명령으로 중지합니다.
+프론트엔드, Spring Boot, SSH Tunnel Terminal에서 각각 `Ctrl+C`를 누릅니다. EC2 OpenSQL 구성의
+Docker Service는 다음 명령으로 중지합니다.
 
 ```bash
 docker compose stop minio embedding-server ollama
 ```
 
-`docker compose down -v`는 MinIO 데이터와 모델 Cache Volume까지 삭제하므로 일반적인 종료에는
-사용하지 마세요.
+로컬 PostgreSQL 구성까지 실행했다면 `postgres`도 함께 중지합니다.
+
+```bash
+docker compose stop postgres minio embedding-server ollama
+```
+
+위 명령은 Container만 중지하고 데이터를 보존합니다. 반면 `docker compose down -v`는
+`postgres17-data`, `minio-data`, `huggingface-cache`, `ollama-data` Volume의 DB·Object·모델 Cache를
+삭제할 수 있으므로 일반적인 종료에는 사용하지 마세요.
 
 ## EC2 없이 로컬 PostgreSQL 사용
 

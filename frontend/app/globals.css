@@ -31,13 +31,16 @@ a { color: inherit; text-decoration: none; }
 button { color: inherit; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid rgba(101, 88, 232, .24); outline-offset: 2px; }
 
-.primary-button, .secondary-button { min-height: 42px; padding: 0 17px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 10px; font-size: 12px; font-weight: 750; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, background .15s ease; }
+.primary-button, .secondary-button, .danger-button { min-height: 42px; padding: 0 17px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 10px; font-size: 12px; font-weight: 750; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, background .15s ease; }
 .primary-button { color: white; background: var(--violet); box-shadow: 0 7px 16px rgba(84, 69, 213, .2); }
 .primary-button:hover { transform: translateY(-1px); background: var(--violet-dark); }
 .primary-button:disabled { opacity: .42; cursor: not-allowed; transform: none; }
 .secondary-button { color: #555666; background: white; border: 1px solid var(--line); }
 .secondary-button:hover { background: #faf9fd; }
 .secondary-button:disabled { opacity: .48; cursor: not-allowed; }
+.danger-button { color: var(--red); background: var(--red-soft); border: 1px solid #f2c7c9; }
+.danger-button:hover { background: #ffdddd; }
+.danger-button:disabled { opacity: .48; cursor: not-allowed; }
 .full-button { width: 100%; }
 
 /* DocGrid owns authentication; the UI never depends on a hosting-provider identity. */
@@ -120,7 +123,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .page-kicker { color: var(--violet); font-size: 9px; font-weight: 850; letter-spacing: 1.35px; }
 .page-heading h1 { margin: 7px 0 5px; font-family: Georgia, "Times New Roman", serif; font-size: 34px; letter-spacing: -1.2px; font-weight: 600; }
 .page-heading p { margin: 0; color: #858696; font-size: 11px; }
-.page-actions { display: flex; align-items: center; gap: 9px; }
+.page-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 9px; }
 .api-flag { width: fit-content; padding: 5px 8px; color: #a56522; background: #fff0dc; border-radius: 7px; font-size: 8px; font-weight: 800; white-space: nowrap; }
 .detail-back { max-width: 1280px; margin: 0 auto 20px; display: flex; justify-content: space-between; color: #9192a0; font-size: 9px; }
 .detail-back a { color: var(--violet); font-weight: 750; }
@@ -468,6 +471,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .dropzone small { color: #9a9aa7; font-size: 8px; }
 .form-field { margin-top: 14px; display: flex; flex-direction: column; gap: 7px; color: #555666; font-size: 9px; font-weight: 750; }
 .form-field input, .form-field select, .form-field textarea { width: 100%; padding: 10px 11px; color: #4f5060; background: white; border: 1px solid #dfdde6; border-radius: 8px; outline: 0; font-size: 10px; resize: vertical; }
+.form-error { margin-top: 14px; padding: 10px 11px; color: #8f3338; background: #fff4f4; border: 1px solid #f2c7c9; border-radius: 8px; font-size: 9px; }
 .modal-footer { margin-top: 21px; padding-top: 16px; display: flex; justify-content: flex-end; gap: 7px; border-top: 1px solid var(--line-soft); }
 .document-picker { max-height: 320px; overflow-y: auto; display: grid; gap: 7px; }
 .document-picker label { padding: 10px; display: grid; grid-template-columns: 18px 34px 1fr; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: 9px; }

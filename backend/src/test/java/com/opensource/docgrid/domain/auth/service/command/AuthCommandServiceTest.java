@@ -4,9 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.longThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.mock;
 
+import java.time.Instant;
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,6 +29,7 @@ import com.opensource.docgrid.domain.auth.dto.response.LoginResponse;
 import com.opensource.docgrid.domain.auth.dto.response.SignupResponse;
 import com.opensource.docgrid.domain.auth.fixture.AuthFixture;
 import com.opensource.docgrid.domain.auth.jwt.JwtProvider;
+import com.opensource.docgrid.domain.auth.jwt.TokenBlacklistService;
 import com.opensource.docgrid.domain.user.entity.Department;
 import com.opensource.docgrid.domain.user.entity.Role;
 import com.opensource.docgrid.domain.user.entity.User;
@@ -35,6 +41,8 @@ import com.opensource.docgrid.domain.user.repository.UserRepository;
 import com.opensource.docgrid.domain.user.repository.UserRoleRepository;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
+
+import io.jsonwebtoken.Claims;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("AuthCommandService 단위 테스트")
@@ -60,6 +68,9 @@ class AuthCommandServiceTest {
 
     @Mock
     private JwtProvider jwtProvider;
+
+    @Mock
+    private TokenBlacklistService tokenBlacklistService;
 
     // ==================== signup ====================
 
@@ -198,5 +209,46 @@ class AuthCommandServiceTest {
         assertThatThrownBy(() -> authCommandService.login(request))
                 .isInstanceOf(DocGridException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ACCOUNT_INACTIVE);
+    }
+
+    // ==================== logout ====================
+
+    @Test
+    @DisplayName("유효한 토큰으로 로그아웃하면 잔여 만료 시간만큼 블랙리스트에 등록한다")
+    void logout_blacklistsToken_whenTokenValid() {
+        String token = "access-token";
+        String jti = "test-jti";
+        Claims claims = mock(Claims.class);
+        given(jwtProvider.getClaimsIfValid(token)).willReturn(claims);
+        given(claims.get("jti", String.class)).willReturn(jti);
+        given(claims.getExpiration()).willReturn(Date.from(Instant.now().plusSeconds(600)));
+
+        authCommandService.logout(token);
+
+        then(tokenBlacklistService).should().blacklist(eq(jti), longThat(ttl -> ttl > 0 && ttl <= 600));
+    }
+
+    @Test
+    @DisplayName("유효하지 않은 토큰으로 로그아웃하면 블랙리스트에 등록하지 않는다")
+    void logout_doesNothing_whenTokenInvalid() {
+        String token = "invalid-token";
+        given(jwtProvider.getClaimsIfValid(token)).willReturn(null);
+
+        authCommandService.logout(token);
+
+        then(tokenBlacklistService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("jti가 없는 토큰으로 로그아웃하면 블랙리스트에 등록하지 않는다")
+    void logout_doesNothing_whenJtiMissing() {
+        String token = "legacy-token-without-jti";
+        Claims claims = mock(Claims.class);
+        given(jwtProvider.getClaimsIfValid(token)).willReturn(claims);
+        given(claims.get("jti", String.class)).willReturn(null);
+
+        authCommandService.logout(token);
+
+        then(tokenBlacklistService).shouldHaveNoInteractions();
     }
 }

@@ -25,6 +25,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import com.opensource.docgrid.domain.auth.jwt.JwtProvider;
+import com.opensource.docgrid.domain.auth.jwt.TokenBlacklistService;
 import com.opensource.docgrid.domain.mcp.service.command.McpAccessTokenCommandService;
 import com.opensource.docgrid.domain.sync.dto.response.SyncAdminSummaryResponse;
 import com.opensource.docgrid.domain.sync.dto.response.SyncEventSummaryResponse;
@@ -49,6 +50,7 @@ class SyncAdminControllerTest {
     @MockitoBean private SyncAdminCommandService syncAdminCommandService;
     @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
     @MockitoBean private JwtProvider jwtProvider;
+    @MockitoBean private TokenBlacklistService tokenBlacklistService;
     @MockitoBean private McpAccessTokenCommandService mcpAccessTokenCommandService;
     @MockitoBean private CorsConfigurationSource corsConfigurationSource;
 

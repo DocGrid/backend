@@ -74,6 +74,21 @@ services:
     networks:
       - docgrid-local
 
+  redis:
+    image: redis:7-alpine
+    container_name: docgrid-redis
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - docgrid-local
+
 networks:
   docgrid-local:
 
@@ -83,3 +98,4 @@ volumes:
   minio-data:
   huggingface-cache:
   ollama-data:
+  redis-data:

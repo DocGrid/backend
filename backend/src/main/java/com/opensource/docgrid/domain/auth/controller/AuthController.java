@@ -13,6 +13,7 @@ import com.opensource.docgrid.domain.auth.dto.request.SignupRequest;
 import com.opensource.docgrid.domain.auth.dto.response.LoginResponse;
 import com.opensource.docgrid.domain.auth.dto.response.MeResponse;
 import com.opensource.docgrid.domain.auth.dto.response.SignupResponse;
+import com.opensource.docgrid.domain.auth.jwt.JwtProvider;
 import com.opensource.docgrid.domain.auth.service.command.AuthCommandService;
 import com.opensource.docgrid.domain.auth.service.query.AuthQueryService;
 import com.opensource.docgrid.global.common.response.ApiResponse;
@@ -21,6 +22,7 @@ import com.opensource.docgrid.global.common.response.ResponseUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
@@ -49,5 +51,12 @@ public class AuthController {
     @GetMapping("/me")
     public ResponseEntity<ApiResponse<MeResponse>> getMe(@Parameter(hidden = true) @CurrentUser Long userId) {
         return ResponseUtils.ok(authQueryService.getMe(userId));
+    }
+
+    @Operation(summary = "로그아웃", description = "현재 사용 중인 액세스 토큰을 무효화합니다. 무효화된 토큰은 만료 전이라도 이후 요청에 사용할 수 없습니다. Authorization: Bearer {token} 헤더가 필요합니다.")
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<Void>> logout(HttpServletRequest request) {
+        authCommandService.logout(JwtProvider.resolveToken(request));
+        return ResponseUtils.noContent();
     }
 }

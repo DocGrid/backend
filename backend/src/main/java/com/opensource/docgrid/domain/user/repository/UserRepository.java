@@ -31,8 +31,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
                     )
                       AND (
                         :keyword IS NULL
-                        OR LOWER(u.name) LIKE CONCAT(CONCAT('%', LOWER(:keyword)), '%')
-                        OR LOWER(u.email) LIKE CONCAT(CONCAT('%', LOWER(:keyword)), '%')
+                        OR LOWER(u.name) LIKE CONCAT(CONCAT('%', LOWER(CAST(:keyword AS string))), '%')
+                        OR LOWER(u.email) LIKE CONCAT(CONCAT('%', LOWER(CAST(:keyword AS string))), '%')
                       )
                       AND (:departmentId IS NULL OR u.department.id = :departmentId)
                     """,
@@ -45,8 +45,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
                     )
                       AND (
                         :keyword IS NULL
-                        OR LOWER(u.name) LIKE CONCAT(CONCAT('%', LOWER(:keyword)), '%')
-                        OR LOWER(u.email) LIKE CONCAT(CONCAT('%', LOWER(:keyword)), '%')
+                        OR LOWER(u.name) LIKE CONCAT(CONCAT('%', LOWER(CAST(:keyword AS string))), '%')
+                        OR LOWER(u.email) LIKE CONCAT(CONCAT('%', LOWER(CAST(:keyword AS string))), '%')
                       )
                       AND (:departmentId IS NULL OR u.department.id = :departmentId)
                     """

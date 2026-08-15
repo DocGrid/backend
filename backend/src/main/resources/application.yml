@@ -13,6 +13,11 @@ spring:
     # 전역 OSIV를 끄고, WebMvcConfig에서 /mcp를 제외한 나머지 경로에만 다시 등록한다.
     # /mcp는 MCP Streamable HTTP 응답 처리 방식과 OSIV가 충돌해 DB 커넥션이 누수됐다(#120).
     open-in-view: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
   ai:
     mcp:
       server:

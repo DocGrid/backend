@@ -6,7 +6,10 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.times;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -23,12 +26,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.opensource.docgrid.domain.embedding.dto.response.ClaimedEmbeddingJobResponse;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobClaimService;
+import com.opensource.docgrid.domain.worker.config.IndexingWorkerProperties;
 import com.opensource.docgrid.domain.worker.execution.WorkerExecutionSlotPool;
 import com.opensource.docgrid.domain.worker.execution.WorkerExecutionSlotPool.WorkerExecutionSlot;
 import com.opensource.docgrid.domain.worker.service.WorkerIndexingPipeline;
 
 /**
- * Worker Poller의 등록 조건, 실행 슬롯 제한, Claim 중단과 제출 거부 시 자원 반환을 검증한다.
+ * Worker Poller의 등록 조건, 빈 Queue Backoff, 실행 슬롯 제한과 오류 시 자원 반환을 검증한다.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("WorkerJobPollingScheduler 테스트")
@@ -41,16 +45,20 @@ class WorkerJobPollingSchedulerTest {
 
     private WorkerExecutionSlotPool slotPool;
     private WorkerJobPollingScheduler scheduler;
+    private MutableClock clock;
 
     @BeforeEach
     void setUp() {
         slotPool = new WorkerExecutionSlotPool(2);
+        clock = new MutableClock(Instant.parse("2026-08-15T00:00:00Z"));
         scheduler = new WorkerJobPollingScheduler(
             workerLifecycleManager,
             claimService,
             slotPool,
             jobExecutor,
-            indexingPipeline
+            indexingPipeline,
+            new IndexingWorkerProperties(),
+            clock
         );
     }
 
@@ -76,6 +84,36 @@ class WorkerJobPollingSchedulerTest {
 
         then(claimService).should().claim(1L);
         then(jobExecutor).shouldHaveNoInteractions();
+        assertThat(slotPool.getAvailableSlots()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("빈 Claim 뒤 Backoff 시간 전에는 DB Claim을 다시 호출하지 않는다")
+    void poll_skipsClaim_beforeIdleBackoffExpires() {
+        given(workerLifecycleManager.getWorkerId()).willReturn(Optional.of(1L));
+        given(claimService.claim(1L)).willReturn(Optional.empty());
+
+        scheduler.poll();
+        clock.advanceSeconds(1);
+        scheduler.poll();
+
+        then(claimService).should().claim(1L);
+        assertThat(slotPool.getAvailableSlots()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Claim 오류는 빈 Queue Backoff로 처리하지 않는다")
+    void poll_retriesOnNextTick_afterClaimFailure() {
+        given(workerLifecycleManager.getWorkerId()).willReturn(Optional.of(1L));
+        given(claimService.claim(1L))
+            .willThrow(new IllegalStateException("database unavailable"))
+            .willReturn(Optional.empty());
+
+        scheduler.poll();
+        clock.advanceSeconds(1);
+        scheduler.poll();
+
+        then(claimService).should(times(2)).claim(1L);
         assertThat(slotPool.getAvailableSlots()).isEqualTo(2);
     }
 
@@ -153,5 +191,34 @@ class WorkerJobPollingSchedulerTest {
             LocalDateTime.of(2026, 8, 3, 18, 0),
             LocalDateTime.of(2026, 8, 3, 18, 5)
         );
+    }
+
+    /** Test Clock whose time advances without sleeping. */
+    private static final class MutableClock extends Clock {
+
+        private Instant instant;
+
+        private MutableClock(Instant instant) {
+            this.instant = instant;
+        }
+
+        private void advanceSeconds(long seconds) {
+            instant = instant.plusSeconds(seconds);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneId.of("UTC");
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
     }
 }

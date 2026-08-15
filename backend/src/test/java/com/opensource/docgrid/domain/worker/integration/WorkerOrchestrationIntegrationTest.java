@@ -8,6 +8,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -75,6 +76,7 @@ class WorkerOrchestrationIntegrationTest {
     @Autowired private EmbeddingJobLeaseService leaseService;
     @Autowired private EmbeddingJobLeaseRecoveryService recoveryService;
     @Autowired private IndexingWorkerProperties workerProperties;
+    @Autowired private Clock clock;
 
     @DynamicPropertySource
     static void configureDatabase(DynamicPropertyRegistry registry) {
@@ -300,7 +302,9 @@ class WorkerOrchestrationIntegrationTest {
             claimService,
             slotPool,
             jobExecutor,
-            pipeline
+            pipeline,
+            workerProperties,
+            clock
         );
     }
 

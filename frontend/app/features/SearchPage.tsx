@@ -6,6 +6,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { apiRequest, errorMessage } from "../lib/api";
 import type { Collection, SearchResponse } from "../lib/api-types";
+import { groupSearchSources } from "../lib/search-sources";
 import { ErrorState, StatusPill } from "../components/ui";
 
 const suggestions = ["배포 실패 시 롤백 절차", "법인카드 사용 기준", "보안 사고 보고 순서"];
@@ -56,8 +57,7 @@ export function SearchPage() {
     void search();
   }
 
-  // A document can contribute multiple chunks, so each citation must keep its own score.
-  const resultByChunk = new Map(result?.results.map((item) => [item.chunkId, item]) ?? []);
+  const groupedSources = result ? groupSearchSources(result) : [];
 
   return (
     <section className={`content search-view ${result || searching || error ? "has-results" : ""}`}>
@@ -77,10 +77,7 @@ export function SearchPage() {
           <div className="results-meta"><span>AI 답변</span><small>{result.results.length}개의 검색 결과 · queryId {result.queryId}</small></div>
           <article className="answer-card"><div className="answer-icon">✦</div><div className="answer-content"><h2>{query}</h2><p>{result.answer || "접근 가능한 문서에서 답을 생성하지 못했습니다."}</p></div></article>
           <div className="source-heading"><h2>검색 결과와 근거 문서</h2><span>유사도 높은 순</span></div>
-          <div className="source-list">{result.citations.length ? result.citations.map((citation) => {
-            const matching = resultByChunk.get(citation.chunkId);
-            return <a className="source-card" key={`${citation.chunkId}-${citation.label}`} href={`/documents/${citation.documentId}`} target="_top"><span className="source-number">{citation.label}</span><div><div className="source-title"><h3>{citation.documentTitle}</h3>{matching ? <StatusPill value={`${(Number(matching.similarityScore) * 100).toFixed(1)}%`} /> : null}</div><p>“{citation.quotedText}”</p><span>{citation.pageNo ? `${citation.pageNo}페이지 · ` : ""}문서 상세 보기 →</span></div></a>;
-          }) : result.results.map((item) => <a className="source-card" key={`${item.documentId}-${item.rank}`} href={`/documents/${item.documentId}`} target="_top"><span className="source-number">[{item.rank}]</span><div><div className="source-title"><h3>{item.documentTitle}</h3><StatusPill value={`${(Number(item.similarityScore) * 100).toFixed(1)}%`} /></div><p>“{item.chunkText}”</p><span>{item.pageNo ? `${item.pageNo}페이지 · ` : ""}문서 상세 보기 →</span></div></a>)}</div>
+          <div className="source-list">{groupedSources.map((source) => <a className="source-card" key={source.documentId} href={`/documents/${source.documentId}`} target="_top"><span className="source-labels">{source.labels.map((label) => <span className="source-number" key={label}>{label}</span>)}</span><div><div className="source-title"><h3>{source.documentTitle}</h3>{source.similarityScore !== null ? <StatusPill value={`${(source.similarityScore * 100).toFixed(1)}%`} /> : null}</div><p>{source.excerpts.map((excerpt) => `“${excerpt}”`).join(" · ")}</p><span>{source.chunkCount > 1 ? `${source.chunkCount}개 근거 · ` : ""}{source.pages.length > 0 ? `${source.pages.map((page) => `${page}페이지`).join(", ")} · ` : ""}문서 상세 보기 →</span></div></a>)}</div>
         </> : null}
       </div>}
     </section>

@@ -82,6 +82,7 @@ class SearchFacadeTest {
 
         assertThat(outcome.response().results()).hasSize(1);
         assertThat(outcome.response().results().get(0).rank()).isEqualTo(1);
+        assertThat(outcome.response().results().get(0).chunkId()).isEqualTo(2L);
         assertThat(outcome.candidates()).hasSize(1);
         assertThat(outcome.savedResults()).containsExactly(savedResult);
         then(searchResultCommandService).should(times(1)).saveAll(any(), any());

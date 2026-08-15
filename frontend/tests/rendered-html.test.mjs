@@ -91,6 +91,18 @@ test("uses full-page navigation for vinext catch-all routes", async () => {
   assert.match(source, /AbortSignal\.timeout\(SEARCH_TIMEOUT_MS\)/, "search should finish before the Sites request limit");
 });
 
+test("maps citation similarity scores by chunk instead of document", async () => {
+  const [searchPage, apiTypes] = await Promise.all([
+    readFile(new URL("../app/features/SearchPage.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/api-types.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(apiTypes, /export type SearchResult = \{[\s\S]*chunkId: number;/);
+  assert.match(searchPage, /new Map\(result\?\.results\.map\(\(item\) => \[item\.chunkId, item\]\)/);
+  assert.match(searchPage, /resultByChunk\.get\(citation\.chunkId\)/);
+  assert.doesNotMatch(searchPage, /resultByDocument/);
+});
+
 test("wires document metadata update and soft delete actions to their permissions", async () => {
   const source = await readFile(new URL("../app/features/DocumentsPage.tsx", import.meta.url), "utf8");
 

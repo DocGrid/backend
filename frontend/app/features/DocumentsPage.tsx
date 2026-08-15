@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiRequest, downloadBackendFile, errorMessage, previewBackendFile, toQuery } from "../lib/api";
-import type { DocumentContent, DocumentDetail, DocumentStatus, DocumentSummary, PageResponse, PermissionSummary } from "../lib/api-types";
+import type { DocumentContent, DocumentDetail, DocumentStatus, DocumentSummary, PageResponse, PermissionSummary, UpdateDocumentMetadataRequest } from "../lib/api-types";
 import { EmptyState, ErrorState, LoadingState, Notice, PageHeading, StatusPill, formatDate } from "../components/ui";
 
 const statuses = ["", "DRAFT", "UPLOADED", "INDEXING", "INDEXED", "FAILED", "ARCHIVED"];
@@ -46,13 +46,16 @@ export function DocumentsPage({ onUpload }: { onUpload: () => void }) {
   </section>;
 }
 
-export function DocumentDetailPage({ documentId, onVersionUpload }: { documentId: number; onVersionUpload: () => void }) {
+export function DocumentDetailPage({ documentId, onVersionUpload, notify }: { documentId: number; onVersionUpload: () => void; notify: (message: string) => void }) {
   const [document, setDocument] = useState<DocumentDetail | null>(null);
   const [content, setContent] = useState<DocumentContent | null>(null);
   const [status, setStatus] = useState<DocumentStatus | null>(null);
   const [permission, setPermission] = useState<PermissionSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [fileAction, setFileAction] = useState<"preview" | "download" | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [mutation, setMutation] = useState<"update" | "delete" | null>(null);
+  const [mutationError, setMutationError] = useState("");
   const [error, setError] = useState("");
   const [contentError, setContentError] = useState("");
 
@@ -122,10 +125,42 @@ export function DocumentDetailPage({ documentId, onVersionUpload }: { documentId
     }
   }
 
+  async function updateMetadata(request: UpdateDocumentMetadataRequest) {
+    setMutation("update");
+    setMutationError("");
+    try {
+      await apiRequest<void>(`/api/documents/${documentId}`, { method: "PATCH", body: request });
+      setEditing(false);
+      await load();
+      notify("문서 정보를 수정했습니다.");
+    } catch (reason) {
+      setMutationError(errorMessage(reason));
+    } finally {
+      setMutation(null);
+    }
+  }
+
+  async function deleteDocument() {
+    const confirmed = window.confirm(`“${document?.title ?? `문서 #${documentId}`}” 문서를 삭제할까요?\n원본 파일과 버전 이력은 보존됩니다.`);
+    if (!confirmed) return;
+
+    setMutation("delete");
+    setMutationError("");
+    try {
+      await apiRequest<void>(`/api/documents/${documentId}`, { method: "DELETE" });
+      notify("문서를 삭제했습니다.");
+      window.location.assign("/documents");
+    } catch (reason) {
+      setMutationError(errorMessage(reason));
+      setMutation(null);
+    }
+  }
+
   return <section className="content page-view">
     <div className="detail-back"><a href="/documents" target="_top">← 문서 목록</a><span>documentId {documentId}</span></div>
-    <PageHeading kicker="DOCUMENT DETAIL" title={document?.title ?? `문서 #${documentId}`} description={document?.description ?? "검색 가능한 버전과 현재 처리 중인 버전을 분리해서 확인합니다."} actions={<><StatusPill value={status?.documentStatus ?? document?.status ?? "LOADING"} />{document?.currentVersion ? <><button className="secondary-button" disabled={fileAction !== null} onClick={() => void accessFile("preview")}>{fileAction === "preview" ? "여는 중…" : "↗ 원본 미리보기"}</button><button className="secondary-button" disabled={fileAction !== null} onClick={() => void accessFile("download")}>{fileAction === "download" ? "다운로드 중…" : "↓ 다운로드"}</button></> : null}{permission?.canWrite ? <button className="primary-button" onClick={onVersionUpload}>＋ 새 버전 업로드</button> : null}</>} />
+    <PageHeading kicker="DOCUMENT DETAIL" title={document?.title ?? `문서 #${documentId}`} description={document?.description ?? "검색 가능한 버전과 현재 처리 중인 버전을 분리해서 확인합니다."} actions={<><StatusPill value={status?.documentStatus ?? document?.status ?? "LOADING"} />{document?.currentVersion ? <><button className="secondary-button" disabled={fileAction !== null || mutation !== null} onClick={() => void accessFile("preview")}>{fileAction === "preview" ? "여는 중…" : "↗ 원본 미리보기"}</button><button className="secondary-button" disabled={fileAction !== null || mutation !== null} onClick={() => void accessFile("download")}>{fileAction === "download" ? "다운로드 중…" : "↓ 다운로드"}</button></> : null}{permission?.canWrite ? <button className="secondary-button" disabled={mutation !== null} onClick={() => { setMutationError(""); setEditing(true); }}>문서 정보 수정</button> : null}{permission?.canWrite ? <button className="primary-button" disabled={mutation !== null} onClick={onVersionUpload}>＋ 새 버전 업로드</button> : null}{permission?.canAdmin ? <button className="danger-button" disabled={mutation !== null} onClick={() => void deleteDocument()}>{mutation === "delete" ? "삭제 중…" : "문서 삭제"}</button> : null}</>} />
     {error ? document || status || permission ? <Notice>{error}</Notice> : <ErrorState message={error} onRetry={() => void load()} /> : null}
+    {mutationError && !editing ? <Notice>{mutationError}</Notice> : null}
     {loading ? <LoadingState label="문서 상태를 확인하는 중입니다." /> : null}
     {!loading ? <>
       <div className="progress-card"><div className="panel-heading"><div><h2>인덱싱 진행 상태</h2><p>백엔드가 반환한 현재 버전과 처리 중 버전입니다.</p></div><span>실시간 조회</span></div><div className="status-flow"><div><span>현재 문서</span><strong>{status?.documentStatus ?? "—"}</strong></div><b>→</b><div><span>검색 가능 버전</span><strong>{status?.currentVersion ? `v${status.currentVersion.versionNo} · ${status.currentVersion.status}` : "없음"}</strong></div><b>→</b><div><span>처리 중 버전</span><strong>{status?.processingVersion ? `v${status.processingVersion.versionNo} · ${status.processingVersion.jobStatus}` : "없음"}</strong></div></div></div>
@@ -133,7 +168,27 @@ export function DocumentDetailPage({ documentId, onVersionUpload }: { documentId
       <div className="detail-grid three"><div className="panel-card"><div className="panel-heading"><h2>문서 정보</h2></div><dl><div><dt>형식</dt><dd>{document?.documentType ?? "—"}</dd></div><div><dt>출처</dt><dd>{document?.sourceType ?? "—"}</dd></div><div><dt>공개 범위</dt><dd>{document?.visibility ?? "—"}</dd></div><div><dt>소유자</dt><dd>{document ? document.ownerName ? `${document.ownerName} (#${document.ownerUserId})` : `user #${document.ownerUserId}` : "—"}</dd></div><div><dt>최근 수정</dt><dd>{formatDate(document?.updatedAt)}</dd></div></dl></div><div className="panel-card"><div className="panel-heading"><h2>내 권한</h2></div><div className="permission-checks"><StatusPill value={`READ ${permission?.canRead ? "✓" : "✕"}`} /><StatusPill value={`WRITE ${permission?.canWrite ? "✓" : "✕"}`} /><StatusPill value={`ADMIN ${permission?.canAdmin ? "✓" : "✕"}`} /></div><span className="field-label">권한 경로</span><div className="source-chips">{permission?.sources.length ? permission.sources.map((source) => <b key={source}>{source}</b>) : <span>없음</span>}</div></div><div className="panel-card"><div className="panel-heading"><h2>현재 버전</h2></div><dl><div><dt>버전</dt><dd>{document?.currentVersion ? `v${document.currentVersion.versionNo}` : status?.currentVersion ? `v${status.currentVersion.versionNo}` : "—"}</dd></div><div><dt>원본 파일</dt><dd>{document?.currentVersion?.originalFilename ?? "—"}</dd></div><div><dt>파일 크기</dt><dd>{formatBytes(document?.currentVersion?.fileSize)}</dd></div><div><dt>청크 수</dt><dd>{content?.chunkCount ?? "—"}</dd></div><div><dt>인덱싱 완료</dt><dd>{formatDate(document?.currentVersion?.indexedAt)}</dd></div></dl></div></div>
       <div className="panel-card document-content"><div className="panel-heading"><div><h2>추출 본문</h2><p>{content ? `v${content.versionNo} · ${content.chunkCount}개 청크로 복원` : "인덱싱 완료 후 조회할 수 있습니다."}</p></div></div>{content ? <pre>{content.content}</pre> : <EmptyState symbol="≡" title="조회 가능한 본문이 없습니다" description="현재 버전의 인덱싱 상태를 확인해 주세요." />}</div>
     </> : null}
+    {editing && document ? <DocumentMetadataModal document={document} busy={mutation === "update"} error={mutationError} onClose={() => { if (mutation === null) setEditing(false); }} onSubmit={updateMetadata} /> : null}
   </section>;
+}
+
+function DocumentMetadataModal({ document, busy, error, onClose, onSubmit }: {
+  document: DocumentDetail;
+  busy: boolean;
+  error: string;
+  onClose: () => void;
+  onSubmit: (request: UpdateDocumentMetadataRequest) => Promise<void>;
+}) {
+  const [title, setTitle] = useState(document.title);
+  const [description, setDescription] = useState(document.description ?? "");
+
+  return <div className="modal-layer"><form className="modal compact-modal" onSubmit={(event) => { event.preventDefault(); void onSubmit({ title, description }); }}>
+    <div className="modal-header"><div><span className="modal-symbol">✎</span><div><h2>문서 정보 수정</h2><p>검색 결과와 문서 화면에 표시되는 제목과 설명을 변경합니다.</p></div></div><button type="button" disabled={busy} aria-label="닫기" onClick={onClose}>×</button></div>
+    <label className="form-field">문서 제목<input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={500} required /></label>
+    <label className="form-field">문제 설명<textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={5} placeholder="문서가 해결하는 문제나 목적을 입력하세요." /></label>
+    {error ? <div className="form-error" role="alert">{error}</div> : null}
+    <div className="modal-footer"><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>취소</button><button className="primary-button" disabled={busy || !title.trim()}>{busy ? "저장 중…" : "변경사항 저장"}</button></div>
+  </form></div>;
 }
 
 function summaryToFallbackDetail(summary: DocumentSummary): DocumentDetail {

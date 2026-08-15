@@ -90,3 +90,13 @@ test("uses full-page navigation for vinext catch-all routes", async () => {
   }
   assert.match(source, /AbortSignal\.timeout\(SEARCH_TIMEOUT_MS\)/, "search should finish before the Sites request limit");
 });
+
+test("wires document metadata update and soft delete actions to their permissions", async () => {
+  const source = await readFile(new URL("../app/features/DocumentsPage.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /permission\?\.canWrite[\s\S]*문서 정보 수정/);
+  assert.match(source, /method: "PATCH"/);
+  assert.match(source, /permission\?\.canAdmin[\s\S]*문서 삭제/);
+  assert.match(source, /method: "DELETE"/);
+  assert.match(source, /window\.location\.assign\("\/documents"\)/);
+});

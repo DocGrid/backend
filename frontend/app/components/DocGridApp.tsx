@@ -40,7 +40,7 @@ function DocGridRouter({ initialRoute }: { initialRoute: string }) {
     if (route === "/documents") return <DocumentsPage onUpload={() => setUpload({ open: true })} />;
     if (route.startsWith("/documents/")) {
       const id = numericTail(route);
-      return id ? <DocumentDetailPage documentId={id} onVersionUpload={() => setUpload({ open: true, documentId: id })} /> : <NotFound />;
+      return id ? <DocumentDetailPage documentId={id} onVersionUpload={() => setUpload({ open: true, documentId: id })} notify={notify} /> : <NotFound />;
     }
     if (route === "/collections") return <CollectionsPage notify={notify} />;
     if (route.startsWith("/collections/")) {

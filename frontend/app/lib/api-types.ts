@@ -91,6 +91,11 @@ export type DocumentDetail = {
   updatedAt: string;
 };
 
+export type UpdateDocumentMetadataRequest = {
+  title: string;
+  description: string | null;
+};
+
 export type DocumentContent = {
   documentId: number;
   documentVersionId: number;

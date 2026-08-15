@@ -134,6 +134,7 @@ export type DocumentVersionUploadResponse = {
 export type SearchResult = {
   rank: number;
   documentId: number;
+  chunkId: number;
   documentTitle: string;
   chunkText: string;
   pageNo: number | null;

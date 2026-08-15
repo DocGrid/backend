@@ -89,6 +89,7 @@ test("uses full-page navigation for vinext catch-all routes", async () => {
     assert.match(anchor, /\btarget=["']_top["']/, `${anchor} should bypass vinext client navigation`);
   }
   assert.match(source, /AbortSignal\.timeout\(SEARCH_TIMEOUT_MS\)/, "search should finish before the Sites request limit");
+  assert.match(source, /const SEARCH_TIMEOUT_MS = 29_000;/, "search should wait for the backend Ollama fallback");
 });
 
 test("maps citation similarity scores by chunk instead of document", async () => {

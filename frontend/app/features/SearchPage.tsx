@@ -9,7 +9,7 @@ import type { Collection, SearchResponse } from "../lib/api-types";
 import { ErrorState, StatusPill } from "../components/ui";
 
 const suggestions = ["배포 실패 시 롤백 절차", "법인카드 사용 기준", "보안 사고 보고 순서"];
-const SEARCH_TIMEOUT_MS = 27_000;
+const SEARCH_TIMEOUT_MS = 29_000;
 
 export function SearchPage() {
   const [query, setQuery] = useState("");

@@ -238,4 +238,17 @@ class AuthCommandServiceTest {
 
         then(tokenBlacklistService).shouldHaveNoInteractions();
     }
+
+    @Test
+    @DisplayName("jti가 없는 토큰으로 로그아웃하면 블랙리스트에 등록하지 않는다")
+    void logout_doesNothing_whenJtiMissing() {
+        String token = "legacy-token-without-jti";
+        Claims claims = mock(Claims.class);
+        given(jwtProvider.getClaimsIfValid(token)).willReturn(claims);
+        given(claims.get("jti", String.class)).willReturn(null);
+
+        authCommandService.logout(token);
+
+        then(tokenBlacklistService).shouldHaveNoInteractions();
+    }
 }

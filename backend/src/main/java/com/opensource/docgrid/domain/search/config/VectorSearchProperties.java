@@ -8,16 +8,18 @@ import org.springframework.validation.annotation.Validated;
 
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 벡터 검색 결과가 유효한 문맥으로 인정받기 위한 최소 코사인 유사도를 제공한다.
+ * 벡터 검색의 관련성, 문서 다양성과 후보 풀 정책을 제공한다.
  *
- * <p>{@code search.vector} 설정을 바인딩하고 애플리케이션 시작 시 0~1 범위만 허용한다.
+ * <p>{@code search.vector} 설정을 바인딩하고 애플리케이션 시작 시 각 정책의 안전한 범위를 검증한다.
  * 이 설정은 사용자 요청이 아니라 서버 정책으로 적용되어 검색 응답, 저장 결과와 RAG 문맥이
- * 동일한 관련성 기준을 사용하도록 제한한다.
+ * 동일한 관련성과 문서 다양성 기준을 사용하도록 제한한다.
  */
 @Getter
 @Setter
@@ -30,4 +32,12 @@ public class VectorSearchProperties {
     @DecimalMin("0.0")
     @DecimalMax("1.0")
     private BigDecimal minSimilarity = new BigDecimal("0.30");
+
+    @Min(1)
+    @Max(20)
+    private int maxChunksPerDocument = 2;
+
+    @Min(1)
+    @Max(10)
+    private int candidatePoolMultiplier = 4;
 }

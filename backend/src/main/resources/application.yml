@@ -101,6 +101,10 @@ search:
   vector:
     # Top-K 후보 중 이 코사인 유사도 이상인 Chunk만 검색 결과와 RAG 문맥으로 사용한다.
     min-similarity: ${SEARCH_VECTOR_MIN_SIMILARITY:0.30}
+    # 한 문서가 검색 결과와 RAG 문맥을 독점하지 않도록 문서별 Chunk 수를 제한한다.
+    max-chunks-per-document: ${SEARCH_VECTOR_MAX_CHUNKS_PER_DOCUMENT:2}
+    # HNSW 순서를 유지하면서 문서 다양성 필터에 필요한 후보만 제한적으로 추가 조회한다.
+    candidate-pool-multiplier: ${SEARCH_VECTOR_CANDIDATE_POOL_MULTIPLIER:4}
 
 ollama:
   server:

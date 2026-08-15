@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
@@ -115,6 +116,42 @@ class VectorSearchQueryServiceTest {
 
         assertThat(result).extracting(VectorSearchCandidate::chunkId)
             .containsExactly(11L, 12L);
+    }
+
+    @Test
+    @DisplayName("다양성 케이스: 같은 문서는 설정된 청크 수만 유지하고 다른 문서 후보를 포함한다")
+    void search_sameDocumentCandidates_limitsChunksAndKeepsOtherDocuments() {
+        VectorSearchRow first = mockRow(1L, 11L, 3L, "첫 번째", 1, "문서 A", 0.1);
+        VectorSearchRow second = mockRow(2L, 12L, 3L, "두 번째", 2, "문서 A", 0.2);
+        VectorSearchRow duplicate = mockRow(3L, 13L, 3L, "세 번째", 3, "문서 A", 0.25);
+        VectorSearchRow otherDocument = mockRow(4L, 21L, 4L, "다른 문서", 1, "문서 B", 0.3);
+        given(vectorSearchRepository.findTopK(anyString(), anyLong(), any(), anyInt()))
+            .willReturn(List.of(first, second, duplicate, otherDocument));
+
+        List<VectorSearchCandidate> result = vectorSearchQueryService.search(
+            VECTOR, MODEL_ID, List.of(3L, 4L), 4
+        );
+
+        assertThat(result).extracting(VectorSearchCandidate::chunkId)
+            .containsExactly(11L, 12L, 21L);
+        then(vectorSearchRepository).should().findTopK(anyString(), eq(MODEL_ID), eq(List.of(3L, 4L)), eq(16));
+    }
+
+    @Test
+    @DisplayName("설정 케이스: 문서별 청크 상한을 변경하면 변경한 수만 유지한다")
+    void search_customDocumentLimit_appliesConfiguredValue() {
+        vectorSearchProperties.setMaxChunksPerDocument(1);
+        VectorSearchRow first = mockRow(1L, 11L, 3L, "첫 번째", 1, "문서", 0.1);
+        VectorSearchRow second = mockRow(2L, 12L, 3L, "두 번째", 2, "문서", 0.2);
+        given(vectorSearchRepository.findTopK(anyString(), anyLong(), any(), anyInt()))
+            .willReturn(List.of(first, second));
+
+        List<VectorSearchCandidate> result = vectorSearchQueryService.search(
+            VECTOR, MODEL_ID, List.of(3L), 5
+        );
+
+        assertThat(result).extracting(VectorSearchCandidate::chunkId)
+            .containsExactly(11L);
     }
 
     @Test

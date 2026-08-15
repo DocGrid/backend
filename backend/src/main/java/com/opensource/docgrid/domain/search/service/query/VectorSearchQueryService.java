@@ -1,7 +1,10 @@
 package com.opensource.docgrid.domain.search.service.query;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,8 +20,8 @@ import lombok.extern.slf4j.Slf4j;
  * pgvector 코사인 거리 검색 서비스 (F-SEARCH-05).
  *
  * <p>permittedIds가 빈 목록이면 DB를 조회하지 않고 즉시 빈 목록을 반환한다.
- * queryVector는 '[v1,v2,...]' 형식 문자열로 변환해 네이티브 쿼리에 전달한다. 조회된 Top-K 후보는
- * 서버의 최소 유사도 정책을 통과한 경우에만 권한 검증, 저장과 RAG 문맥의 다음 단계로 전달한다.
+ * queryVector는 '[v1,v2,...]' 형식 문자열로 변환해 네이티브 쿼리에 전달한다. 제한된 후보 풀을
+ * 기존 유사도 순서로 조회하고, 최소 유사도와 문서별 청크 상한을 통과한 Top-K만 다음 단계로 전달한다.
  */
 @Transactional(readOnly = true)
 @Service
@@ -41,23 +44,55 @@ public class VectorSearchQueryService {
         }
 
         String vectorStr = toVectorString(queryVector);
-        log.debug("[SEARCH] vector search modelId={} permittedCount={} topK={}", modelId, permittedIds.size(), topK);
+        int candidateLimit = topK * vectorSearchProperties.getCandidatePoolMultiplier();
+        log.debug("[SEARCH] vector search modelId={} permittedCount={} topK={} candidateLimit={}",
+            modelId, permittedIds.size(), topK, candidateLimit);
 
-        // 1. OpenSQL/pgvector의 기존 Top-K 순서와 실행계획을 유지한 채 후보를 조회한다.
-        List<VectorSearchCandidate> candidates = vectorSearchRepository.findTopK(vectorStr, modelId, permittedIds, topK)
+        // 1. HNSW 실행계획을 유지하면서 문서 다양성 필터에 필요한 후보만 제한적으로 더 조회한다.
+        List<VectorSearchCandidate> candidates = vectorSearchRepository.findTopK(
+                vectorStr, modelId, permittedIds, candidateLimit)
             .stream()
             .map(VectorSearchCandidate::from)
             .toList();
 
-        // 2. 임계값 미달 후보가 검색 저장 결과나 RAG 근거로 전달되지 않도록 서버 경계에서 제거한다.
+        // 2. 관련성 미달과 한 문서의 과도한 청크를 제거한 뒤 요청한 Top-K에서 중단한다.
         BigDecimal minSimilarity = vectorSearchProperties.getMinSimilarity();
-        List<VectorSearchCandidate> qualified = candidates.stream()
-            .filter(candidate -> candidate.similarityScore().compareTo(minSimilarity) >= 0)
-            .toList();
+        int maxChunksPerDocument = vectorSearchProperties.getMaxChunksPerDocument();
+        List<VectorSearchCandidate> selected = selectCandidates(
+            candidates, topK, minSimilarity, maxChunksPerDocument);
 
-        log.info("[SEARCH] relevance filter modelId={} topK={} minSimilarity={} before={} after={}",
-            modelId, topK, minSimilarity, candidates.size(), qualified.size());
-        return qualified;
+        log.info("[SEARCH] candidate filter modelId={} topK={} candidateLimit={} minSimilarity={} "
+                + "maxChunksPerDocument={} before={} after={}",
+            modelId, topK, candidateLimit, minSimilarity, maxChunksPerDocument, candidates.size(), selected.size());
+        return selected;
+    }
+
+    private List<VectorSearchCandidate> selectCandidates(
+        List<VectorSearchCandidate> candidates,
+        int topK,
+        BigDecimal minSimilarity,
+        int maxChunksPerDocument
+    ) {
+        List<VectorSearchCandidate> selected = new ArrayList<>(topK);
+        Map<Long, Integer> documentCounts = new HashMap<>();
+
+        for (VectorSearchCandidate candidate : candidates) {
+            if (candidate.similarityScore().compareTo(minSimilarity) < 0) {
+                continue;
+            }
+
+            int documentCount = documentCounts.getOrDefault(candidate.documentId(), 0);
+            if (documentCount >= maxChunksPerDocument) {
+                continue;
+            }
+
+            selected.add(candidate);
+            documentCounts.put(candidate.documentId(), documentCount + 1);
+            if (selected.size() == topK) {
+                break;
+            }
+        }
+        return List.copyOf(selected);
     }
 
     private String toVectorString(float[] vector) {

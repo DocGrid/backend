@@ -82,10 +82,14 @@ RAG_SERVICE_UNAVAILABLE(
 ollama:
   server:
     base-url: ${OLLAMA_SERVER_URL:http://localhost:11434}
-  model: ${OLLAMA_MODEL:qwen2.5:3b}
+  model: ${OLLAMA_MODEL:qwen2.5:7b}
 ```
 
 `base-url`(Issue 1에서 추가)은 "어디로 요청을 보낼지"이고, `model`(이번 이슈)은 "그 서버한테 어떤 모델로 답변을 생성해달라고 할지"다. 같은 Ollama 서버에 여러 모델이 동시에 올라가 있을 수 있어서 요청마다 모델명을 명시해야 한다. 명세 0.3의 "qwen2.5:3b → 7b로 재임베딩 없이 교체 가능해야 함" 요구를 만족하기 위해 코드에 하드코딩하지 않고 설정값으로 뺐다 — 나중에 모델을 바꿀 때 `OLLAMA_MODEL` 환경변수만 바꾸면 되고 코드/재배포가 필요 없다.
+
+> **업데이트(#184)**: 실제로 이 교체가 일어났다. Qwen2.5 시리즈 중 `3b`와 `72b`만 예외적으로 "Qwen Research License"(비상업 연구용 한정)가 적용되고, 나머지(`0.5b`/`1.5b`/`7b`/`14b`/`32b`)는 Apache 2.0이라는 사실이 확인됐다(Alibaba 공식 블로그, HuggingFace 모델 카드). 본 프로젝트가 오픈소스 개발자대회 출품작이라 사용 모델까지 완전 오픈소스(OSI 승인 라이선스)여야 한다는 판단 하에, 기본값을 `qwen2.5:3b` → `qwen2.5:7b`(Apache 2.0)로 교체했다. 검토했던 대안은 두 가지였다 — ① `1.5b`로 다운그레이드(라이선스는 해결되지만 RAG 응답 품질 저하 우려), ② `3b` 유지 + 비상업 용도 고지(라이선스 리스크가 완전히 사라지지 않음). LLM 추론이 서버가 아니라 로컬(docker-compose `ollama` 서비스)에서만 도는 구조로 결정되어 서버 리소스 제약(t3.large, 2vCPU)이 무관해졌고, 로컬 검증 환경(MacBook Air M2, 16GB RAM)에서 `qwen2.5:7b` 기본 quant(Q4_K_M, ~4.7GB)를 감당할 수 있는 것도 확인해서 `7b`로 결정했다. 코드 변경은 이 설정값 한 줄뿐이었고, 위에서 설명한 "모델명을 설정값으로 외부화" 설계가 의도대로 재배포 없이 교체 가능함을 실제로 증명했다.
+
+> **주의**: "재배포 없이 교체 가능"은 코드 변경/재빌드가 필요 없다는 뜻이지, 무중단으로 자동 전환된다는 뜻은 아니다. `OllamaClient`가 `model`을 생성자 주입(`@Value("${ollama.model}")`)으로 받기 때문에, 이미 떠 있는 프로세스는 `OLLAMA_MODEL` 값이 바뀌어도 그 값을 다시 읽지 않는다. 실제로 교체하려면 ① 새 모델을 `ollama pull`로 미리 받아두고 ② 애플리케이션을 재시작해야 한다.
 
 ### 3. `global/config/OllamaServerConfig.java` (신규)
 
@@ -96,13 +100,19 @@ public class OllamaServerConfig {
     @Value("${ollama.server.base-url}")
     private String baseUrl;
 
+    @Value("${ollama.server.connect-timeout:5s}")
+    private Duration connectTimeout;
+
+    @Value("${ollama.server.read-timeout:20s}")
+    private Duration readTimeout;
+
     @Bean("ollamaRestClient")
     public RestClient ollamaRestClient() {
         HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
+            .connectTimeout(connectTimeout)
             .build();
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
-        requestFactory.setReadTimeout(Duration.ofSeconds(30));
+        requestFactory.setReadTimeout(readTimeout);
 
         return RestClient.builder()
             .baseUrl(baseUrl)
@@ -114,8 +124,9 @@ public class OllamaServerConfig {
 
 **한 줄 요약**: `EmbeddingServerConfig`와 완전히 동일한 구조로, Ollama 전용 `RestClient` Bean을 하나 등록한다.
 
-- `connectTimeout(5초)`: 로컬 docker 컨테이너라 연결 자체는 임베딩 서버와 마찬가지로 빨리 되거나 안 되거나이므로 5초로 동일하게 뒀다.
-- `readTimeout(30초)`: 임베딩 서버(5초)보다 6배 길게 잡았다. 벡터 변환은 순간적으로 끝나지만, LLM이 텍스트를 토큰 단위로 하나씩 생성하는 건 본질적으로 훨씬 오래 걸린다. 명세의 NFR("전체 응답 5초 이내")은 목표치이지 하드 타임아웃이 아니라서, 너무 짧게 잡아 정상적으로 생성 중인 요청을 조기에 503으로 끊어버리는 걸 피하고자 여유 있게 잡았다.
+- `connectTimeout`(기본 5초): 로컬 docker 컨테이너라 연결 자체는 임베딩 서버와 마찬가지로 빨리 되거나 안 되거나이므로 5초로 동일하게 뒀다.
+- `readTimeout`(기본 20초): 임베딩 서버(5초)보다 4배 길게 잡았다. 벡터 변환은 순간적으로 끝나지만, LLM이 텍스트를 토큰 단위로 하나씩 생성하는 건 본질적으로 훨씬 오래 걸린다. 명세의 NFR("전체 응답 5초 이내")은 목표치이지 하드 타임아웃이 아니라서, 너무 짧게 잡아 정상적으로 생성 중인 요청을 조기에 503으로 끊어버리는 걸 피하고자 여유 있게 잡았다.
+- `@Value("${ollama.server.connect-timeout:5s}")`/`read-timeout`: 값을 코드에 하드코딩하지 않고 `application.yml`(`OLLAMA_SERVER_CONNECT_TIMEOUT`/`OLLAMA_SERVER_READ_TIMEOUT`)로 외부화했다 — Sites Worker의 30초 요청 제한보다 먼저 종료해 검색 결과 Fallback을 반환해야 한다는 요구가 후속 이슈에서 추가되며, 환경별로 값을 조정할 수 있게 바뀌었다.
 - `@Bean("ollamaRestClient")`: 임베딩용 `RestClient`와 이름으로 구분해서, `OllamaClient`가 `@Qualifier`로 정확히 이 Bean만 주입받게 한다.
 
 ### 4. DTO 3종 (신규)
@@ -274,6 +285,13 @@ qwen2.context_length = 32768
 ```
 `qwen2.5:3b`가 한 번의 요청에서 처리 가능한 최대 토큰(프롬프트+답변 합산)은 32,768개다. 검색 Top-K가 기본 5, 최대 20(`SearchRequest.topK`)이라 지금 구조에서 이 한도를 넘을 가능성은 낮지만, 나중에 topK를 크게 늘리거나 chunk 텍스트가 매우 길어지는 경우가 생기면 점검이 필요할 수 있다.
 
+> **업데이트(#184)**: `qwen2.5:7b`도 동일하게 조회해 확인했다.
+> ```bash
+> $ curl -s http://localhost:11434/api/show -d '{"model":"qwen2.5:7b"}'
+> qwen2.context_length = 32768
+> ```
+> Qwen2.5 아키텍처 자체는 최대 128K 토큰까지 지원하지만(YaRN 확장 필요), Ollama 기본 배포 설정은 `7b`도 `3b`와 동일하게 32,768로 캡되어 있다. 따라서 위 판단(현재 topK 범위에서 실질적 위험 낮음)은 모델 교체 후에도 그대로 유효하다.
+
 ### 4. 단위 테스트 / 빌드
 
 ```bash
@@ -284,6 +302,46 @@ $ ./gradlew build -x test
 BUILD SUCCESSFUL
 ```
 4개 테스트(정상/서버장애/빈응답/빈response필드) 모두 통과.
+
+### 5. (#184) 모델 교체 후 RAG E2E 재검증
+
+`qwen2.5:3b` → `7b` 교체(기본값만 변경, 코드 무변경) 후 실제로 전체 파이프라인이 `7b`로 정상 동작하는지 로컬에서 확인했다. Issue 5(#75) 이후에나 가능하다고 위 "주의"에 적어뒀던 진짜 e2e(`POST /search`, 실제 DB 데이터 기반)를 이 시점에 처음 수행했다.
+
+```bash
+$ docker exec docgrid-ollama ollama pull qwen2.5:7b
+# ... 4.7GB pull 완료
+
+$ docker exec docgrid-ollama ollama list
+NAME          ID              SIZE      MODIFIED
+qwen2.5:7b    845dbda0ea48    4.7 GB    ...
+qwen2.5:3b    357c53fb659c    1.9 GB    ...
+```
+
+```bash
+$ curl -s -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"local-test@example.com","password":"<local-test-password>"}'
+{"success":true,"status":200,"data":{"accessToken":"...(생략)","tokenType":"Bearer",...},"timestamp":"2026-08-15 12:45:25"}
+
+$ curl -s -X POST http://localhost:8080/search \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"queryText":"Spring Boot가 뭐야?","topK":3}'
+{"success":true,"status":200,"data":{"queryId":90,"results":[{"rank":1,"documentId":1,"documentTitle":"Spring Boot 개발 가이드","chunkText":"Spring Boot Starter는 의존성 관리를 단순화합니다. @SpringBootApplication 어노테이션으로 애플리케이션을 시작합니다.","pageNo":null,"similarityScore":0.036697},{"rank":2,"documentId":2,"documentTitle":"Python 데이터 분석 입문","chunkText":"Python은 데이터 분석에 널리 사용되는 프로그래밍 언어입니다. pandas 라이브러리로 데이터를 효율적으로 처리합니다.","pageNo":null,"similarityScore":0.000000},{"rank":3,"documentId":2,"documentTitle":"Python 데이터 분석 입문","chunkText":"numpy는 수치 계산을 위한 Python 라이브러리입니다. 다차원 배열 연산과 선형대수 기능을 제공합니다.","pageNo":null,"similarityScore":0.000000}],"answer":"Spring Boot는 의존성 관리를 단순화하기 위해 사용되는 프레임워크로, @SpringBootApplication 어노테이션으로 애플리케이션을 시작할 수 있습니다.","citations":[{"label":"[1]","documentId":1,"documentTitle":"Spring Boot 개발 가이드","chunkId":2,"pageNo":null,"quotedText":"Spring Boot Starter는 의존성 관리를 단순화합니다. @SpringBootApplication 어노테이션으로 애플리케이션을 시작합니다."},{"label":"[2]","documentId":2,"documentTitle":"Python 데이터 분석 입문","chunkId":3,"pageNo":null,"quotedText":"Python은 데이터 분석에 널리 사용되는 프로그래밍 언어입니다. pandas 라이브러리로 데이터를 효율적으로 처리합니다."},{"label":"[3]","documentId":2,"documentTitle":"Python 데이터 분석 입문","chunkId":4,"pageNo":null,"quotedText":"numpy는 수치 계산을 위한 Python 라이브러리입니다. 다차원 배열 연산과 선형대수 기능을 제공합니다."}]},"timestamp":"2026-08-15 12:45:55"}
+```
+
+`R__seed_test_fixtures.sql`로 시드된 "Spring Boot 개발 가이드" 문서를 근거로 정상 답변과 citation `[1]`이 반환됨을 확인했다.
+
+```bash
+$ docker exec docgrid-postgres17 psql -U docgrid -d docgrid -c \
+  "SELECT query_id, llm_provider, llm_model_name FROM rag_responses WHERE query_id = 90;"
+ query_id | llm_provider | llm_model_name
+----------+--------------+----------------
+       90 | Ollama       | qwen2.5:7b
+(1 row)
+```
+
+**결론**: `rag_responses.llm_model_name`에 `qwen2.5:7b`가 그대로 기록됨을 확인해, 답변이 실제로 교체된 `7b` 모델로 생성됐음을 검증했다. `application.yml` 설정값 변경만으로 재배포 없이 모델이 바뀐다는 설계(위 "설계 결정 요약" 참고)가 실전에서도 그대로 작동했다.
 
 ---
 
@@ -313,11 +371,14 @@ PR에 자동 코드리뷰 코멘트 2건이 달렸고, 각각 다음과 같이 �
 **기존 임베딩 서버 연동 패턴을 그대로 재사용**
 `RestClient` Bean 분리 + 얇은 서비스가 `RestClientException`을 도메인 예외로 변환하는 구조를, 새로 고안하지 않고 `EmbeddingServerConfig`/`QueryEmbeddingService`에서 그대로 가져왔다. 같은 유형의 문제(로컬 사이드카 HTTP 호출)에 다른 해법을 쓸 이유가 없었다.
 
-**readTimeout을 임베딩 서버보다 6배 길게(5초 → 30초)**
-LLM 텍스트 생성은 벡터 변환과 걸리는 시간의 성격이 다르다. NFR의 "5초 이내"는 목표치이지 하드 타임아웃이 아니므로, 짧은 타임아웃으로 정상 생성 중인 요청을 조기에 끊는 것을 피했다.
+**readTimeout을 임베딩 서버보다 길게(5초 → 기본 20초, 설정으로 조정 가능)**
+LLM 텍스트 생성은 벡터 변환과 걸리는 시간의 성격이 다르다. NFR의 "5초 이내"는 목표치이지 하드 타임아웃이 아니므로, 짧은 타임아웃으로 정상 생성 중인 요청을 조기에 끊는 것을 피했다. 이후 Sites Worker의 30초 요청 제한보다 먼저 종료해 검색 결과 Fallback을 반환해야 한다는 요구가 추가되며 하드코딩 값이 `OLLAMA_SERVER_READ_TIMEOUT` 설정값으로 외부화됐다(위 "3. `OllamaServerConfig.java`" 절 참고).
 
 **모델명을 설정값으로 외부화**
 `qwen2.5:3b` → `7b` 같은 향후 교체 시나리오(명세 0.3)에 대비해, `OllamaClient` 코드에는 모델명을 전혀 하드코딩하지 않았다. `application.yml`의 `ollama.model` 값만 바꾸면 재배포 없이(환경변수 재주입만으로) 교체 가능하다.
+
+**(#184 추가) 라이선스 문제로 기본 모델을 `3b` → `7b`로 교체**
+Qwen2.5 `3b`가 Apache 2.0이 아니라 비상업 연구용 "Qwen Research License"임이 확인되어, 오픈소스 대회 출품 요건을 맞추려고 Apache 2.0인 `7b`로 기본값을 바꿨다. `1.5b` 다운그레이드(품질 저하 우려)와 `3b` 유지+고지(라이선스 리스크 잔존) 대안을 검토했으나, LLM을 서버가 아닌 로컬에서만 구동하기로 해 리소스 제약이 사라진 점을 고려해 `7b`를 선택했다. 자세한 내용은 위 "2. `application.yml`" 절의 업데이트 노트 참고.
 
 **`OllamaGenerateResponse` → `OllamaGenerateResult` 2단계 변환**
 외부 서버(Ollama)의 응답 형식에 종속된 그릇과, 우리 서비스가 실제로 쓰는 값만 담은 그릇을 분리했다. `EmbedResult`와 동일한 패턴이며, Ollama 응답 형식이 바뀌거나 다른 LLM으로 교체해도 `OllamaClient` 호출부(Issue 3, 5)는 영향을 받지 않는다.
@@ -338,7 +399,7 @@ LLM 텍스트 생성은 벡터 변환과 걸리는 시간의 성격이 다르다
 ### 코드
 - `OllamaClient`는 아직 어디에서도 호출되지 않는 독립 컴포넌트 — Issue 5에서 `RagFacade`가 실제로 연결한다.
 - `OllamaGenerateRequest`에 대한 명시적 유효성 검증은 현재 호출 경로상 불필요하다고 판단해 추가하지 않았다(위 "코드리뷰 반영" 표 참고). 향후 `OllamaClient.generate()`를 다른 곳에서도 직접 호출하게 되는 상황이 생기면 재검토가 필요하다.
-- `qwen2.5:3b`의 컨텍스트 한도(32,768 토큰)에 대한 명시적 방어(예: 프롬프트가 너무 길면 사전에 잘라내기)는 아직 없다. 지금 topK 범위(1~20)에서는 실질적 위험이 낮아 보류.
+- ~~`qwen2.5:3b`의 컨텍스트 한도(32,768 토큰)에 대한 명시적 방어(예: 프롬프트가 너무 길면 사전에 잘라내기)는 아직 없다. 지금 topK 범위(1~20)에서는 실질적 위험이 낮아 보류.~~ → 기본 모델이 `qwen2.5:7b`로 바뀌었으나(#184) `qwen2.context_length`는 동일하게 32,768로 확인되어(로컬 `ollama show` 검증) 이 판단은 그대로 유효하다. 방어 로직 자체는 여전히 미구현 상태.
 
 ### 다음 단계
 Issue 3 — `RagResponseRepository` + `RagResponseCommandService` 구현. 이번 이슈에서 만든 `OllamaGenerateResult`를 받아 `rag_responses`에 SUCCESS/FAILED 상태로 저장한다. FAILED 기록은 `SearchQueryCommandService.markFailed()`와 동일하게 `@Transactional(propagation = REQUIRES_NEW)` 패턴을 검토한다.

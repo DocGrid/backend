@@ -33,3 +33,11 @@ minio:
   access-key: ${MINIO_ACCESS_KEY}
   secret-key: ${MINIO_SECRET_KEY}
   bucket: ${MINIO_BUCKET}
+
+indexing:
+  worker:
+    enabled: ${INDEXING_WORKER_ENABLED:true}
+
+sync:
+  dispatcher:
+    enabled: ${SYNC_DISPATCHER_ENABLED:true}

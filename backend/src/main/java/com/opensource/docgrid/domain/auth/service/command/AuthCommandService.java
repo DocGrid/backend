@@ -110,9 +110,13 @@ public class AuthCommandService {
         }
 
         String jti = claims.get("jti", String.class);
-        long remainingSeconds = Duration.between(Instant.now(), claims.getExpiration().toInstant()).getSeconds();
+        if (jti == null) {
+            return;
+        }
 
-        if (remainingSeconds > 0) {
+        long remainingMillis = Duration.between(Instant.now(), claims.getExpiration().toInstant()).toMillis();
+        if (remainingMillis > 0) {
+            long remainingSeconds = (remainingMillis + 999) / 1000;
             tokenBlacklistService.blacklist(jti, remainingSeconds);
         }
     }

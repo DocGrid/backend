@@ -25,11 +25,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 5000);
     try {
-      await apiRequest("/auth/logout", { method: "POST" });
+      await apiRequest("/auth/logout", { method: "POST", signal: controller.signal });
     } catch {
-      // 백엔드 로그아웃이 실패해도 클라이언트 세션은 항상 정리한다.
+      // 백엔드 로그아웃이 실패하거나 시간 초과돼도 클라이언트 세션은 항상 정리한다.
     } finally {
+      window.clearTimeout(timeoutId);
       logout();
     }
   }, [logout]);

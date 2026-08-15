@@ -18,6 +18,8 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
+      # 인증 요청마다 동기 조회하므로, Redis가 응답하지 않을 때 fail-open이 빠르게 동작하도록 짧게 제한한다.
+      timeout: ${REDIS_TIMEOUT:1s}
   ai:
     mcp:
       server:

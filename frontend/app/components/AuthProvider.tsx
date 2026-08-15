@@ -9,6 +9,7 @@ type AuthContextValue = {
   loading: boolean;
   login: (email: string, password: string) => Promise<MeResponse>;
   logout: () => void;
+  signOut: () => Promise<void>;
   refresh: () => Promise<MeResponse | null>;
 };
 
@@ -22,6 +23,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.sessionStorage.removeItem(ACCESS_TOKEN_KEY);
     setUser(null);
   }, []);
+
+  const signOut = useCallback(async () => {
+    try {
+      await apiRequest("/auth/logout", { method: "POST" });
+    } catch {
+      // 백엔드 로그아웃이 실패해도 클라이언트 세션은 항상 정리한다.
+    } finally {
+      logout();
+    }
+  }, [logout]);
 
   const refresh = useCallback(async () => {
     const token = window.sessionStorage.getItem(ACCESS_TOKEN_KEY);
@@ -66,7 +77,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return me;
   }, []);
 
-  const value = useMemo(() => ({ user, loading, login, logout, refresh }), [user, loading, login, logout, refresh]);
+  const value = useMemo(
+    () => ({ user, loading, login, logout, signOut, refresh }),
+    [user, loading, login, logout, signOut, refresh],
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

@@ -110,6 +110,31 @@ class SearchFacadeTest {
     }
 
     @Test
+    @DisplayName("유사도 필터 결과가 비어있으면 검색 결과를 저장하지 않고 빈 후보를 반환한다")
+    void search_noQualifiedCandidates_returnsEmptyOutcome() {
+        EmbedResult embedResult = new EmbedResult(EmbeddingModelFixture.createDefaultModel(), new float[1024]);
+        SearchQuery searchQuery = SearchQueryFixture.createProcessing();
+
+        given(queryEmbeddingService.embed(anyString())).willReturn(embedResult);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(com.opensource.docgrid.domain.user.entity.User.builder()
+            .email("test@test.com").passwordHash("hash").name("테스트").build()));
+        given(searchQueryCommandService.createProcessing(any(), any(), anyString(), any(), any(), anyInt()))
+            .willReturn(searchQuery);
+        given(accessibleDocumentQueryService.findReadableDocumentIds(USER_ID, null)).willReturn(List.of(3L));
+        given(vectorSearchQueryService.search(any(), any(), any(), anyInt())).willReturn(List.of());
+        given(searchResultCommandService.saveAll(searchQuery, List.of())).willReturn(List.of());
+
+        SearchOutcome outcome = searchFacade.search(USER_ID, REQUEST);
+
+        assertThat(outcome.response().results()).isEmpty();
+        assertThat(outcome.candidates()).isEmpty();
+        assertThat(outcome.savedResults()).isEmpty();
+        then(permissionQueryService).should(never()).canReadDocument(anyLong(), anyLong());
+        then(searchResultCommandService).should(times(1)).saveAll(searchQuery, List.of());
+        then(searchQueryCommandService).should(times(1)).markSuccess(any(), anyInt());
+    }
+
+    @Test
     @DisplayName("live check에서 탈락한 후보는 결과에서 제외된다")
     void search_liveCheckFiltersOut_excludesCandidate() {
         EmbedResult embedResult = new EmbedResult(EmbeddingModelFixture.createDefaultModel(), new float[1024]);

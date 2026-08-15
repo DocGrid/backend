@@ -97,6 +97,11 @@ embedding:
     # 실제 BGE-M3 CPU Benchmark에서 최고 처리량의 98.3%를 유지하면서 Batch 64보다 p95가 47% 낮은 균형점이다.
     batch-size: ${EMBEDDING_DOCUMENT_BATCH_SIZE:32}
 
+search:
+  vector:
+    # Top-K 후보 중 이 코사인 유사도 이상인 Chunk만 검색 결과와 RAG 문맥으로 사용한다.
+    min-similarity: ${SEARCH_VECTOR_MIN_SIMILARITY:0.30}
+
 ollama:
   server:
     base-url: ${OLLAMA_SERVER_URL:http://localhost:11434}

@@ -64,7 +64,7 @@ INDEXING_WORKER_ENABLED=true
 INDEXING_WORKER_MAX_CONCURRENCY=1
 
 # RAG 답변에 사용할 Ollama 모델입니다.
-OLLAMA_MODEL=qwen2.5:3b
+OLLAMA_MODEL=qwen2.5:7b
 ```
 
 `DB_SSLMODE=disable`은 DB 자체 TLS가 비활성화되어 있고 아래 SSH Tunnel로 전송 구간을 암호화하는
@@ -105,12 +105,12 @@ docker compose up -d --build minio embedding-server ollama
 ```
 
 Ollama API가 준비될 때까지 Compose Health Check를 기다린 뒤, 루트 `.env`의 `OLLAMA_MODEL`에 지정한
-모델을 최초 한 번 내려받습니다. 값을 생략하면 Spring Boot 기본값인 `qwen2.5:3b`를 사용합니다.
+모델을 최초 한 번 내려받습니다. 값을 생략하면 Spring Boot 기본값인 `qwen2.5:7b`를 사용합니다.
 
 ```bash
 docker compose up -d --wait --wait-timeout 120 ollama
 OLLAMA_MODEL_NAME=$(sed -n 's/^OLLAMA_MODEL=//p' .env | tail -n 1)
-docker compose exec ollama ollama pull "${OLLAMA_MODEL_NAME:-qwen2.5:3b}"
+docker compose exec ollama ollama pull "${OLLAMA_MODEL_NAME:-qwen2.5:7b}"
 ```
 
 BGE-M3는 첫 실행 시 약 3GB 모델을 내려받으므로 준비까지 10~15분 정도 걸릴 수 있습니다. 모델이

@@ -96,4 +96,4 @@ ollama:
     # Sites Worker의 30초 요청 제한보다 먼저 종료해 검색 결과 Fallback을 반환한다.
     connect-timeout: ${OLLAMA_SERVER_CONNECT_TIMEOUT:5s}
     read-timeout: ${OLLAMA_SERVER_READ_TIMEOUT:20s}
-  model: ${OLLAMA_MODEL:qwen2.5:3b}
+  model: ${OLLAMA_MODEL:qwen2.5:7b}

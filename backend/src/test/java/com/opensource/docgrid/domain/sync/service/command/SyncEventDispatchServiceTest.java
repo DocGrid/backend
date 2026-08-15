@@ -6,6 +6,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -45,6 +46,7 @@ class SyncEventDispatchServiceTest {
 
     private SyncEventDispatchService service;
     private SyncOutboxEvent event;
+    private SyncOutboxEvent completionEvent;
     private ClaimedSyncEvent claim;
 
     @BeforeEach
@@ -57,27 +59,32 @@ class SyncEventDispatchServiceTest {
             clock
         );
         LocalDateTime now = LocalDateTime.ofInstant(NOW, ZONE_ID);
-        event = event(now);
+        UUID eventId = UUID.randomUUID();
+        event = event(eventId, now);
+        completionEvent = event(eventId, now);
         UUID claimToken = UUID.randomUUID();
         event.claim("dispatcher", claimToken, now, now.plusSeconds(30));
+        completionEvent.claim("dispatcher", claimToken, now, now.plusSeconds(30));
         claim = new ClaimedSyncEvent(event.getEventId(), claimToken);
         given(syncOutboxEventRepository.findByEventIdForUpdate(event.getEventId()))
-            .willReturn(Optional.of(event));
+            .willReturn(Optional.of(event), Optional.of(completionEvent));
     }
 
     @Test
-    @DisplayName("Handler 성공 후 Event를 PROCESSED로 완료한다")
-    void dispatch_completesEvent_afterHandlerSucceeds() {
+    @DisplayName("Handler 성공 후 Event를 다시 조회해 PROCESSED로 완료한다")
+    void dispatch_reloadsAndCompletesEvent_afterHandlerSucceeds() {
         service.dispatch(claim);
 
         then(syncEventHandlerRegistry).should().handle(event);
+        then(syncOutboxEventRepository).should(times(2)).findByEventIdForUpdate(event.getEventId());
         then(syncEventDeliveryAttemptService).should().succeed(
             event.getEventId(),
             claim.claimToken(),
             LocalDateTime.ofInstant(NOW, ZONE_ID)
         );
-        assertThat(event.getStatus()).isEqualTo(SyncEventStatus.PROCESSED);
-        assertThat(event.getProcessedAt()).isNotNull();
+        assertThat(event.getStatus()).isEqualTo(SyncEventStatus.PROCESSING);
+        assertThat(completionEvent.getStatus()).isEqualTo(SyncEventStatus.PROCESSED);
+        assertThat(completionEvent.getProcessedAt()).isNotNull();
     }
 
     @Test
@@ -97,9 +104,9 @@ class SyncEventDispatchServiceTest {
         assertThat(event.getProcessedAt()).isNull();
     }
 
-    private SyncOutboxEvent event(LocalDateTime now) {
+    private SyncOutboxEvent event(UUID eventId, LocalDateTime now) {
         return SyncOutboxEvent.builder()
-            .eventId(UUID.randomUUID())
+            .eventId(eventId)
             .idempotencyKey("dispatch:" + UUID.randomUUID())
             .aggregateType(SyncAggregateType.DOCUMENT_VERSION)
             .aggregateId(1L)

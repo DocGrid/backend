@@ -1,5 +1,7 @@
 package com.opensource.docgrid.domain.auth.service.command;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -12,6 +14,7 @@ import com.opensource.docgrid.domain.auth.dto.request.SignupRequest;
 import com.opensource.docgrid.domain.auth.dto.response.LoginResponse;
 import com.opensource.docgrid.domain.auth.dto.response.SignupResponse;
 import com.opensource.docgrid.domain.auth.jwt.JwtProvider;
+import com.opensource.docgrid.domain.auth.jwt.TokenBlacklistService;
 import com.opensource.docgrid.domain.user.entity.Department;
 import com.opensource.docgrid.domain.user.entity.Role;
 import com.opensource.docgrid.domain.user.entity.User;
@@ -25,6 +28,7 @@ import com.opensource.docgrid.domain.user.repository.UserRoleRepository;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
+import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -40,6 +44,7 @@ public class AuthCommandService {
     private final UserRoleRepository userRoleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
+    private final TokenBlacklistService tokenBlacklistService;
 
     public SignupResponse signup(SignupRequest request) {
         if (userRepository.existsByEmail(request.email())) {
@@ -96,5 +101,19 @@ public class AuthCommandService {
         String token = jwtProvider.generateToken(user.getId(), user.getEmail(), roles);
 
         return LoginResponse.of(token, jwtProvider.getExpirationSeconds(), user.getId(), user.getEmail(), roles);
+    }
+
+    public void logout(String token) {
+        Claims claims = jwtProvider.getClaimsIfValid(token);
+        if (claims == null) {
+            return;
+        }
+
+        String jti = claims.get("jti", String.class);
+        long remainingSeconds = Duration.between(Instant.now(), claims.getExpiration().toInstant()).getSeconds();
+
+        if (remainingSeconds > 0) {
+            tokenBlacklistService.blacklist(jti, remainingSeconds);
+        }
     }
 }

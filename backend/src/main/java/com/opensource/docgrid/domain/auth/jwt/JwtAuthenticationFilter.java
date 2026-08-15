@@ -15,22 +15,25 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtProvider jwtProvider;
+    private final TokenBlacklistService tokenBlacklistService;
 
     @Override
     @SuppressWarnings("unchecked")
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        String token = resolveToken(request);
+        String token = JwtProvider.resolveToken(request);
 
         if (StringUtils.hasText(token)) {
             Claims claims = jwtProvider.getClaimsIfValid(token);
-            if (claims != null) {
+            if (claims != null && !isBlacklisted(claims.get("jti", String.class))) {
                 Long userId = claims.get("userId", Long.class);
                 String email = claims.getSubject();
                 List<String> roles = (List<String>) claims.get("roles");
@@ -50,11 +53,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private String resolveToken(HttpServletRequest request) {
-        String bearer = request.getHeader("Authorization");
-        if (StringUtils.hasText(bearer) && bearer.startsWith("Bearer ")) {
-            return bearer.substring(7);
+    private boolean isBlacklisted(String jti) {
+        try {
+            return tokenBlacklistService.isBlacklisted(jti);
+        } catch (Exception e) {
+            log.error("Redis 블랙리스트 조회 실패, 인증을 계속 진행합니다: {}", e.getMessage());
+            return false;
         }
-        return null;
     }
 }

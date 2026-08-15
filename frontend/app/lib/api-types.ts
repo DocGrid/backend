@@ -280,6 +280,85 @@ export type Worker = {
   stoppedAt: string | null;
 };
 
+export type SyncEventSummary = {
+  pendingCount: number;
+  processingCount: number;
+  failedCount: number;
+  oldestPendingAgeSeconds: number | null;
+  processedLast24hCount: number;
+  failedLast24hCount: number;
+  retriedLast24hCount: number;
+  successRateLast24h: number;
+  lastProcessedEventId: string | null;
+  lastProcessedAt: string | null;
+};
+
+export type SyncIssueSummary = {
+  openCount: number;
+  repairingCount: number;
+  autoResolvedLast24hCount: number;
+  failedRepairCount: number;
+};
+
+export type SyncReconciliationSummary = {
+  runId: string;
+  mode: string;
+  status: string;
+  startCursor: number;
+  endCursor: number;
+  scannedCount: number;
+  detectedCount: number;
+  repairRequestedCount: number;
+  startedAt: string;
+  completedAt: string | null;
+  errorCode: string | null;
+} | null;
+
+export type SyncAdminSummary = {
+  capturedAt: string;
+  events: SyncEventSummary;
+  issues: SyncIssueSummary;
+  reconciliation: SyncReconciliationSummary;
+};
+
+export type SyncEventAdmin = {
+  eventId: string;
+  idempotencyKey: string;
+  aggregateType: string;
+  aggregateId: number | null;
+  aggregateVersion: number | null;
+  eventType: string;
+  status: string;
+  occurredAt: string;
+  availableAt: string;
+  processedAt: string | null;
+  retryCount: number;
+  maxRetryCount: number;
+  lockedBy: string | null;
+  lockExpiresAt: string | null;
+  lastErrorCode: string | null;
+};
+
+export type SyncIssueAdmin = {
+  issueId: number;
+  issueKey: string;
+  issueType: string;
+  severity: string;
+  status: string;
+  documentId: number | null;
+  documentVersionId: number | null;
+  embeddingModelId: number | null;
+  expectedJson: string | null;
+  actualJson: string | null;
+  repairable: boolean;
+  detectedAt: string;
+  lastDetectedAt: string;
+  repairEventId: string | null;
+  repairAttemptCount: number;
+  resolvedAt: string | null;
+  resolutionMessage: string | null;
+};
+
 export type UserRoleResponse = {
   userId: number;
   email: string;

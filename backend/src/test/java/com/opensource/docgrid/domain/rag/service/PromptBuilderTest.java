@@ -65,4 +65,39 @@ class PromptBuilderTest {
             .contains("문서에 없는 내용은 일반 지식이나 추측으로 보완하지 마세요")
             .contains("질문: 질문 내용");
     }
+
+    @Test
+    @DisplayName("긴 청크는 말줄임표를 포함해 800자로 제한한다")
+    void build_longChunk_limitsChunkTextLength() {
+        VectorSearchCandidate candidate = new VectorSearchCandidate(
+            1L, 10L, 100L, "가".repeat(1_200), 1, "문서.pdf", new BigDecimal("0.9")
+        );
+
+        String prompt = promptBuilder.build("질문", List.of(candidate));
+
+        assertThat(prompt)
+            .contains("\"" + "가".repeat(799) + "…\"")
+            .doesNotContain("가".repeat(800));
+    }
+
+    @Test
+    @DisplayName("후보가 많아도 모든 라벨을 유지하며 전체 청크 본문을 6000자로 제한한다")
+    void build_manyCandidates_sharesContextBudgetAndKeepsLabels() {
+        List<VectorSearchCandidate> candidates = java.util.stream.LongStream.rangeClosed(1, 20)
+            .mapToObj(id -> new VectorSearchCandidate(
+                id, id, id, "가".repeat(1_000), 1, "문서 " + id, new BigDecimal("0.9")
+            ))
+            .toList();
+
+        String prompt = promptBuilder.build("질문", candidates);
+
+        long contextCodePoints = prompt.lines()
+            .filter(line -> line.startsWith("["))
+            .map(line -> line.substring(line.indexOf('"') + 1, line.lastIndexOf('"')))
+            .mapToLong(text -> text.codePointCount(0, text.length()))
+            .sum();
+        assertThat(prompt).contains("[1]", "[20]");
+        assertThat(contextCodePoints).isEqualTo(6_000L);
+        assertThat(prompt.codePoints().filter(codePoint -> codePoint == '…').count()).isEqualTo(20L);
+    }
 }

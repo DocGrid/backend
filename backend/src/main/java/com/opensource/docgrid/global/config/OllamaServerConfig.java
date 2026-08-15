@@ -12,8 +12,8 @@ import org.springframework.web.client.RestClient;
 /**
  * Ollama HTTP 연결과 추론 응답 제한 시간을 실행 환경별로 구성한다.
  *
- * <p>RAG 도메인은 Timeout 이후의 검색 결과 Fallback을 책임지고, 이 설정은 Sites 요청 제한보다
- * 먼저 호출을 종료할 수 있는 Transport 경계만 책임진다.</p>
+ * <p>RAG 도메인은 Timeout 이후의 검색 결과 Fallback을 책임지고, 이 설정은 프론트의 29초 검색 제한과
+ * Sites의 30초 요청 제한보다 먼저 호출을 종료할 수 있는 Transport 경계만 책임진다.</p>
  */
 @Configuration
 public class OllamaServerConfig {
@@ -21,10 +21,10 @@ public class OllamaServerConfig {
     @Value("${ollama.server.base-url}")
     private String baseUrl;
 
-    @Value("${ollama.server.connect-timeout:5s}")
+    @Value("${ollama.server.connect-timeout:3s}")
     private Duration connectTimeout;
 
-    @Value("${ollama.server.read-timeout:20s}")
+    @Value("${ollama.server.read-timeout:18s}")
     private Duration readTimeout;
 
     /**

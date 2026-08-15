@@ -88,5 +88,12 @@ class RagResponseCommandServiceTest {
         RagResponse saved = captor.getValue();
         assertThat(saved.getStatus()).isEqualTo(ResultStatus.SUCCESS);
         assertThat(saved.getAnswerText()).isEqualTo("관련 문서를 찾지 못했습니다.");
+        assertThat(saved.getLlmProvider()).isNull();
+        assertThat(saved.getLlmModelName()).isNull();
+        assertThat(saved.getPromptText()).isNull();
+        assertThat(saved.getInputTokenCount()).isNull();
+        assertThat(saved.getOutputTokenCount()).isNull();
+        assertThat(saved.getLatencyMs()).isNull();
+        assertThat(saved.getErrorMessage()).isNull();
     }
 }

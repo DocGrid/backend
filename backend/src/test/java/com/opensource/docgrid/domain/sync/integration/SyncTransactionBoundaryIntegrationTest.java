@@ -35,18 +35,20 @@ import com.opensource.docgrid.domain.document.storage.FileStorageService;
 import com.opensource.docgrid.domain.document.storage.StoredFile;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.sync.dto.ClaimedSyncEvent;
+import com.opensource.docgrid.domain.sync.entity.SyncEventDeliveryAttempt;
 import com.opensource.docgrid.domain.sync.entity.SyncOutboxEvent;
 import com.opensource.docgrid.domain.sync.enums.SyncAggregateType;
 import com.opensource.docgrid.domain.sync.enums.SyncEventStatus;
 import com.opensource.docgrid.domain.sync.enums.SyncEventType;
+import com.opensource.docgrid.domain.sync.repository.SyncEventDeliveryAttemptRepository;
 import com.opensource.docgrid.domain.sync.repository.SyncOutboxEventRepository;
 import com.opensource.docgrid.domain.sync.service.command.SyncEventDispatchService;
 import com.opensource.docgrid.domain.user.repository.UserRepository;
 
 /**
- * 실제 PostgreSQL 장애를 주입해 Version·Job·Outbox Event의 Commit 경계를 검증한다.
+ * 실제 PostgreSQL 장애와 영속성 Context 초기화를 주입해 Sync Commit 경계를 검증한다.
  *
- * <p>Repository mock의 호출 여부가 아니라 Trigger가 저장 중 예외를 발생시킨 뒤 남은 DB 행을 직접
+ * <p>Repository mock이 아닌 Trigger와 실제 Bulk Update를 사용한 뒤 남은 DB 행을 직접
  * 확인한다. Trigger는 고유한 테스트 표식에만 반응하고 각 테스트 종료 시 제거한다.
  */
 @Tag("integration")
@@ -65,6 +67,7 @@ class SyncTransactionBoundaryIntegrationTest {
     @Autowired private DocumentUploadFacade documentUploadFacade;
     @Autowired private UserRepository userRepository;
     @Autowired private SyncOutboxEventRepository syncOutboxEventRepository;
+    @Autowired private SyncEventDeliveryAttemptRepository syncEventDeliveryAttemptRepository;
     @Autowired private EmbeddingJobRepository embeddingJobRepository;
     @Autowired private SyncEventDispatchService syncEventDispatchService;
     @Autowired private JdbcTemplate jdbcTemplate;
@@ -176,6 +179,28 @@ class SyncTransactionBoundaryIntegrationTest {
         assertThat(embeddingJobRepository.findBySourceEventId(eventId)).isEmpty();
     }
 
+    @Test
+    @DisplayName("권한 캐시 Bulk Update가 Context를 초기화해도 Event와 Attempt를 함께 완료한다")
+    void dispatch_completesEventAndAttempt_whenPermissionCacheBulkUpdateClearsContext() {
+        SyncOutboxEvent event = permissionCacheRevocationEvent();
+        standaloneEventIds.add(event.getEventId());
+        ClaimedSyncEvent claim = claim(event);
+
+        syncEventDispatchService.dispatch(claim);
+
+        SyncOutboxEvent persisted = syncOutboxEventRepository.findByEventId(event.getEventId()).orElseThrow();
+        assertThat(persisted.getStatus()).isEqualTo(SyncEventStatus.PROCESSED);
+        assertThat(persisted.getProcessedAt()).isNotNull();
+        assertThat(persisted.getClaimToken()).isNull();
+        assertThat(persisted.getLockedBy()).isNull();
+        assertThat(persisted.getLockExpiresAt()).isNull();
+        assertThat(count("""
+            SELECT COUNT(*)
+            FROM sync_event_delivery_attempts
+            WHERE event_id = ? AND status = 'SUCCEEDED' AND completed_at IS NOT NULL
+            """, event.getEventId())).isOne();
+    }
+
     private SyncOutboxEvent pendingEvent(Long aggregateId) {
         LocalDateTime now = LocalDateTime.now(clock);
         return syncOutboxEventRepository.saveAndFlush(
@@ -194,11 +219,37 @@ class SyncTransactionBoundaryIntegrationTest {
         );
     }
 
+    private SyncOutboxEvent permissionCacheRevocationEvent() {
+        LocalDateTime now = LocalDateTime.now(clock);
+        return syncOutboxEventRepository.saveAndFlush(
+            SyncOutboxEvent.builder()
+                .eventId(UUID.randomUUID())
+                .idempotencyKey("permission-cache-clear:" + UUID.randomUUID())
+                .aggregateType(SyncAggregateType.PERMISSION)
+                .aggregateId(9_999_999_998L)
+                .eventType(SyncEventType.PERMISSION_CACHE_REFRESH_REQUESTED)
+                .payloadJson("{\"sourceType\":\"DIRECT_DOCUMENT_PERMISSION\",\"operation\":\"REVOKED\"}")
+                .occurredAt(now)
+                .availableAt(now)
+                .maxRetryCount(3)
+                .build()
+        );
+    }
+
     private ClaimedSyncEvent claim(SyncOutboxEvent event) {
         LocalDateTime claimedAt = LocalDateTime.now(clock);
         UUID claimToken = UUID.randomUUID();
         event.claim("transaction-boundary-test", claimToken, claimedAt, claimedAt.plusMinutes(5));
         syncOutboxEventRepository.saveAndFlush(event);
+        syncEventDeliveryAttemptRepository.saveAndFlush(
+            SyncEventDeliveryAttempt.builder()
+                .eventId(event.getEventId())
+                .claimToken(claimToken)
+                .attemptNo(event.getRetryCount() + 1)
+                .dispatcherName(event.getLockedBy())
+                .startedAt(claimedAt)
+                .build()
+        );
         return new ClaimedSyncEvent(event.getEventId(), claimToken);
     }
 

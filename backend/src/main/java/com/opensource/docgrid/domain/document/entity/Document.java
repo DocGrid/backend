@@ -31,7 +31,7 @@ import lombok.NoArgsConstructor;
  * 문서(논리적 루트) 테이블.
  *
  * <p>역할: "파일"이 아니라 "문서"라는 논리적 개념을 저장한다. 실제 파일/버전 정보는
- * document_versions/file_objects에 있고, 이 테이블은 문서의 소유자·현재 버전·공개범위·상태만 관리한다.
+ * document_versions/file_objects에 있고, 이 테이블은 문서의 소유자·제목·설명·현재 버전·공개범위·상태를 관리한다.
  * 이유: 문서는 여러 버전을 가질 수 있으며, 검색 대상은 항상 "현재 버전(current_version)"이어야 하기 때문이다.
  * 관계: owner -> User(소유자, not null), current_version_id -> DocumentVersion(nullable, 순환 FK).
  *
@@ -124,6 +124,16 @@ public class Document extends BaseEntity {
 
     public void updateCurrentVersion(DocumentVersion currentVersion) {
         this.currentVersion = currentVersion;
+    }
+
+    /**
+     * 논리 문서의 현재 표시 제목과 설명을 갱신한다.
+     *
+     * <p>버전 생성 당시의 제목 Snapshot은 감사 이력이므로 변경하지 않는다.
+     */
+    public void updateMetadata(String title, String description) {
+        this.title = title.trim();
+        this.description = description == null || description.isBlank() ? null : description.trim();
     }
 
     /**

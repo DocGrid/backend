@@ -42,6 +42,10 @@ public class IndexingWorkerProperties {
     @NotNull
     private Duration pollingInterval = Duration.ofSeconds(1);
 
+    // 빈 Queue가 이어질 때 DB Claim 조회를 늦출 수 있는 최대 주기다.
+    @NotNull
+    private Duration idleMaxPollingInterval = Duration.ofSeconds(10);
+
     @Min(1)
     private int maxConcurrency = 2;
 
@@ -84,13 +88,15 @@ public class IndexingWorkerProperties {
     }
 
     /**
-     * 빈 작업 조회가 Busy Loop가 되지 않도록 Polling 주기가 양수인지 검증한다.
+     * 빈 작업 조회가 Busy Loop가 되지 않도록 기본·최대 Polling 주기의 범위를 검증한다.
      */
-    @AssertTrue(message = "Job Polling 주기는 0보다 커야 합니다.")
+    @AssertTrue(message = "Job Polling 주기는 양수이고 빈 Queue 최대 주기보다 길 수 없습니다.")
     public boolean isPollingIntervalValid() {
         return pollingInterval != null
+            && idleMaxPollingInterval != null
             && !pollingInterval.isZero()
-            && !pollingInterval.isNegative();
+            && !pollingInterval.isNegative()
+            && idleMaxPollingInterval.compareTo(pollingInterval) >= 0;
     }
 
     /**

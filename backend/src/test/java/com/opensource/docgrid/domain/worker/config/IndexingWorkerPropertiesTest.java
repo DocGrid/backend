@@ -23,11 +23,12 @@ class IndexingWorkerPropertiesTest {
     private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
     @Test
-    @DisplayName("기본 Polling과 실행 설정은 1초, 동시 실행 2, 종료 유예 30초다")
+    @DisplayName("기본 Polling은 1초부터 빈 Queue 최대 10초까지이고 동시 실행은 2다")
     void defaultExecutionSettings_areValid() {
         IndexingWorkerProperties properties = new IndexingWorkerProperties();
 
         assertThat(properties.getPollingInterval()).isEqualTo(Duration.ofSeconds(1));
+        assertThat(properties.getIdleMaxPollingInterval()).isEqualTo(Duration.ofSeconds(10));
         assertThat(properties.getMaxConcurrency()).isEqualTo(2);
         assertThat(properties.getShutdownGracePeriod()).isEqualTo(Duration.ofSeconds(30));
         assertThat(properties.isPollingIntervalValid()).isTrue();
@@ -35,11 +36,21 @@ class IndexingWorkerPropertiesTest {
     }
 
     @Test
-    @DisplayName("Polling 주기는 양수이고 종료 유예 시간은 0 이상이어야 한다")
+    @DisplayName("Polling 주기는 양수이고 빈 Queue 최대 주기보다 길 수 없다")
     void executionIntervals_areInvalid_when_outOfRange() {
         IndexingWorkerProperties properties = new IndexingWorkerProperties();
 
         properties.setPollingInterval(Duration.ZERO);
+        assertThat(properties.isPollingIntervalValid()).isFalse();
+
+        properties.setPollingInterval(Duration.ofMillis(1));
+        properties.setIdleMaxPollingInterval(Duration.ZERO);
+        assertThat(properties.isPollingIntervalValid()).isFalse();
+
+        properties.setIdleMaxPollingInterval(Duration.ofMillis(1));
+        assertThat(properties.isPollingIntervalValid()).isTrue();
+
+        properties.setPollingInterval(Duration.ofMillis(2));
         assertThat(properties.isPollingIntervalValid()).isFalse();
 
         properties.setPollingInterval(Duration.ofMillis(1));

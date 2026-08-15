@@ -26,3 +26,8 @@ minio:
   access-key: test-access-key
   secret-key: test-secret-key
   bucket: test-bucket
+
+indexing:
+  worker:
+    # E2E 테스트가 빈 Queue Backoff 상한 때문에 오래 대기하지 않도록 테스트 환경만 짧게 유지한다.
+    idle-max-polling-interval: ${INDEXING_WORKER_IDLE_MAX_POLLING_INTERVAL:1s}

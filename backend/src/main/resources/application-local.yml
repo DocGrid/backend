@@ -19,7 +19,8 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
+    # 반복 Worker 조회 SQL은 기본적으로 숨기고 필요할 때만 환경 변수로 진단 출력을 켠다.
+    show-sql: ${JPA_SHOW_SQL:false}
     properties:
       hibernate:
         format_sql: true

@@ -54,6 +54,7 @@ indexing:
     heartbeat-interval: ${INDEXING_WORKER_HEARTBEAT_INTERVAL:10s}
     dead-threshold: ${INDEXING_WORKER_DEAD_THRESHOLD:30s}
     polling-interval: ${INDEXING_WORKER_POLLING_INTERVAL:1s}
+    idle-max-polling-interval: ${INDEXING_WORKER_IDLE_MAX_POLLING_INTERVAL:10s}
     max-concurrency: ${INDEXING_WORKER_MAX_CONCURRENCY:2}
     lease-duration: ${INDEXING_WORKER_LEASE_DURATION:5m}
     lease-renewal-interval: ${INDEXING_WORKER_LEASE_RENEWAL_INTERVAL:1m}

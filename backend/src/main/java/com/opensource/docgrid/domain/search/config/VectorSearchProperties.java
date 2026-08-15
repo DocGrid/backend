@@ -8,6 +8,7 @@ import org.springframework.validation.annotation.Validated;
 
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -25,6 +26,7 @@ import lombok.Setter;
 @ConfigurationProperties(prefix = "search.vector")
 public class VectorSearchProperties {
 
+    @NotNull
     @DecimalMin("0.0")
     @DecimalMax("1.0")
     private BigDecimal minSimilarity = new BigDecimal("0.30");

@@ -41,6 +41,17 @@ class VectorSearchPropertiesTest {
     }
 
     @Test
+    @DisplayName("예외 케이스: 최소 유사도가 null이면 거부한다")
+    void validate_null_hasViolation() {
+        VectorSearchProperties properties = new VectorSearchProperties();
+        properties.setMinSimilarity(null);
+
+        try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(properties)).isNotEmpty();
+        }
+    }
+
+    @Test
     @DisplayName("기본값은 0.30이다")
     void defaultValue_isPointThree() {
         assertThat(new VectorSearchProperties().getMinSimilarity())

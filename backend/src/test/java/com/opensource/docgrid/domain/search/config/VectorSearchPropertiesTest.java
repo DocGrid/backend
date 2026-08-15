@@ -13,7 +13,7 @@ import jakarta.validation.Validation;
 import jakarta.validation.ValidatorFactory;
 
 /**
- * 벡터 검색 최소 유사도 설정이 코사인 유사도의 유효 범위만 허용하는지 검증한다.
+ * 벡터 검색 관련성 및 문서 다양성 설정의 기본값과 허용 범위를 검증한다.
  */
 @DisplayName("VectorSearchProperties 검증 테스트")
 class VectorSearchPropertiesTest {
@@ -54,8 +54,24 @@ class VectorSearchPropertiesTest {
     @Test
     @DisplayName("기본값은 0.30이다")
     void defaultValue_isPointThree() {
-        assertThat(new VectorSearchProperties().getMinSimilarity())
+        VectorSearchProperties properties = new VectorSearchProperties();
+
+        assertThat(properties.getMinSimilarity())
             .isEqualByComparingTo(new BigDecimal("0.30"));
+        assertThat(properties.getMaxChunksPerDocument()).isEqualTo(2);
+        assertThat(properties.getCandidatePoolMultiplier()).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("예외 케이스: 문서별 청크 상한과 후보 배수가 허용 범위를 벗어나면 거부한다")
+    void validate_diversityPolicyOutOfRange_hasViolations() {
+        VectorSearchProperties properties = new VectorSearchProperties();
+        properties.setMaxChunksPerDocument(0);
+        properties.setCandidatePoolMultiplier(11);
+
+        try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(properties)).hasSize(2);
+        }
     }
 
     private VectorSearchProperties propertiesWith(String value) {

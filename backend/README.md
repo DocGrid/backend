@@ -45,7 +45,7 @@ docker compose up -d embedding-server
 RAG 답변 생성에 사용하는 로컬 LLM(`qwen2.5:7b`) 서버입니다. 공식 이미지를 그대로 사용하므로 별도 build 없이 실행만 하면 됩니다.
 
 ```bash
-docker compose up -d ollama
+docker compose up -d --wait --wait-timeout 120 ollama
 docker compose exec ollama ollama pull qwen2.5:7b
 docker compose exec ollama ollama run qwen2.5:7b "안녕"
 ```

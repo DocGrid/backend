@@ -12,6 +12,7 @@ import com.opensource.docgrid.domain.search.dto.VectorSearchCandidate;
  * <p>search_results/document_chunks를 다시 조회하지 않고, SearchFacade가 이미 만든
  * {@link VectorSearchCandidate} 목록을 그대로 입력받는다. 인용 라벨([1], [2]...)은 이 목록의
  * 순서(검색 랭킹 순서)를 그대로 사용하며, 이 순서는 F-RAG-04의 citation_order와 동일하게 재사용된다.
+ * 질문과 문맥이 직접 관련되지 않거나 충분한 근거가 없으면 고정 안내 문구만 반환하도록 LLM에 지시한다.
  *
  * <p>빈 후보 목록(NO_CONTEXT) 처리는 이 클래스의 책임이 아니다 — 호출 여부는 RagFacade가 판단한다.
  */
@@ -19,7 +20,10 @@ import com.opensource.docgrid.domain.search.dto.VectorSearchCandidate;
 public class PromptBuilder {
 
     private static final String INSTRUCTION =
-        "다음은 참고 문서입니다. 이 내용만을 근거로 답변하고,\n문서에 없는 내용은 추측하지 마세요.\n\n";
+        "다음은 참고 문서입니다. 먼저 질문과 문서가 직접 관련 있는지 판단하세요.\n"
+            + "단순히 일부 단어가 겹친다는 이유만으로 관련 있다고 판단하지 마세요.\n"
+            + "질문에 답할 충분한 근거가 없거나 문서가 무관하면 \"관련 문서를 찾지 못했습니다.\"라고만 답하세요.\n"
+            + "관련 근거가 있을 때만 이 내용으로 답변하고, 문서에 없는 내용은 일반 지식이나 추측으로 보완하지 마세요.\n\n";
 
     public String build(String queryText, List<VectorSearchCandidate> candidates) {
         StringBuilder sb = new StringBuilder(INSTRUCTION);

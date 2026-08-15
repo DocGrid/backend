@@ -62,8 +62,8 @@ class RagFacadeTest {
     private static final Long QUERY_ID = 100L;
 
     @Test
-    @DisplayName("NO_CONTEXT: 후보가 없으면 LLM 호출 없이 고정 응답을 저장한다")
-    void generate_noCandidates_skipsLlmAndSavesFixedAnswer() {
+    @DisplayName("NO_CONTEXT: 검색 후보가 모두 제거되면 LLM과 citation 저장 없이 고정 응답을 저장한다")
+    void generate_noQualifiedCandidates_skipsLlmAndCitationAndSavesFixedAnswer() {
         SearchQuery queryRef = mock(SearchQuery.class);
         given(entityManager.getReference(SearchQuery.class, QUERY_ID)).willReturn(queryRef);
         RagResponse noContextResponse = RagResponse.builder()
@@ -79,6 +79,9 @@ class RagFacadeTest {
         then(promptBuilder).should(never()).build(anyString(), any());
         then(ollamaClient).should(never()).generate(anyString());
         then(ragResponseCommandService).should(times(1)).createNoContext(queryRef);
+        then(ragResponseCommandService).should(never()).createSuccess(any(), anyString(), any());
+        then(ragResponseCommandService).should(never()).createFailed(any(), anyString(), anyString());
+        then(responseCitationCommandService).shouldHaveNoInteractions();
     }
 
     @Test

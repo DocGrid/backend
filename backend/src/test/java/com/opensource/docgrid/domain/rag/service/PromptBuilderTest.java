@@ -52,14 +52,17 @@ class PromptBuilderTest {
     }
 
     @Test
-    @DisplayName("환각 방지 지시문과 질문이 항상 포함된다")
+    @DisplayName("무관한 문맥 거절 및 환각 방지 지시문과 질문이 항상 포함된다")
     void build_alwaysIncludesInstructionAndQuestion() {
         // When
         String prompt = promptBuilder.build("질문 내용", List.of());
 
         // Then
         assertThat(prompt)
-            .contains("문서에 없는 내용은 추측하지 마세요")
+            .contains("질문과 문서가 직접 관련 있는지 판단하세요")
+            .contains("단순히 일부 단어가 겹친다는 이유만으로 관련 있다고 판단하지 마세요")
+            .contains("관련 문서를 찾지 못했습니다.\"라고만 답하세요")
+            .contains("문서에 없는 내용은 일반 지식이나 추측으로 보완하지 마세요")
             .contains("질문: 질문 내용");
     }
 }

@@ -129,6 +129,25 @@ public class OllamaServerConfig {
 - `@Value("${ollama.server.connect-timeout:5s}")`/`read-timeout`: 값을 코드에 하드코딩하지 않고 `application.yml`(`OLLAMA_SERVER_CONNECT_TIMEOUT`/`OLLAMA_SERVER_READ_TIMEOUT`)로 외부화했다 — Sites Worker의 30초 요청 제한보다 먼저 종료해 검색 결과 Fallback을 반환해야 한다는 요구가 후속 이슈에서 추가되며, 환경별로 값을 조정할 수 있게 바뀌었다.
 - `@Bean("ollamaRestClient")`: 임베딩용 `RestClient`와 이름으로 구분해서, `OllamaClient`가 `@Qualifier`로 정확히 이 Bean만 주입받게 한다.
 
+> **업데이트(RAG 프롬프트 예산과 타임아웃 정렬)**: `connect-timeout`/`read-timeout` 기본값이 각각 5s/20s → 3s/18s로 줄었다. 프론트엔드에 29초 검색 요청 제한이 추가되면서, 기존 Sites Worker 30초 제한뿐 아니라 그보다 짧은 프론트 제한 안에서도 먼저 안전하게 끊고 fallback을 반환하도록 재조정한 것이다.
+>
+> ```java
+> @Value("${ollama.server.connect-timeout:3s}")
+> private Duration connectTimeout;
+>
+> @Value("${ollama.server.read-timeout:18s}")
+> private Duration readTimeout;
+> ```
+>
+> `application.yml` 기본값과 주석도 동일하게 갱신됐다.
+> ```yaml
+> ollama:
+>   server:
+>     # 프론트의 29초 및 Sites Worker의 30초 제한 전에 검색 결과 Fallback을 반환한다.
+>     connect-timeout: ${OLLAMA_SERVER_CONNECT_TIMEOUT:3s}
+>     read-timeout: ${OLLAMA_SERVER_READ_TIMEOUT:18s}
+> ```
+
 ### 4. DTO 3종 (신규)
 
 **`domain/rag/dto/request/OllamaGenerateRequest.java`** — 우리가 Ollama에 보내는 요청
@@ -399,7 +418,7 @@ Qwen2.5 `3b`가 Apache 2.0이 아니라 비상업 연구용 "Qwen Research Licen
 ### 코드
 - `OllamaClient`는 아직 어디에서도 호출되지 않는 독립 컴포넌트 — Issue 5에서 `RagFacade`가 실제로 연결한다.
 - `OllamaGenerateRequest`에 대한 명시적 유효성 검증은 현재 호출 경로상 불필요하다고 판단해 추가하지 않았다(위 "코드리뷰 반영" 표 참고). 향후 `OllamaClient.generate()`를 다른 곳에서도 직접 호출하게 되는 상황이 생기면 재검토가 필요하다.
-- ~~`qwen2.5:3b`의 컨텍스트 한도(32,768 토큰)에 대한 명시적 방어(예: 프롬프트가 너무 길면 사전에 잘라내기)는 아직 없다. 지금 topK 범위(1~20)에서는 실질적 위험이 낮아 보류.~~ → 기본 모델이 `qwen2.5:7b`로 바뀌었으나(#184) `qwen2.context_length`는 동일하게 32,768로 확인되어(로컬 `ollama show` 검증) 이 판단은 그대로 유효하다. 방어 로직 자체는 여전히 미구현 상태.
+- ~~`qwen2.5:3b`의 컨텍스트 한도(32,768 토큰)에 대한 명시적 방어(예: 프롬프트가 너무 길면 사전에 잘라내기)는 아직 없다. 지금 topK 범위(1~20)에서는 실질적 위험이 낮아 보류.~~ → 기본 모델이 `qwen2.5:7b`로 바뀌었으나(#184) `qwen2.context_length`는 동일하게 32,768로 확인되어(로컬 `ollama show` 검증) 이 판단은 그대로 유효했다. ~~방어 로직 자체는 여전히 미구현 상태.~~ → `PromptBuilder`에 청크별/전체 컨텍스트 텍스트 예산(truncate) 로직이 추가되어 해결됨 — 문자(코드포인트) 수 기준 근사 방어이며 정밀한 tokenizer 기반은 아니다(`#65` 문서 참고).
 
 ### 다음 단계
 Issue 3 — `RagResponseRepository` + `RagResponseCommandService` 구현. 이번 이슈에서 만든 `OllamaGenerateResult`를 받아 `rag_responses`에 SUCCESS/FAILED 상태로 저장한다. FAILED 기록은 `SearchQueryCommandService.markFailed()`와 동일하게 `@Transactional(propagation = REQUIRES_NEW)` 패턴을 검토한다.

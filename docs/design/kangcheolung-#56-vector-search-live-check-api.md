@@ -203,6 +203,70 @@ public class VectorSearchQueryService {
 
 `permittedIds`가 비면 DB 조회 자체를 생략 — 불필요한 쿼리 방지. `toVectorString()`은 `float[1024]`를 pgvector 표준 문자열 표기(`[v1,v2,...]`)로 변환하며, `VectorType.nullSafeSet()`이나 Python 서버 응답 포맷과 같은 형식이라 서로 호환됨.
 
+> **업데이트(검색 결과 최소 유사도 기준 + 문서별 청크 수 제한)**: `VectorSearchQueryService.search()`에 관련성/다양성 필터링 단계가 추가됐다.
+>
+> - **최소 유사도 기준**: 유사도(`similarityScore`)가 임계값 미만인 후보를 결과에서 제거한다. pgvector 검색은 "가장 가까운 순"으로 항상 결과를 반환하지만, 그중 유사도 자체가 낮은(사실상 무관한) 후보까지 그대로 넘기던 걸 하한선으로 걸렀다.
+> - **문서별 청크 수 상한**: 같은 문서에서 나온 청크가 결과를 과도하게 차지하지 않도록, 문서 하나당 포함 가능한 청크 개수를 제한해 문서 다양성을 확보한다.
+>
+> 두 필터를 적용하고도 `topK`개를 채우려면 애초에 더 많은 후보가 필요하므로, pgvector 조회 자체를 `topK * candidatePoolMultiplier`(기본 4배)만큼 넉넉히 가져온 뒤 필터링해서 최종 `topK`개로 자른다. **필터를 통과한 결과가 `topK`보다 적을 수 있다** — 항상 `topK`개가 꽉 채워진다고 가정하면 안 된다.
+>
+> ```java
+> public List<VectorSearchCandidate> search(
+>     float[] queryVector, Long modelId, List<Long> permittedIds, int topK
+> ) {
+>     ...
+>     int candidateLimit = topK * vectorSearchProperties.getCandidatePoolMultiplier();
+>
+>     // 1. HNSW 실행계획을 유지하면서 문서 다양성 필터에 필요한 후보만 제한적으로 더 조회한다.
+>     List<VectorSearchCandidate> candidates = vectorSearchRepository.findTopK(
+>             vectorStr, modelId, permittedIds, candidateLimit)
+>         .stream()
+>         .map(VectorSearchCandidate::from)
+>         .toList();
+>
+>     // 2. 관련성 미달과 한 문서의 과도한 청크를 제거한 뒤 요청한 Top-K에서 중단한다.
+>     return selectCandidates(candidates, topK,
+>         vectorSearchProperties.getMinSimilarity(), vectorSearchProperties.getMaxChunksPerDocument());
+> }
+>
+> private List<VectorSearchCandidate> selectCandidates(
+>     List<VectorSearchCandidate> candidates, int topK, BigDecimal minSimilarity, int maxChunksPerDocument
+> ) {
+>     List<VectorSearchCandidate> selected = new ArrayList<>(topK);
+>     Map<Long, Integer> documentCounts = new HashMap<>();
+>
+>     for (VectorSearchCandidate candidate : candidates) {
+>         if (candidate.similarityScore().compareTo(minSimilarity) < 0) {
+>             continue;                              // 최소 유사도 미달 제거
+>         }
+>         int documentCount = documentCounts.getOrDefault(candidate.documentId(), 0);
+>         if (documentCount >= maxChunksPerDocument) {
+>             continue;                              // 문서당 청크 상한 초과 제거
+>         }
+>         selected.add(candidate);
+>         documentCounts.put(candidate.documentId(), documentCount + 1);
+>         if (selected.size() == topK) {
+>             break;
+>         }
+>     }
+>     return List.copyOf(selected);
+> }
+> ```
+>
+> **`VectorSearchProperties`(신규 파일)**: 위 세 정책값(`minSimilarity`, `maxChunksPerDocument`, `candidatePoolMultiplier`)을 하드코딩하지 않고 `search.vector.*` 설정으로 외부화한 `@ConfigurationProperties` 클래스가 추가됐다. 기본값은 `minSimilarity=0.30`, `maxChunksPerDocument=2`, `candidatePoolMultiplier=4`이며, 재배포 없이 환경변수로 조정 가능하다.
+>
+> ```java
+> @ConfigurationProperties(prefix = "search.vector")
+> public class VectorSearchProperties {
+>     @DecimalMin("0.0") @DecimalMax("1.0")
+>     private BigDecimal minSimilarity = new BigDecimal("0.30");
+>     @Min(1) @Max(20)
+>     private int maxChunksPerDocument = 2;
+>     @Min(1) @Max(10)
+>     private int candidatePoolMultiplier = 4;
+> }
+> ```
+
 ---
 
 ### F-SEARCH-06: live check
@@ -421,6 +485,28 @@ public record SearchResponse(Long queryId, List<SearchResultItem> results) {
 }
 ```
 
+> **업데이트(`chunkId` 필드 추가)**: `SearchResultItem`에 `chunkId`(매칭된 청크 ID) 필드가 추가됐다. `documentId`만으로는 "같은 문서 안 어느 청크가 매칭됐는지"를 알 수 없어서, `VectorSearchCandidate`가 이미 갖고 있던 `chunkId`를 그대로 응답에도 노출하도록 확장했다.
+>
+> ```java
+> public record SearchResultItem(
+>     int rank,
+>     Long documentId,
+>     Long chunkId,           // 신규
+>     String documentTitle,
+>     String chunkText,
+>     Integer pageNo,
+>     BigDecimal similarityScore
+> ) {
+>     public static SearchResultItem of(int rank, VectorSearchCandidate candidate) {
+>         return new SearchResultItem(
+>             rank, candidate.documentId(), candidate.chunkId(),
+>             candidate.documentTitle(), candidate.chunkText(),
+>             candidate.pageNo(), candidate.similarityScore()
+>         );
+>     }
+> }
+> ```
+
 ---
 
 #### SearchController.java
@@ -444,6 +530,8 @@ public class SearchController {
 ```
 
 컨트롤러는 실제 로직을 하나도 모르고 SearchFacade에 위임만 함. HTTP 요청/응답 변환, 인증 정보 추출(`@CurrentUser`), 검증 트리거(`@Valid`)만 담당.
+
+> **업데이트(Swagger 설명 반영)**: `search()`의 `@Operation(description = ...)`에 "topK 기본값은 5이며 1~20 범위에서 지정할 수 있지만, 서버의 최소 유사도 기준을 통과하고 문서별 청크 상한을 적용한 결과만 반환하므로 실제 결과 수는 topK보다 적을 수 있습니다"라는 문구가 추가됐다 — 위 최소 유사도/문서별 청크 상한 필터링(F-SEARCH-05 업데이트 참고)이 반영된 실제 동작을 API 문서에도 맞춰 갱신한 것.
 
 ---
 
@@ -498,6 +586,9 @@ live check로 Top-K 후보 일부가 탈락해도 추가 검색 없이 그대로
 
 **currentVersion 조건 필수**
 `d.current_version_id = e.document_version_id` 조건이 없으면 이전 버전의 임베딩이 검색 결과에 포함될 수 있음. 문서 재업로드 → 색인 완료 → `current_version_id` 갱신 흐름에서 구버전 임베딩은 `status = STALE`로 변경되어야 하지만, 방어적으로 이 조건도 함께 건다.
+
+**(업데이트) 후보 풀 확장 후 관련성/다양성 필터링**
+pgvector에서 정확히 `topK`개만 가져오던 방식 대신, `topK * candidatePoolMultiplier`(기본 4배)만큼 넉넉히 가져온 뒤 최소 유사도/문서별 청크 상한을 애플리케이션 레벨에서 적용해 최종 `topK`개를 추린다. 필터 조건을 SQL `WHERE`에 직접 넣지 않고 후보를 넉넉히 가져와 자바 코드에서 거르는 이유는, pgvector의 HNSW 근사 최근접 이웃 실행계획이 `ORDER BY ... LIMIT`을 그대로 유지해야 인덱스를 효율적으로 타기 때문 — 정렬 이후 조건을 추가로 걸면 실행계획이 달라질 위험이 있어 필터링을 애플리케이션 레벨로 분리했다.
 
 ---
 

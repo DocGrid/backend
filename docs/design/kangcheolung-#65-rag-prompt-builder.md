@@ -179,6 +179,43 @@ public class PromptBuilder {
 - `search_results`/`document_chunks`를 다시 SELECT하지 않는다 — `VectorSearchCandidate`가 이미 `chunkText`, `documentTitle`, `pageNo`를 flat하게 갖고 있어서 이 레코드를 그대로 재사용하는 게 더 단순하고, 불필요한 재조회도 없앤다.
 - 빈 리스트(`candidates.isEmpty()`)가 들어와도 이 클래스는 특별 취급하지 않는다 — 지시문 + 빈 출처 목록 + 질문으로 이어지는 프롬프트를 그대로 만든다. "검색 결과 0건이면 LLM 호출 자체를 생략한다"는 판단(NO_CONTEXT)은 이 클래스의 책임이 아니라, Issue 5에서 만들 `RagFacade`(오케스트레이션 레이어)의 책임으로 명확히 분리했다.
 
+> **업데이트(무관 문맥 거절 + 프롬프트 예산)**: `PromptBuilder`에 두 가지가 추가됐다.
+>
+> 1. **무관 문맥 거절 지시문**: `INSTRUCTION`이 "질문과 문서가 직접 관련 있는지 먼저 판단하고, 단순히 일부 단어가 겹친다는 이유만으로 관련 있다고 판단하지 말고, 충분한 근거가 없으면 '관련 문서를 찾지 못했습니다'라고만 답하라"는 문장을 포함하도록 확장됐다. 검색 유사도가 낮은 후보가 섞여 들어와도 LLM이 억지로 답변을 짜내지 않고 스스로 무관함을 판단하게 하기 위함이다.
+> 2. **청크별/전체 컨텍스트 텍스트 예산(truncate)**: 청크 하나당 최대 `MAX_CHUNK_TEXT_CODE_POINTS`(800자), 전체 컨텍스트 합계 `MAX_CONTEXT_TEXT_CODE_POINTS`(6,000자) 상한이 추가됐다. 후보 개수가 많을수록 청크당 허용 길이를 균등하게 나눠 줄이고, 초과분은 말줄임표(…)로 잘라낸다. 모든 후보의 인용 라벨과 순서는 그대로 유지한 채 본문 길이만 조절한다.
+>
+> ```java
+> private static final int MAX_CHUNK_TEXT_CODE_POINTS = 800;
+> private static final int MAX_CONTEXT_TEXT_CODE_POINTS = 6_000;
+>
+> public String build(String queryText, List<VectorSearchCandidate> candidates) {
+>     StringBuilder sb = new StringBuilder(INSTRUCTION);
+>     int chunkTextLimit = chunkTextLimit(candidates.size());        // 후보가 많을수록 청크당 몫을 줄임
+>     for (int i = 0; i < candidates.size(); i++) {
+>         sb.append(citationLine(i + 1, candidates.get(i), chunkTextLimit)).append('\n');
+>     }
+>     sb.append("\n질문: ").append(queryText);
+>     return sb.toString();
+> }
+>
+> private int chunkTextLimit(int candidateCount) {
+>     if (candidateCount == 0) {
+>         return MAX_CHUNK_TEXT_CODE_POINTS;
+>     }
+>     int sharedLimit = Math.max(1, MAX_CONTEXT_TEXT_CODE_POINTS / candidateCount);
+>     return Math.min(MAX_CHUNK_TEXT_CODE_POINTS, sharedLimit);
+> }
+>
+> private String truncate(String text, int maxCodePoints) {
+>     int codePointCount = text.codePointCount(0, text.length());
+>     if (codePointCount <= maxCodePoints) {
+>         return text;
+>     }
+>     int endIndex = text.offsetByCodePoints(0, maxCodePoints - 1);   // 말줄임표까지 예산에 포함
+>     return text.substring(0, endIndex) + "…";
+> }
+> ```
+
 ### 6. `src/test/java/.../rag/service/PromptBuilderTest.java` (신규)
 
 `testing_guide.md` 컨벤션(`@DisplayName` 한국어, Given/When/Then)을 따라 3개 테스트를 작성했다.

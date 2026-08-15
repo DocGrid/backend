@@ -92,16 +92,19 @@ test("uses full-page navigation for vinext catch-all routes", async () => {
   assert.match(source, /const SEARCH_TIMEOUT_MS = 29_000;/, "search should wait for the backend Ollama fallback");
 });
 
-test("maps citation similarity scores by chunk instead of document", async () => {
-  const [searchPage, apiTypes] = await Promise.all([
+test("groups search citations by document and constrains source cards to the viewport", async () => {
+  const [searchPage, apiTypes, searchSources, styles] = await Promise.all([
     readFile(new URL("../app/features/SearchPage.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/api-types.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/search-sources.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
   assert.match(apiTypes, /export type SearchResult = \{[\s\S]*chunkId: number;/);
-  assert.match(searchPage, /new Map\(result\?\.results\.map\(\(item\) => \[item\.chunkId, item\]\)/);
-  assert.match(searchPage, /resultByChunk\.get\(citation\.chunkId\)/);
-  assert.doesNotMatch(searchPage, /resultByDocument/);
+  assert.match(searchPage, /groupSearchSources\(result\)/);
+  assert.match(searchSources, /new Map<number, GroupedSearchSource/);
+  assert.match(styles, /\.source-list \{[^}]*grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(styles, /\.source-card \{[^}]*max-width: 100%[^}]*overflow: hidden/);
 });
 
 test("wires document metadata update and soft delete actions to their permissions", async () => {

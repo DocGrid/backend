@@ -21,31 +21,27 @@ type SearchSourceChunk = {
   similarityScore: number | null;
 };
 
-/** Groups citations by document while preserving the search result order and chunk references. */
+/**
+ * Groups citations by document while preserving the search result order and chunk references.
+ *
+ * Renders citations only — never falls back to raw search results when citations is empty.
+ * An empty citations list is a deliberate signal (no relevant document / RAG judged the
+ * retrieved chunks irrelevant), not a data gap to paper over.
+ */
 export function groupSearchSources(result: SearchResponse): GroupedSearchSource[] {
   const resultByChunk = new Map(result.results.map((item) => [item.chunkId, item]));
-  const chunks: SearchSourceChunk[] = result.citations.length > 0
-    ? result.citations.map((citation) => {
-      const matchingResult = resultByChunk.get(citation.chunkId);
-      return {
-        chunkId: citation.chunkId,
-        documentId: citation.documentId,
-        documentTitle: citation.documentTitle,
-        label: citation.label,
-        excerpt: citation.quotedText,
-        pageNo: citation.pageNo,
-        similarityScore: matchingResult ? Number(matchingResult.similarityScore) : null,
-      };
-    })
-    : result.results.map((item) => ({
-      chunkId: item.chunkId,
-      documentId: item.documentId,
-      documentTitle: item.documentTitle,
-      label: `[${item.rank}]`,
-      excerpt: item.chunkText,
-      pageNo: item.pageNo,
-      similarityScore: Number(item.similarityScore),
-    }));
+  const chunks: SearchSourceChunk[] = result.citations.map((citation) => {
+    const matchingResult = resultByChunk.get(citation.chunkId);
+    return {
+      chunkId: citation.chunkId,
+      documentId: citation.documentId,
+      documentTitle: citation.documentTitle,
+      label: citation.label,
+      excerpt: citation.quotedText,
+      pageNo: citation.pageNo,
+      similarityScore: matchingResult ? Number(matchingResult.similarityScore) : null,
+    };
+  });
 
   const groups = new Map<number, GroupedSearchSource & { chunkIds: Set<number> }>();
   for (const chunk of chunks) {

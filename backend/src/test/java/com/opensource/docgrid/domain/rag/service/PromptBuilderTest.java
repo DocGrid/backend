@@ -59,11 +59,15 @@ class PromptBuilderTest {
 
         // Then
         assertThat(prompt)
-            .contains("질문과 문서가 직접 관련 있는지 판단하세요")
+            .contains("문서 내용이 질문 주제와 실제로 관련 있는지 판단하세요")
             .contains("단순히 일부 단어가 겹친다는 이유만으로 관련 있다고 판단하지 마세요")
             .contains("관련 문서를 찾지 못했습니다.\"라고만 답하세요")
+            .contains("관련된 항목을 빠짐없이 구체적으로 정리해서 답변하세요")
+            .contains("문서가 무엇에 대한 내용인지 3~4문장 이내로 간결하게 설명하세요")
             .contains("문서에 없는 내용은 일반 지식이나 추측으로 보완하지 마세요")
-            .contains("질문: 질문 내용");
+            .contains("답변은 반드시 한국어로만 작성하세요")
+            .contains("질문: 질문 내용")
+            .contains("번역하거나 반복해서 덧붙이지 말고 그대로 끝내세요");
     }
 
     @Test
@@ -81,7 +85,7 @@ class PromptBuilderTest {
     }
 
     @Test
-    @DisplayName("후보가 많아도 모든 라벨을 유지하며 전체 청크 본문을 6000자로 제한한다")
+    @DisplayName("후보가 많아도 모든 라벨을 유지하며 전체 청크 본문을 3200자로 제한한다")
     void build_manyCandidates_sharesContextBudgetAndKeepsLabels() {
         List<VectorSearchCandidate> candidates = java.util.stream.LongStream.rangeClosed(1, 20)
             .mapToObj(id -> new VectorSearchCandidate(
@@ -97,7 +101,7 @@ class PromptBuilderTest {
             .mapToLong(text -> text.codePointCount(0, text.length()))
             .sum();
         assertThat(prompt).contains("[1]", "[20]");
-        assertThat(contextCodePoints).isEqualTo(6_000L);
+        assertThat(contextCodePoints).isEqualTo(3_200L);
         assertThat(prompt.codePoints().filter(codePoint -> codePoint == '…').count()).isEqualTo(20L);
     }
 }

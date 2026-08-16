@@ -175,6 +175,37 @@ class RagFacadeTest {
     }
 
     @Test
+    @DisplayName("무관 문구 혼입: 정상 답변 중간에 안내 문구가 섞이면 그 지점부터 제거하고 citation은 유지한다")
+    void generate_phraseEmbeddedInAnswer_stripsPhraseAndKeepsCitations() {
+        SearchQuery queryRef = mock(SearchQuery.class);
+        given(entityManager.getReference(SearchQuery.class, QUERY_ID)).willReturn(queryRef);
+
+        VectorSearchCandidate candidate = new VectorSearchCandidate(
+            1L, 10L, 100L, "청크 내용", 12, "디렉토리 명령어", new BigDecimal("0.9")
+        );
+        List<VectorSearchCandidate> candidates = List.of(candidate);
+        SearchResult searchResult = mock(SearchResult.class);
+        List<SearchResult> searchResults = List.of(searchResult);
+
+        given(promptBuilder.build(anyString(), eq(candidates))).willReturn("조립된 프롬프트");
+        String answerWithEcho = "pwd는 현재 디렉토리를 출력합니다. "
+            + "관련 문서를 찾지 못했습니다. 질문 주제와 관련된 문서가 없습니다.";
+        OllamaGenerateResult ollamaResult =
+            new OllamaGenerateResult("qwen2.5:3b", answerWithEcho, 100, 50, 500);
+        given(ollamaClient.generate("조립된 프롬프트")).willReturn(ollamaResult);
+        RagResponse ragResponse = RagResponse.builder()
+            .answerText(answerWithEcho)
+            .status(ResultStatus.SUCCESS)
+            .build();
+        given(ragResponseCommandService.createSuccess(queryRef, "조립된 프롬프트", ollamaResult)).willReturn(ragResponse);
+
+        RagAnswer answer = ragFacade.generate(QUERY_ID, "질문", candidates, searchResults);
+
+        assertThat(answer.answerText()).isEqualTo("pwd는 현재 디렉토리를 출력합니다.");
+        assertThat(answer.citations()).hasSize(1);
+    }
+
+    @Test
     @DisplayName("후보 상한: 검색 후보가 3개를 넘으면 LLM에는 상위 3개만 전달한다")
     void generate_moreThanMaxPromptCandidates_truncatesForPrompt() {
         SearchQuery queryRef = mock(SearchQuery.class);

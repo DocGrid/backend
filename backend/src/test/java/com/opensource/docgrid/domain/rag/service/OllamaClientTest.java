@@ -9,6 +9,8 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
@@ -51,12 +53,15 @@ class OllamaClientTest {
 
     /** exchange()에 넘어온 함수를 주어진 NDJSON 스트림 응답으로 즉시 실행하도록 스텁한다. */
     private void givenStreamBody(String ndjson) {
+        givenStreamBody(new ByteArrayInputStream(ndjson.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private void givenStreamBody(InputStream body) {
         doAnswer(invocation -> {
             ExchangeFunction<?> fn = invocation.getArgument(0);
             ConvertibleClientHttpResponse response = mock(ConvertibleClientHttpResponse.class);
             doReturn(HttpStatus.OK).when(response).getStatusCode();
-            doReturn(new ByteArrayInputStream(ndjson.getBytes(StandardCharsets.UTF_8)))
-                .when(response).getBody();
+            doReturn(body).when(response).getBody();
             return fn.exchange(null, response);
         }).when(requestBodyUriSpec).exchange(any());
     }
@@ -147,6 +152,47 @@ class OllamaClientTest {
     }
 
     @Test
+    @DisplayName("스트림 정지: 읽기 중 IOException이 발생해도 이미 받은 부분 답변을 잘림으로 반환한다")
+    void generate_streamStalled_returnsPartialAnswer() {
+        byte[] data = "{\"model\":\"qwen2.5:3b\",\"response\":\"연차는 15일 부여됩니다. 이월 규\",\"done\":false}\n"
+            .getBytes(StandardCharsets.UTF_8);
+        InputStream stalledBody = new InputStream() {
+            private int pos = 0;
+
+            @Override
+            public int read() throws IOException {
+                if (pos < data.length) {
+                    return data[pos++] & 0xFF;
+                }
+                throw new IOException("stream stalled");
+            }
+        };
+        givenStreamBody(stalledBody);
+
+        OllamaGenerateResult result = ollamaClient.generate("질문: 연차 규정 알려줘");
+
+        assertThat(result.answerText())
+            .startsWith("연차는 15일 부여됩니다.")
+            .doesNotContain("이월 규")
+            .contains("답변이 길어 일부 내용이 생략됐을 수 있습니다");
+    }
+
+    @Test
+    @DisplayName("문장 경계 트리밍: 백틱 코드 스팬(`ls .`) 안의 마침표는 문장 끝으로 오인하지 않는다")
+    void generate_trims_ignoresDotInsideInlineCode() {
+        givenStreamBody("""
+            {"model":"qwen2.5:3b","response":"1. `ls .` : 현재 디렉토리의 내용을 출력합니다. 2. `ls .` : 현재 디렉","done":false}
+            """);
+
+        OllamaGenerateResult result = ollamaClient.generate("질문: ls 명령어 알려줘");
+
+        assertThat(result.answerText())
+            .startsWith("1. `ls .` : 현재 디렉토리의 내용을 출력합니다.")
+            .doesNotContain("2. `ls .`")
+            .contains("답변이 길어 일부 내용이 생략됐을 수 있습니다");
+    }
+
+    @Test
     @DisplayName("언어 혼입: 답변에 섞인 한자/가나 문자를 제거하고 한국어만 남긴다")
     void generate_stripsForeignCjkCharacters() {
         givenStreamBody("""
@@ -159,6 +205,21 @@ class OllamaClientTest {
         assertThat(result.answerText())
             .isEqualTo("연차는 입사 1년 기준 15일 부여되며 다음 해로 이월됩니다.")
             .doesNotContain("中文", "混入", "が", "。");
+    }
+
+    @Test
+    @DisplayName("문장 경계 트리밍: 백틱 코드 스팬 안의 물음표는 문장 끝으로 오인하지 않는다")
+    void generate_trims_ignoresQuestionMarkInsideInlineCode() {
+        givenStreamBody("""
+            {"model":"qwen2.5:3b","response":"포트 확인은 `netstat`을 사용합니다. 이후 `taskkill -F -PID <?","done":false}
+            """);
+
+        OllamaGenerateResult result = ollamaClient.generate("질문: 포트 죽이는 법 알려줘");
+
+        assertThat(result.answerText())
+            .startsWith("포트 확인은 `netstat`을 사용합니다.")
+            .doesNotContain("<?")
+            .contains("답변이 길어 일부 내용이 생략됐을 수 있습니다");
     }
 
     @Test

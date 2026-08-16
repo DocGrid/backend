@@ -7,14 +7,15 @@
 
 ## 1. 결론
 
-- timeout, HTTP 429, 연결·5xx 장애, 영구 4xx와 Circuit Open이 서로 다른 정책으로 분류됐다.
-- 첫 Retry 10초에 ±20% Jitter를 적용하고 5분 상한을 지켰다.
+- timeout·HTTP 408, HTTP 429, 연결·5xx 장애, 영구 4xx와 Circuit Open이 서로 다른 정책으로 분류됐다.
+- 첫 Retry 10초에 ±20% Jitter를 적용하고 애플리케이션 Backoff의 5분 상한을 지켰다.
 - HTTP 429 `Retry-After: 15`는 DB `next_retry_at`의 최소 15초 지연으로 반영됐다.
 - 세 번째 연속 실패가 Circuit을 열 때 30초 Open 시간이 Job 최소 지연으로 전달됐다.
 - Circuit Open 중 실제 `RestClient.post()` 호출은 0건이었고, Open 종료 뒤 동시 요청 중 1건만
   Half-open Probe Permission을 얻었다.
 - Open 전 이미 시작된 늦은 실패는 남은 Open 시간 23초를 반환해 중간 Attempt 소비를 방지했다.
-- 전체 Java 950건과 실제 PDF v1→v2→v3 E2E가 통과했다.
+- Half-open Probe 결과 기록 전 예상 밖 예외가 발생해도 소유권을 반환해 다음 Probe가 복구를 이어갔다.
+- 전체 Java 954건과 실제 PDF v1→v2→v3 E2E가 통과했다.
 
 ## 2. 환경과 기본 설정
 
@@ -36,11 +37,11 @@ Circuit과 실패 경로는 실제 Sleep과 외부 장애의 변동을 제거한
 
 | 입력 | ErrorCode | Worker Failure | Retry |
 |---|---|---|---|
-| `HttpTimeoutException` | `SEARCH-004` | `EMBEDDING_PROVIDER_TIMEOUT` | 가능 |
+| `HttpTimeoutException`, HTTP 408 | `SEARCH-004` | `EMBEDDING_PROVIDER_TIMEOUT` | 가능 |
 | HTTP 429 | `SEARCH-003` | `EMBEDDING_PROVIDER_OVERLOADED` | 가능 |
 | 연결 거절·HTTP 5xx | `SEARCH-001` | `EMBEDDING_PROVIDER_UNAVAILABLE` | 가능 |
 | Circuit Open | `SEARCH-005` | `EMBEDDING_PROVIDER_CIRCUIT_OPEN` | 가능 |
-| HTTP 4xx, 429 제외 | `SEARCH-006` | `EMBEDDING_REQUEST_INVALID` | 금지 |
+| HTTP 4xx, 408·429 제외 | `SEARCH-006` | `EMBEDDING_REQUEST_INVALID` | 금지 |
 
 외부 응답 본문, Endpoint, 문서 원문은 DB 실패 메시지와 결과 문서에 기록하지 않았다.
 
@@ -53,7 +54,7 @@ Circuit과 실패 경로는 실제 Sleep과 외부 장애의 변동을 제거한
 | Retry 2, Jitter 0% | 40초 |
 | Retry 0, Jitter 20% | 반복 100회 모두 8~12초 범위 |
 | 기본 Backoff 10초 + Retry-After 15초 | 15초 |
-| 외부 최소 지연 10분 + 최대 지연 40초 | 40초로 제한 |
+| 외부 최소 지연 10분 + Backoff 최대 지연 40초 | 10분 보존 |
 | 세 번째 실패로 Circuit Open | 30초 최소 지연 |
 | Open 7초 뒤 기존 요청의 늦은 실패 | 남은 23초 최소 지연 |
 
@@ -72,6 +73,7 @@ DB 통합 테스트에서 `next_retry_at - failed_at = 15초`를 확인했다. �
 | Open 종료 뒤 동시 2건 | Probe 1건, fast-fail 1건 |
 | Half-open Probe 성공 | Closed 복구 |
 | Half-open Probe 실패 | 30초 Open 재시작 |
+| Half-open Probe 결과 미기록 | 소유권 반환 뒤 다음 Probe 허용 |
 | Open 전 시작한 늦은 성공 | 새 Open 상태를 닫지 못함 |
 
 HTTP 호출 메서드 안에는 Retry loop나 Sleep을 추가하지 않았다. 현재 Attempt가 실패 Transaction으로
@@ -82,12 +84,12 @@ HTTP 호출 메서드 안에는 Retry loop나 Sleep을 추가하지 않았다. �
 
 | 버전 | Chunk / Embedding | Job 처리시간 | 업로드→검색 확인 | Attempt | Retry | current·searchable |
 |---:|---:|---:|---:|---:|---:|---|
-| v1 | 8 / 8 | 9.75초 | 12.09초 | 1 | 0 | 성공 |
-| v2 | 6 / 6 | 7.12초 | 8.86초 | 1 | 0 | 성공 |
-| v3 | 6 / 6 | 7.44초 | 9.77초 | 1 | 0 | 성공 |
+| v1 | 8 / 8 | 7.39초 | 8.74초 | 1 | 0 | 성공 |
+| v2 | 6 / 6 | 5.13초 | 6.53초 | 1 | 0 | 성공 |
+| v3 | 6 / 6 | 4.92초 | 6.51초 | 1 | 0 | 성공 |
 
-- 전체 처리시간: `30.72초`
-- 처리량: `0.651 chunks/s`
+- 전체 처리시간: `21.77초`
+- 처리량: `0.919 chunks/s`
 - Job 성공률: `3/3 (100%)`
 - 총 Retry: `0회`
 - 최종 검색 가능 Version: `v3`
@@ -102,7 +104,7 @@ Circuit 추가가 Job·Version·검색 전환을 깨뜨리지 않는지 확인�
 | `./gradlew compileJava` | 성공 |
 | 핵심 Circuit·Retry 단위 테스트 | 성공 |
 | Retry-After·Claim DB 통합 테스트 | 성공 |
-| 전체 `./gradlew test` | 950 passed |
+| 전체 `./gradlew test` | 954 passed |
 | 실제 PDF `realPdfVersionE2eTest` | 1 passed |
 | `git diff --check` | 성공 |
 

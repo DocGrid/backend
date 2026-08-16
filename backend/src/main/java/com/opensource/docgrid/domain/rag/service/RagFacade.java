@@ -94,10 +94,20 @@ public class RagFacade {
         log.info("[RAG] done queryId={} responseId={} latencyMs={}", queryId, ragResponse.getId(), result.latencyMs());
 
         // LLM이 무관하다고 판단해 안내 문구로만 답했으면, 후보 문서를 근거처럼 같이 보여주지 않는다.
-        if (result.answerText() != null && result.answerText().contains(NO_RELEVANT_DOC_PHRASE)) {
-            return RagAnswer.of(result.answerText(), List.of());
+        // 단, 7B 모델이 정상 답변을 끝낸 뒤 지시문을 메아리처럼 이 문구를 덧붙이는 패턴이 관찰됨 —
+        // 문구가 답변의 사실상 전부(맨 앞)일 때만 무관으로 취급하고, 정상 답변 중간에 박힌 문구는
+        // 그 지점부터 잘라내고 근거 문서는 유지한다.
+        String answerText = result.answerText();
+        int phraseIndex = answerText != null ? answerText.indexOf(NO_RELEVANT_DOC_PHRASE) : -1;
+        if (phraseIndex >= 0) {
+            if (answerText.strip().startsWith(NO_RELEVANT_DOC_PHRASE)) {
+                return RagAnswer.of(answerText, List.of());
+            }
+            log.warn("[RAG] 정상 답변에 무관 안내 문구 혼입, 해당 지점부터 제거: queryId={} phraseIndex={}",
+                queryId, phraseIndex);
+            answerText = answerText.substring(0, phraseIndex).strip();
         }
-        return RagAnswer.of(result.answerText(), candidates);
+        return RagAnswer.of(answerText, candidates);
     }
 
     private String buildExtractiveFallbackAnswer(List<VectorSearchCandidate> candidates) {

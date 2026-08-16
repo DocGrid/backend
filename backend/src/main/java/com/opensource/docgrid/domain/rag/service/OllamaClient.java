@@ -154,23 +154,32 @@ public class OllamaClient {
         OllamaGenerateResponse last = null;
         boolean deadlineExceeded = false;
         BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8));
-        String line;
-        while ((line = reader.readLine()) != null) {
-            if (line.isBlank()) {
-                continue;
+        try {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.isBlank()) {
+                    continue;
+                }
+                OllamaGenerateResponse chunk = CHUNK_MAPPER.readValue(line, OllamaGenerateResponse.class);
+                if (chunk.response() != null) {
+                    answer.append(chunk.response());
+                }
+                last = chunk;
+                if (chunk.done()) {
+                    break;
+                }
+                if (System.currentTimeMillis() >= deadline) {
+                    deadlineExceeded = true;
+                    break;
+                }
             }
-            OllamaGenerateResponse chunk = CHUNK_MAPPER.readValue(line, OllamaGenerateResponse.class);
-            if (chunk.response() != null) {
-                answer.append(chunk.response());
+        } catch (IOException e) {
+            // 스트림이 멈춰 read-timeout이 본문 연결을 끊는 경우 등. 이미 받은 부분 답변이 있으면
+            // 버리지 않고 done 없는 조기 종료로 처리해 반환하고, 하나도 없을 때만 실패로 전파한다.
+            if (answer.isEmpty()) {
+                throw e;
             }
-            last = chunk;
-            if (chunk.done()) {
-                break;
-            }
-            if (System.currentTimeMillis() >= deadline) {
-                deadlineExceeded = true;
-                break;
-            }
+            log.warn("Ollama 스트림 읽기 중단, 수신된 부분 답변 반환: 길이={}, 원인={}", answer.length(), e.getMessage());
         }
         return new StreamChunks(answer.toString(), last, deadlineExceeded);
     }
@@ -216,7 +225,7 @@ public class OllamaClient {
     private static String trimToSentenceBoundary(String text) {
         for (int i = text.length() - 1; i >= 0; i--) {
             char c = text.charAt(i);
-            if (c == '!' || c == '?' || (c == '.' && isSentenceEndDot(text, i))) {
+            if ((c == '!' || c == '?' || (c == '.' && isSentenceEndDot(text, i))) && !insideInlineCode(text, i)) {
                 return text.substring(0, i + 1);
             }
         }
@@ -229,5 +238,16 @@ public class OllamaClient {
             || (text.charAt(i - 1) != '.' && !Character.isDigit(text.charAt(i - 1)));
         boolean followedOk = i == text.length() - 1 || text.charAt(i + 1) != '.';
         return precededOk && followedOk;
+    }
+
+    // 백틱 코드 스팬(`taskkill /PID <?` 등) 안의 문장 부호는 문장 끝이 아니다. 앞쪽 백틱 개수가 홀수면 스팬 내부다.
+    private static boolean insideInlineCode(String text, int i) {
+        int backticks = 0;
+        for (int j = 0; j < i; j++) {
+            if (text.charAt(j) == '`') {
+                backticks++;
+            }
+        }
+        return backticks % 2 == 1;
     }
 }

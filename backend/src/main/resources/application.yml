@@ -113,7 +113,9 @@ ollama:
     # 프론트의 29초 및 Sites Worker의 30초 제한 전에 검색 결과 Fallback을 반환한다.
     # Docker 컨테이너(GPU 미가속) 기준이 아니라 macOS 네이티브 Ollama(Metal 가속) 실측 기준값이다.
     connect-timeout: ${OLLAMA_SERVER_CONNECT_TIMEOUT:3s}
-    # 스트리밍 응답이 시작(헤더 수신)될 때까지의 제한. 생성 전체 시간의 상한은 ollama.generate-deadline이 담당한다.
+    # 요청 시작부터 스트리밍 본문 수신까지 전체에 적용되는 전송 계층 제한(Spring JdkClientHttpRequestFactory가
+    # 본문 스트림에도 적용). 스트림이 멈췄을 때의 최후 방어선이며, 이때도 이미 받은 부분 답변은 보존된다.
+    # 정상 스트림의 시간 상한은 ollama.generate-deadline(25s)이 먼저 담당하므로 이 값은 그보다 커야 한다.
     read-timeout: ${OLLAMA_SERVER_READ_TIMEOUT:27s}
   model: ${OLLAMA_MODEL:qwen2.5:7b}
   # 요청 사이 모델을 상주시켜 매 요청마다 재로딩(수 초)이 발생하지 않게 한다.

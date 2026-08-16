@@ -145,86 +145,98 @@ docker compose exec ollama ollama run qwen2.5:3b "안녕"
 - 기본 접속 정보 http://localhost:11434, OLLAMA_SERVER_URL로 오버라이드 가능
 ```
 
-### 5. `domain/rag/service/PromptBuilder.java` (신규)
+### 5. `domain/rag/service/PromptBuilder.java` (신규, 이후 여러 이슈에 걸쳐 지속 수정됨)
+
+최초 구현은 명세 원문 지시문("이 내용만을 근거로 답변하고, 문서에 없는 내용은 추측하지 마세요") 하나만
+가진 단순한 형태였다. 이후 `#67`(OllamaClient 연동)에서 관찰된 실제 RAG 프롬프트 결과와 `#210`(타임아웃/
+컷오프 수정)을 거치며 아래 형태로 정착했다. **현재 코드**:
 
 ```java
 @Component
 public class PromptBuilder {
 
+    private static final int MAX_CHUNK_TEXT_CODE_POINTS = 800;
+    // Ollama 추론 시간은 대부분 prefill(문맥 토큰 수)에 비례한다 — 6000에서 절반으로 줄여
+    // read-timeout(25s) 안에서 생성에 쓸 수 있는 여유 시간을 확보한다.
+    private static final int MAX_CONTEXT_TEXT_CODE_POINTS = 3_200;
+
     private static final String INSTRUCTION =
-        "다음은 참고 문서입니다. 이 내용만을 근거로 답변하고,\n문서에 없는 내용은 추측하지 마세요.\n\n";
+        "다음은 검색으로 찾은 참고 문서입니다. 문서 내용이 질문 주제와 실제로 관련 있는지 판단하세요.\n"
+            + "단순히 일부 단어가 겹친다는 이유만으로 관련 있다고 판단하지 마세요.\n"
+            + "문서 주제 자체가 질문과 무관하면 \"관련 문서를 찾지 못했습니다.\"라고만 답하세요.\n"
+            + "질문이 특정 키워드나 항목(예: 특정 명령어, 용어)을 지정해 그 내용을 찾아달라는 요청이면, "
+            + "문서에서 해당 부분을 찾아 관련된 항목을 빠짐없이 구체적으로 정리해서 답변하세요. "
+            + "이 경우 문서가 어떤 주제인지 개괄적으로만 설명하지 마세요.\n"
+            + "질문이 특정 항목을 지정하지 않고 문서 전체를 요약하거나 소개해달라는 요청이면(예: \"문서 찾아줘\", "
+            + "\"요약해줘\", \"소개해줘\"), 문서가 무엇에 대한 내용인지 3~4문장 이내로 간결하게 설명하세요.\n"
+            + "문서에 없는 내용은 일반 지식이나 추측으로 보완하지 마세요.\n"
+            + "질문이나 문서에 다른 언어가 섞여 있어도 답변은 반드시 한국어로만 작성하세요.\n\n";
 
     public String build(String queryText, List<VectorSearchCandidate> candidates) {
         StringBuilder sb = new StringBuilder(INSTRUCTION);
+        int chunkTextLimit = chunkTextLimit(candidates.size());        // 후보가 많을수록 청크당 몫을 줄임
         for (int i = 0; i < candidates.size(); i++) {
-            VectorSearchCandidate candidate = candidates.get(i);
-            sb.append(citationLine(i + 1, candidate)).append('\n');
+            sb.append(citationLine(i + 1, candidates.get(i), chunkTextLimit)).append('\n');
         }
         sb.append("\n질문: ").append(queryText);
+        sb.append("\n\n(다시 한번 강조: 답변은 한국어로만 작성하세요. 답변을 마쳤으면 같은 내용을 다른 언어로 "
+            + "번역하거나 반복해서 덧붙이지 말고 그대로 끝내세요.)");
         return sb.toString();
     }
 
-    private String citationLine(int order, VectorSearchCandidate candidate) {
+    private int chunkTextLimit(int candidateCount) {
+        if (candidateCount == 0) {
+            return MAX_CHUNK_TEXT_CODE_POINTS;
+        }
+        int sharedLimit = Math.max(1, MAX_CONTEXT_TEXT_CODE_POINTS / candidateCount);
+        return Math.min(MAX_CHUNK_TEXT_CODE_POINTS, sharedLimit);
+    }
+
+    private String citationLine(int order, VectorSearchCandidate candidate, int chunkTextLimit) {
         String pageSuffix = candidate.pageNo() != null ? " p." + candidate.pageNo() : "";
-        return "[%d] %s%s: \"%s\"".formatted(order, candidate.documentTitle(), pageSuffix, candidate.chunkText());
+        String chunkText = truncate(candidate.chunkText(), chunkTextLimit);
+        return "[%d] %s%s: \"%s\"".formatted(order, candidate.documentTitle(), pageSuffix, chunkText);
+    }
+
+    private String truncate(String text, int maxCodePoints) {
+        int codePointCount = text.codePointCount(0, text.length());
+        if (codePointCount <= maxCodePoints) {
+            return text;
+        }
+        // 말줄임표까지 본문 예산에 포함해 전체 프롬프트 상한을 넘지 않도록 한다.
+        int endIndex = text.offsetByCodePoints(0, maxCodePoints - 1);
+        return text.substring(0, endIndex) + "…";
     }
 }
 ```
 
-**한 줄 요약**: 검색 후보 리스트 + 질문 텍스트를 받아, 환각 방지 지시문 + 라벨링된 출처 목록 + 질문으로 이어지는 프롬프트 문자열 하나를 조립한다.
+**한 줄 요약**: 검색 후보 리스트 + 질문 텍스트를 받아, 환각 방지/관련성 판단/언어 고정 지시문 + 라벨링된
+출처 목록(길이 예산 적용) + 질문 + 언어 재강조로 이어지는 프롬프트 문자열 하나를 조립한다.
 
-- `INSTRUCTION`: 명세 원문의 지시문("이 내용만을 근거로 답변하고, 문서에 없는 내용은 추측하지 마세요")을 그대로 상수로 뺐다. RAG 구조의 환각 방지 핵심 장치이므로 문구를 임의로 바꾸지 않았다.
-- 라벨(`[1]`, `[2]`...)은 `candidates` 리스트의 **인덱스 순서를 그대로 사용**한다. 이 순서는 `SearchFacade`에서 이미 유사도/live check를 거쳐 정렬된 순서(=`SearchResultItem.rank`와 동일)이므로 별도 재정렬이나 라벨 매핑 구조체가 필요 없다. 이 순서는 Issue 4(`response_citations` 저장)에서 `citation_order`/`citation_label`을 매길 때도 그대로 재사용할 계획이다.
+- 라벨(`[1]`, `[2]`...)은 `candidates` 리스트의 **인덱스 순서를 그대로 사용**한다. 이 순서는 `SearchFacade`에서 이미 유사도/live check를 거쳐 정렬된 순서(=`SearchResultItem.rank`와 동일)이므로 별도 재정렬이나 라벨 매핑 구조체가 필요 없다. `response_citations` 저장(`#73`)에서 `citation_order`/`citation_label`을 매길 때도 그대로 재사용한다.
 - `pageSuffix`: `pageNo`가 `null`(페이지 개념이 없는 문서 포맷)이면 `" p.N"` 부분을 통째로 생략한다.
 - `search_results`/`document_chunks`를 다시 SELECT하지 않는다 — `VectorSearchCandidate`가 이미 `chunkText`, `documentTitle`, `pageNo`를 flat하게 갖고 있어서 이 레코드를 그대로 재사용하는 게 더 단순하고, 불필요한 재조회도 없앤다.
-- 빈 리스트(`candidates.isEmpty()`)가 들어와도 이 클래스는 특별 취급하지 않는다 — 지시문 + 빈 출처 목록 + 질문으로 이어지는 프롬프트를 그대로 만든다. "검색 결과 0건이면 LLM 호출 자체를 생략한다"는 판단(NO_CONTEXT)은 이 클래스의 책임이 아니라, Issue 5에서 만들 `RagFacade`(오케스트레이션 레이어)의 책임으로 명확히 분리했다.
+- 빈 리스트(`candidates.isEmpty()`)가 들어와도 이 클래스는 특별 취급하지 않는다 — "검색 결과 0건이면 LLM 호출 자체를 생략한다"는 판단(NO_CONTEXT)은 `RagFacade`(`#75`)의 책임으로 분리되어 있다.
+- **관련성 판단 지시** (`무관 문맥 거절` — Issue 1 이후 추가): 단순 단어 겹침만으로 관련 있다고 판단하지 말고, 무관하면 `"관련 문서를 찾지 못했습니다."`라고만 답하라는 지시. 검색 유사도가 낮은 후보가 섞여 들어와도 LLM이 억지로 답변을 짜내지 않게 하기 위함.
+- **컨텍스트 예산(truncate)** (Issue 1 이후 추가, `#210`에서 6,000자 → 3,200자로 재축소): 청크 하나당 `MAX_CHUNK_TEXT_CODE_POINTS`(800자), 전체 합계 `MAX_CONTEXT_TEXT_CODE_POINTS`(3,200자) 상한. 후보가 많을수록 청크당 허용 길이를 균등하게 나눠 줄이고, 초과분은 말줄임표(…)로 잘라낸다. 3,200자로 줄인 이유는 Ollama 추론 시간이 대부분 prefill(문맥 토큰 수)에 비례해서, 컨텍스트를 줄여 read-timeout 예산 안에서 생성(decode)에 쓸 시간을 더 확보하기 위함(`#210`).
+- **추출형/요약형 분기** (`#210`): 질문이 특정 키워드·항목을 지정하면("ls 관련 명령어 찾아줘") 해당 항목을 빠짐없이 정리해서 답하고, 대상 없이 막연하면("요약해줘"/"소개해줘") 3~4문장으로 간결하게 답하도록 지시를 2갈래로 분리했다. 원래는 후자 하나로 뭉뚱그려 있어서, 구체적 질문에도 "이 문서는 ~에 대한 내용입니다" 식의 알맹이 없는 답이 나오는 문제가 있었다.
+- **한국어 강제 지시** (`#210`, 2곳): Issue 1에서는 "안녕" 단발 호출로만 관찰됐던 한국어/중국어 혼용이, 실제 RAG 프롬프트(코드 스타일 텍스트가 섞인 문서)에서도 재현되는 것을 확인해 `INSTRUCTION` 본문과 질문 바로 뒤(생성 시작점 근처, recency 효과를 노림) 두 곳에 "반드시 한국어로만 작성하라"는 지시를 추가했다. 질문 뒤에 붙는 재강조 문구는, 답변이 끝난 뒤 모델이 같은 내용을 다른 언어로 재진술하다 끊기는 현상에 대응한 것이다.
+- ~~나열형 답변 개수 제한/압축 지시~~ → **시도 후 철회 (`#210`)**: "항목당 짧은 키워드로 압축", "최대 8개까지만 나열하고 넘으면 '외 N개 더 있음'" 두 가지를 프롬프트 지시로 시도했으나, 7B 모델이 지시를 무시하거나 프롬프트 문구를 답변에 그대로 베껴 쓰는 등 오작동을 일으켜 둘 다 뺐다. 대신 "잘렸는지" 자체는 `OllamaClient`가 응답의 `eval_count`로 판별해 안내 문구를 붙이는 방식으로 옮겼다(`#67` 문서 참고).
 
-> **업데이트(무관 문맥 거절 + 프롬프트 예산)**: `PromptBuilder`에 두 가지가 추가됐다.
->
-> 1. **무관 문맥 거절 지시문**: `INSTRUCTION`이 "질문과 문서가 직접 관련 있는지 먼저 판단하고, 단순히 일부 단어가 겹친다는 이유만으로 관련 있다고 판단하지 말고, 충분한 근거가 없으면 '관련 문서를 찾지 못했습니다'라고만 답하라"는 문장을 포함하도록 확장됐다. 검색 유사도가 낮은 후보가 섞여 들어와도 LLM이 억지로 답변을 짜내지 않고 스스로 무관함을 판단하게 하기 위함이다.
-> 2. **청크별/전체 컨텍스트 텍스트 예산(truncate)**: 청크 하나당 최대 `MAX_CHUNK_TEXT_CODE_POINTS`(800자), 전체 컨텍스트 합계 `MAX_CONTEXT_TEXT_CODE_POINTS`(6,000자) 상한이 추가됐다. 후보 개수가 많을수록 청크당 허용 길이를 균등하게 나눠 줄이고, 초과분은 말줄임표(…)로 잘라낸다. 모든 후보의 인용 라벨과 순서는 그대로 유지한 채 본문 길이만 조절한다.
->
-> ```java
-> private static final int MAX_CHUNK_TEXT_CODE_POINTS = 800;
-> private static final int MAX_CONTEXT_TEXT_CODE_POINTS = 6_000;
->
-> public String build(String queryText, List<VectorSearchCandidate> candidates) {
->     StringBuilder sb = new StringBuilder(INSTRUCTION);
->     int chunkTextLimit = chunkTextLimit(candidates.size());        // 후보가 많을수록 청크당 몫을 줄임
->     for (int i = 0; i < candidates.size(); i++) {
->         sb.append(citationLine(i + 1, candidates.get(i), chunkTextLimit)).append('\n');
->     }
->     sb.append("\n질문: ").append(queryText);
->     return sb.toString();
-> }
->
-> private int chunkTextLimit(int candidateCount) {
->     if (candidateCount == 0) {
->         return MAX_CHUNK_TEXT_CODE_POINTS;
->     }
->     int sharedLimit = Math.max(1, MAX_CONTEXT_TEXT_CODE_POINTS / candidateCount);
->     return Math.min(MAX_CHUNK_TEXT_CODE_POINTS, sharedLimit);
-> }
->
-> private String truncate(String text, int maxCodePoints) {
->     int codePointCount = text.codePointCount(0, text.length());
->     if (codePointCount <= maxCodePoints) {
->         return text;
->     }
->     int endIndex = text.offsetByCodePoints(0, maxCodePoints - 1);   // 말줄임표까지 예산에 포함
->     return text.substring(0, endIndex) + "…";
-> }
-> ```
+전체 원인 규명 과정과 실측 데이터는 `docs/design/kangcheolung-#210-ollama-rag-timeout-fix.md` 참고.
 
-### 6. `src/test/java/.../rag/service/PromptBuilderTest.java` (신규)
+### 6. `src/test/java/.../rag/service/PromptBuilderTest.java` (신규, 이후 2개 테스트 추가)
 
-`testing_guide.md` 컨벤션(`@DisplayName` 한국어, Given/When/Then)을 따라 3개 테스트를 작성했다.
+`testing_guide.md` 컨벤션(`@DisplayName` 한국어, Given/When/Then)을 따라 작성했다. 최초 3개에서, 컨텍스트
+예산(truncate) 로직 추가에 맞춰 2개가 더해져 현재 5개다.
 
 | 테스트 | 검증 내용 |
 |---|---|
 | `build_withCandidates_appendsLabeledCitations` | 후보 2개 → `[1]`, `[2]` 순서대로 라벨이 붙고, 각 문서 제목/페이지/청크 텍스트가 프롬프트에 포함되는지 |
 | `build_withNullPageNo_omitsPageSuffix` | `pageNo == null`인 후보는 `p.` 표기가 프롬프트에 없는지 |
-| `build_alwaysIncludesInstructionAndQuestion` | 환각 방지 지시문과 `"질문: {queryText}"`가 항상 포함되는지 (빈 후보 리스트로도 검증) |
+| `build_alwaysIncludesInstructionAndQuestion` | 관련성 판단/추출·요약 분기/환각 방지/한국어 강제 지시문과 `"질문: {queryText}"`가 항상 포함되는지 (빈 후보 리스트로도 검증) |
+| `build_longChunk_limitsChunkTextLength` | 청크 하나가 800자를 넘으면 말줄임표(…)를 포함해 799자 + 말줄임표로 잘리는지 |
+| `build_manyCandidates_sharesContextBudgetAndKeepsLabels` | 후보 20개가 들어와도 모든 라벨(`[1]`~`[20]`)이 유지되고, 전체 청크 본문 합계가 3,200자로 제한되는지 |
 
 `PromptBuilder`가 외부 의존성이 없는 순수 컴포넌트라 Mockito 없이 `new PromptBuilder()`로 바로 인스턴스화해서 테스트했다. `VectorSearchCandidate`도 `SearchFacadeTest`와 동일하게 별도 Fixture 클래스 없이 직접 `new`로 생성했다 (재사용처가 아직 이 테스트 하나뿐이라 Fixture를 만들 이유가 없음).
 
@@ -331,17 +343,21 @@ Ollama 설치 자체가 이번 이슈 범위(docker-compose 서비스 등록)에
 
 **언어 지시문("한국어로 답변하세요") 추가는 Issue 2로 연기**
 로컬 검증 중 언어가 섞이는 현상을 관찰했지만, 실제 RAG 프롬프트(검색된 한국어 문서 chunk 포함)로 테스트해보지 않은 상태에서 미리 지시문을 추가하는 것은 검증되지 않은 변경이다. Issue 2에서 `OllamaClient`로 실제 호출해보고 문제가 재현되면 그때 `PromptBuilder.INSTRUCTION`에 한 줄 추가하기로 결정했다.
+→ Issue 2(`#67`)에서는 실제로 재현되지 않아 추가 안 했으나, `#210`에서 다른 형태의 실제 RAG 프롬프트로 재현되어 결국 추가됐다(위 "5. `PromptBuilder.java`" 절 참고).
 
 ---
 
 ## 남은 이슈 / TODO
 
 ### 코드
-- `PromptBuilder`는 아직 어디에서도 호출되지 않는 독립 컴포넌트 — Issue 5에서 `RagFacade`가 실제로 연결한다.
-- 언어 지시문 추가 여부는 Issue 2에서 실제 Ollama 호출 결과를 보고 판단.
+- ~~`PromptBuilder`는 아직 어디에서도 호출되지 않는 독립 컴포넌트 — Issue 5에서 `RagFacade`가 실제로 연결한다.~~ → 해결됨: `#75`에서 `RagFacade.generate()`가 연결했다. 다만 `#210`에서 `RagFacade`가 `build()`에 넘기는 후보 수를 최대 3개로 제한하도록 바뀌었다(`topK`는 호출자가 1~20까지 정할 수 있어 그대로 넘기면 prefill 시간이 예측 불가능했음) — `PromptBuilder`는 여전히 "받은 candidates를 그대로 조립"만 하고 몇 개를 넘길지는 판단하지 않는다는 책임 경계는 그대로다. 자세한 내용은 `#75` 문서 참고.
+- ~~언어 지시문 추가 여부는 Issue 2에서 실제 Ollama 호출 결과를 보고 판단.~~ → 해결됨: `#67`에서는 재현 안 됐으나 `#210`에서 재현되어 추가함(위 "5. `PromptBuilder.java`" 절 참고).
 
 ### 문서
 - README의 기존 "Local DB" 섹션이 참조하는 `docs/local-db.md` 링크는 이번 작업 이전부터 실제 파일이 없는 broken 링크였다 — 이번 이슈 범위 밖이라 별도로 손대지 않음.
 
 ### 다음 단계
 Issue 2 — `OllamaServerConfig`(RestClient Bean) + `OllamaClient` 구현. `PromptBuilder.build()`로 만든 프롬프트를 `POST /api/generate`로 실제 전송하고, 타임아웃/장애 시 503 `SERVICE_UNAVAILABLE`로 처리하는 예외 처리까지 포함한다.
+
+`OllamaClient` 쪽 변경(raw:true, num_predict, 잘림 감지)은 `#67` 문서, RAG 타임아웃 수정 전체 배경은
+`docs/design/kangcheolung-#210-ollama-rag-timeout-fix.md` 참고.

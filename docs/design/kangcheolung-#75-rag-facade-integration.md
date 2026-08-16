@@ -218,14 +218,30 @@ public record RagAnswer(String answerText, List<CitationResponse> citations) {
 ```
 `RagFacade.generate()`의 반환 타입. `SearchOutcome`이 검색 쪽 결과를 담는 그릇이라면, 이건 RAG 쪽 결과를 담는 그릇이다. `citations`는 `ResponseCitationCommandService`가 DB에 저장한 것과 별개로, `candidates`로부터 **직접** 다시 만든다(같은 라벨 규칙 `"[" + order + "]"` 재사용) — DB에 저장한 걸 다시 SELECT해서 응답을 조립하지 않고, 이미 메모리에 있는 값으로 응답도 함께 조립하는 것이다.
 
-### 10. `domain/rag/service/RagFacade.java` — 이번 이슈의 핵심 조율자
+### 10. `domain/rag/service/RagFacade.java` — 이번 이슈의 핵심 조율자 (`#210`에서 후보 수 상한/citations 숨김/extractive fallback 추가)
 
+**현재 코드**:
 ```java
 @Transactional
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class RagFacade {
+
+    private static final String LLM_FALLBACK_PREFIX = "AI 답변 생성이 지연되고 있습니다. "
+        + "가장 관련도 높은 문서에서 다음 내용을 찾았습니다:\n\n";
+
+    // fallback 문구에 원문을 통째로 붙이면 답변이 지나치게 길어져, 미리보기 수준으로만 잘라 보여준다.
+    private static final int FALLBACK_EXCERPT_MAX_CODE_POINTS = 300;
+
+    // topK는 호출자가 1~20까지 자유롭게 요청할 수 있어(SearchRequest), 후보 수를 그대로 프롬프트에
+    // 다 넣으면 prefill 시간이 예측 불가능해져 read-timeout(25s)을 넘기는 경우가 생긴다.
+    // 화면에 보여줄 인용 문서 수(topK)와 별개로, LLM이 실제로 읽는 후보 수는 이 값으로 고정한다.
+    private static final int MAX_PROMPT_CANDIDATES = 3;
+
+    // PromptBuilder가 LLM에게 무관한 문서일 때 이 문구로만 답하도록 지시한다 — 검색은 됐지만(candidates
+    // 존재) LLM이 무관하다고 판단한 경우, 화면에 근거 문서를 같이 보여주면 안내 문구와 모순돼 보인다.
+    private static final String NO_RELEVANT_DOC_PHRASE = "관련 문서를 찾지 못했습니다";
 
     private final PromptBuilder promptBuilder;
     private final OllamaClient ollamaClient;
@@ -245,18 +261,48 @@ public class RagFacade {
             return RagAnswer.noContext(ragResponse.getAnswerText());
         }
 
-        // 검색 후보가 있으면 프롬프트 조립 후 LLM 호출
-        String prompt = promptBuilder.build(queryText, candidates);
+        // 검색 후보가 있으면 프롬프트 조립 후 LLM 호출 (LLM 입력은 상위 MAX_PROMPT_CANDIDATES개로 제한)
+        List<VectorSearchCandidate> promptCandidates = candidates.size() > MAX_PROMPT_CANDIDATES
+            ? candidates.subList(0, MAX_PROMPT_CANDIDATES)
+            : candidates;
+        String prompt = promptBuilder.build(queryText, promptCandidates);
+        OllamaGenerateResult result;
         try {
-            OllamaGenerateResult result = ollamaClient.generate(prompt);
-            RagResponse ragResponse = ragResponseCommandService.createSuccess(queryRef, prompt, result);
-            responseCitationCommandService.saveAll(ragResponse, candidates, searchResults);
-            log.info("[RAG] done queryId={} responseId={} latencyMs={}", queryId, ragResponse.getId(), result.latencyMs());
-            return RagAnswer.of(result.answerText(), candidates);
+            result = ollamaClient.generate(prompt);
         } catch (DocGridException e) {
             ragResponseCommandService.createFailed(queryRef, prompt, e.getMessage());
-            throw e;
+            // LLM 장애가 권한 검증을 통과한 벡터 검색 결과까지 숨기지 않도록, 최상위 후보 원문을
+            // 그대로 인용해 최소한의 답을 제공한다(extractive fallback).
+            log.warn("[RAG] fallback queryId={} errorCode={}", queryId, e.getErrorCode().getCode());
+            return RagAnswer.of(buildExtractiveFallbackAnswer(candidates), candidates);
         }
+
+        // LLM 이후의 영속화 실패는 검색 저하 응답으로 숨기지 않고 Transaction 오류로 전달한다.
+        RagResponse ragResponse = ragResponseCommandService.createSuccess(queryRef, prompt, result);
+        responseCitationCommandService.saveAll(ragResponse, candidates, searchResults);
+        log.info("[RAG] done queryId={} responseId={} latencyMs={}", queryId, ragResponse.getId(), result.latencyMs());
+
+        // LLM이 무관하다고 판단해 안내 문구로만 답했으면, 후보 문서를 근거처럼 같이 보여주지 않는다.
+        if (result.answerText() != null && result.answerText().contains(NO_RELEVANT_DOC_PHRASE)) {
+            return RagAnswer.of(result.answerText(), List.of());
+        }
+        return RagAnswer.of(result.answerText(), candidates);
+    }
+
+    private String buildExtractiveFallbackAnswer(List<VectorSearchCandidate> candidates) {
+        VectorSearchCandidate top = candidates.get(0);
+        String pageSuffix = top.pageNo() != null ? " " + top.pageNo() + "페이지" : "";
+        String excerpt = truncate(top.chunkText(), FALLBACK_EXCERPT_MAX_CODE_POINTS);
+        return "%s\"%s\" (%s%s)".formatted(LLM_FALLBACK_PREFIX, excerpt, top.documentTitle(), pageSuffix);
+    }
+
+    private String truncate(String text, int maxCodePoints) {
+        int codePointCount = text.codePointCount(0, text.length());
+        if (codePointCount <= maxCodePoints) {
+            return text;
+        }
+        int endIndex = text.offsetByCodePoints(0, maxCodePoints - 1);
+        return text.substring(0, endIndex) + "…";
     }
 }
 ```
@@ -265,7 +311,13 @@ public class RagFacade {
 
 **`@Transactional`을 클래스에 붙인 이유**: `createSuccess()`(또는 `createNoContext()`)와 `saveAll()`(citation 저장)이 하나의 원자적 단위로 묶이길 원했다 — 답변은 저장됐는데 출처 저장이 실패해서 어중간하게 남는 상황을 피하기 위함이다. `SearchFacade`와는 별개의 트랜잭션이므로(Context 문단 참고), 검색 DB 작업과 섞이지 않는다. Ollama HTTP 호출이 이 트랜잭션 안에 포함되는 것 자체는 `SearchFacade`가 임베딩 HTTP 호출을 트랜잭션에 포함하는 것과 동일한 기존 트레이드오프를 그대로 따른다(MVP 단계 단순성 우선, 두 설계 문서 모두에 명시된 남은 이슈).
 
-**실패 시 `createFailed()` 후 예외 재전파**: `catch (DocGridException e)`에서 실패 기록을 남기고 예외를 그대로 다시 던진다. `RagFacade`는 HTTP 상태 코드를 직접 조립하지 않는다 — `GlobalExceptionHandler`가 `RAG_SERVICE_UNAVAILABLE`을 받아 503으로 변환한다. 이때 이미 커밋된 검색 결과(`search_results`)는 별도 트랜잭션(`SearchFacade`)에서 저장된 것이라 영향받지 않고 그대로 남는다.
+**실패 시 처리 — extractive fallback (200 응답)**: 최초 구현은 `catch (DocGridException e)`에서 실패 기록만 남기고 예외를 그대로 재전파해 503으로 응답했다. 이후 어느 시점(`#210` 범위 밖, 정확한 이슈 미상)에 "정적 안내 문구 + candidates를 citations로" 반환하는 방식(200 응답)으로 이미 바뀌어 있었고, `#210`에서 그 정적 문구를 **최상위 검색 후보 원문을 최대 300자까지 그대로 인용**하는 방식으로 다시 개선했다 — 실패해도 사용자가 빈손으로 끝나지 않도록. 이때도 이미 커밋된 검색 결과(`search_results`)는 별도 트랜잭션(`SearchFacade`)에서 저장된 것이라 영향받지 않고 그대로 남는다.
+
+**LLM 입력 후보 수 상한(`MAX_PROMPT_CANDIDATES = 3`, `#210`)**: `topK`는 호출자가 1~20까지 정할 수 있는데(`SearchRequest`), 검색된 후보를 그대로 프롬프트에 다 넣다 보니 후보 개수에 따라 prefill 시간이 들쭉날쭉해 read-timeout을 넘기는 일이 잦았다. 화면에 보여줄 인용 문서 수(`topK`)와 별개로, `PromptBuilder.build()`에 넘기는 후보만 상위 3개로 고정했다 — citations/fallback에는 여전히 전체 `candidates`를 쓴다.
+
+**LLM이 "무관하다"고 판단하면 citations를 비운다 (`#210`)**: `PromptBuilder`가 무관한 문서일 때 `"관련 문서를 찾지 못했습니다"`로만 답하도록 지시하는데(`#65` 문서), 검색 자체는 성공해서 `candidates`가 비어있지 않은 상태라 기존 로직대로면 이 후보들이 citations로 그대로 노출됐다. "관련 문서 없음" 메시지와 "근거 문서 목록"이 동시에 뜨는 게 모순돼 보여서, 답변이 이 문구를 포함하면 citations를 빈 배열로 반환하도록 분기를 추가했다(DB에는 그대로 저장 — 감사/분석용). **프론트도 같이 고쳐야 했다** — `frontend/app/lib/search-sources.ts`의 `groupSearchSources`가 "citations 비면 원본 검색 `results`로 대체해서 보여주는" fallback을 갖고 있어서, 백엔드만 고치면 이 fallback이 그대로 무력화시켰다. 이 fallback을 제거해 citations만 근거로 렌더링하게 바꿨다.
+
+전체 배경과 실측 데이터는 `docs/design/kangcheolung-#210-ollama-rag-timeout-fix.md` 참고.
 
 ---
 
@@ -282,7 +334,7 @@ $ ./gradlew build -x test
 BUILD SUCCESSFUL
 ```
 
-기존 검색 블록 테스트(`SearchFacadeTest`, `SearchResultCommandServiceTest`)와 RAG 블록 테스트(`RagResponseCommandServiceTest`, `ResponseCitationCommandServiceTest`)를 이번 이슈의 시그니처 변경에 맞춰 함께 수정했고, 신규 `RagFacadeTest`(NO_CONTEXT/정상/실패 3케이스)를 추가했다. 전체 테스트 스위트가 회귀 없이 통과했다.
+기존 검색 블록 테스트(`SearchFacadeTest`, `SearchResultCommandServiceTest`)와 RAG 블록 테스트(`RagResponseCommandServiceTest`, `ResponseCitationCommandServiceTest`)를 이번 이슈의 시그니처 변경에 맞춰 함께 수정했고, 신규 `RagFacadeTest`(NO_CONTEXT/정상/실패 3케이스)를 추가했다. 전체 테스트 스위트가 회귀 없이 통과했다. (`#210`에서 "LLM 무관 판단 시 citations 비움", "후보 3개 초과 시 프롬프트엔 상위 3개만" 2케이스가 추가되어 현재 5케이스다.)
 
 실제 문서 업로드/인덱싱 후 `POST /search`를 Swagger로 호출하는 e2e 확인은 별도로 진행 예정이다(이 문서에는 자동화 테스트 결과만 기록).
 
@@ -294,7 +346,8 @@ BUILD SUCCESSFUL
 |---|---|
 | 검색 자체 실패(임베딩 서버 장애, 사용자/컬렉션 없음 등) | 기존 `SearchFacade`의 에러 처리 그대로(변경 없음) — `RagFacade`는 호출되지도 않음 |
 | 접근 가능 문서 0건 / live check로 전부 탈락 | `SearchOutcome.candidates()`가 빈 리스트 → `RagFacade`가 `createNoContext()`로 처리, 200 정상 응답 + 고정 answer 문구 |
-| Ollama 호출 실패(타임아웃/연결거부) | `createFailed()`로 FAILED 기록 후 예외 재전파 → 503 `RAG_SERVICE_UNAVAILABLE`. 검색 결과(`search_results`)는 이미 별도 트랜잭션에서 커밋되어 그대로 유지됨 |
+| Ollama 호출 실패(타임아웃/연결거부) | `createFailed()`로 FAILED 기록 후 200 + extractive fallback(최상위 후보 원문 최대 300자 인용) answer + `citations`(candidates 전체). 검색 결과(`search_results`)는 이미 별도 트랜잭션에서 커밋되어 그대로 유지됨. (최초 구현은 예외 재전파 → 503이었으나 이후 200 응답으로 바뀜, 위 "10. `RagFacade.java`" 절 참고) |
+| LLM이 무관하다고 판단 (`#210`) | 200 + answer(`"관련 문서를 찾지 못했습니다"`) + **citations는 빈 배열** (DB에는 그대로 저장) |
 | 정상 흐름 | 200 + `results`(검색 후보 전체) + `answer`(LLM 답변) + `citations`(실제 인용된 출처) |
 
 ---
@@ -344,6 +397,8 @@ PR에 자동 코드리뷰 코멘트 5건이 달렸고, 각각 다음과 같이 �
 
 **citations 응답은 DB 재조회 없이 메모리의 `candidates`로부터 재구성**: `ResponseCitationCommandService`가 저장한 것과 `RagAnswer.of()`가 만드는 것은 별개의 객체 생성이지만, 소스(`candidates`)와 라벨 규칙(`"[" + order + "]"`)이 동일해 항상 일치한다.
 
+**(`#210` 추가) 화면 표시용 인용 수(topK)와 LLM 입력 후보 수를 분리**: `topK`가 호출자가 자유롭게 정할 수 있는 값이라 그대로 LLM에 넘기면 응답 시간이 예측 불가능해졌다. `citations`/`RagAnswer`는 여전히 전체 `candidates`를 쓰고, `promptBuilder.build()`에 넘기는 것만 `MAX_PROMPT_CANDIDATES`(3)로 별도 제한해 "화면에 보여줄 근거 수"와 "LLM이 실제로 읽는 문맥 크기"라는 서로 다른 관심사를 분리했다.
+
 ---
 
 ## 남은 이슈 / TODO
@@ -353,4 +408,6 @@ PR에 자동 코드리뷰 코멘트 5건이 달렸고, 각각 다음과 같이 �
 - `SearchQueryCommandService.markFailed()`/`RagResponseCommandService.createFailed()`의 `REQUIRES_NEW` 트랜잭션 경계는 여전히 Mockito 단위 테스트로만 검증되고, Spring 통합 테스트는 없다(`#56`, `#73` 문서에 동일하게 기록된 기존 갭).
 
 ### 다음 단계
-RAG 블록(F-RAG-01~05) 전체 구현이 이걸로 완료된다. 이제 실제 문서를 업로드해 인덱싱까지 마친 뒤 Swagger에서 `POST /search`를 직접 호출해, `results` + `answer` + `citations`가 한 응답에 정상적으로 담기는지 e2e로 확인하는 절차가 남아있다.
+~~RAG 블록(F-RAG-01~05) 전체 구현이 이걸로 완료된다. 이제 실제 문서를 업로드해 인덱싱까지 마친 뒤 Swagger에서 `POST /search`를 직접 호출해, `results` + `answer` + `citations`가 한 응답에 정상적으로 담기는지 e2e로 확인하는 절차가 남아있다.~~ → 완료됨: 이 e2e 확인이 QA 과정에서 실제로 진행됐고, 그 과정에서 발견된 타임아웃/언어 혼용/컷오프 등 다수의 버그와 수정 내역은 `docs/design/kangcheolung-#210-ollama-rag-timeout-fix.md`에 정리했다. `PromptBuilder` 관련 변경은 `#65`, `OllamaClient` 관련 변경은 `#67` 문서에도 각각 반영했다.
+
+`#210`에서 새로 남은 미해결 이슈(Ollama `OLLAMA_KV_CACHE_TYPE` 글자 깨짐 등)는 `#67` 문서의 "남은 이슈 / TODO" 및 `#210` 문서 5단계 참고.

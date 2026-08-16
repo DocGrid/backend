@@ -111,6 +111,22 @@ class EmbeddingProviderCircuitBreakerTest {
     }
 
     @Test
+    @DisplayName("Half-open Probe 결과를 기록하지 못하면 소유권을 반환해 다음 Probe를 허용한다")
+    void releasePermission_allowsNextHalfOpenProbe() {
+        MutableClock clock = new MutableClock(STARTED_AT);
+        EmbeddingProviderCircuitBreaker circuitBreaker = openCircuit(clock);
+        clock.advance(Duration.ofSeconds(30));
+        CallPermission abandonedProbe = circuitBreaker.acquirePermission();
+
+        circuitBreaker.releasePermission(abandonedProbe);
+        CallPermission nextProbe = circuitBreaker.acquirePermission();
+
+        assertThat(nextProbe.halfOpenProbe()).isTrue();
+        circuitBreaker.recordSuccess(nextProbe);
+        assertThat(circuitBreaker.acquirePermission().halfOpenProbe()).isFalse();
+    }
+
+    @Test
     @DisplayName("Half-open Probe가 실패하면 Open 시간을 새로 시작한다")
     void recordFailure_reopensAfterProbeFailure() {
         MutableClock clock = new MutableClock(STARTED_AT);

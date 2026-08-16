@@ -105,11 +105,34 @@ class EmbeddingClientTest {
     }
 
     @Test
+    @DisplayName("예상 밖 예외: 결과를 기록하지 못하면 Circuit Permission을 반환한다")
+    void embed_releasesPermission_whenUnexpectedFailureOccurs() {
+        given(responseSpec.body(EmbedServerResponse.class))
+            .willThrow(new IllegalStateException("unexpected response failure"));
+
+        assertThatThrownBy(() -> embeddingClient.embed("검색어"))
+            .isInstanceOf(IllegalStateException.class);
+        verify(circuitBreaker).releasePermission(permission);
+    }
+
+    @Test
     @DisplayName("서버 timeout: 응답 제한 초과를 별도 Retry 오류로 분류한다")
     void embed_mapsTimeoutToDedicatedFailure() {
         given(responseSpec.body(EmbedServerResponse.class)).willThrow(
             new ResourceAccessException("timeout", new HttpTimeoutException("read timeout"))
         );
+
+        assertThatThrownBy(() -> embeddingClient.embed("검색어"))
+            .isInstanceOf(EmbeddingProviderException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMBEDDING_PROVIDER_TIMEOUT);
+        verify(circuitBreaker).recordFailure(permission, true);
+    }
+
+    @Test
+    @DisplayName("HTTP 408: Provider timeout으로 분류해 Job 재시도를 허용한다")
+    void embed_mapsRequestTimeoutResponseToDedicatedFailure() {
+        given(responseSpec.body(EmbedServerResponse.class))
+            .willThrow(new HttpClientErrorException(HttpStatus.REQUEST_TIMEOUT));
 
         assertThatThrownBy(() -> embeddingClient.embed("검색어"))
             .isInstanceOf(EmbeddingProviderException.class)
@@ -180,6 +203,8 @@ class EmbeddingClientTest {
         assertThatThrownBy(() -> embeddingClient.embed("검색어"))
             .isInstanceOf(EmbeddingProviderException.class)
             .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMBEDDING_REQUEST_REJECTED);
+        assertThat(ErrorCode.EMBEDDING_REQUEST_REJECTED.getHttpStatus())
+            .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         verify(circuitBreaker).recordFailure(permission, false);
     }
 
@@ -223,6 +248,17 @@ class EmbeddingClientTest {
             .containsExactly(0, 1);
         verify(documentRestClient).post();
         verify(queryRestClient, never()).post();
+    }
+
+    @Test
+    @DisplayName("Batch 예상 밖 예외: 결과를 기록하지 못하면 Circuit Permission을 반환한다")
+    void embedBatch_releasesPermission_whenUnexpectedFailureOccurs() {
+        given(responseSpec.body(EmbedBatchServerResponse.class))
+            .willThrow(new IllegalStateException("unexpected response failure"));
+
+        assertThatThrownBy(() -> embeddingClient.embedBatch(List.of("본문"), 16))
+            .isInstanceOf(IllegalStateException.class);
+        verify(circuitBreaker).releasePermission(permission);
     }
 
     @Test

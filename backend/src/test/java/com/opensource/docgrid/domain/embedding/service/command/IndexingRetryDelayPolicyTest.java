@@ -14,7 +14,7 @@ import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
 /**
- * Job Retry 지연의 지수 증가, Jitter 범위, Provider 최소 지연과 최대 상한 계산만 검증한다.
+ * Job Retry 지연의 지수 증가, Jitter 범위, Backoff 상한과 Provider 최소 지연 선택만 검증한다.
  *
  * <p>DB `next_retry_at` 저장과 Worker Claim은 이 순수 정책 단위 테스트의 경계에 포함하지 않는다.
  */
@@ -59,8 +59,8 @@ class IndexingRetryDelayPolicyTest {
     }
 
     @Test
-    @DisplayName("지수·Jitter와 외부 최소 지연은 설정한 최대 지연을 넘지 않는다")
-    void calculate_capsDelayAtMaximum() {
+    @DisplayName("지수·Jitter는 설정 상한을 지키고 더 긴 Provider 최소 지연은 보존한다")
+    void calculate_capsBackoffAndPreservesProviderMinimum() {
         properties.setRetryMaxDelay(Duration.ofSeconds(40));
 
         assertThat(policy.calculate(10, Duration.ZERO)).isBetween(
@@ -68,7 +68,7 @@ class IndexingRetryDelayPolicyTest {
             Duration.ofSeconds(40)
         );
         assertThat(policy.calculate(0, Duration.ofMinutes(10)))
-            .isEqualTo(Duration.ofSeconds(40));
+            .isEqualTo(Duration.ofMinutes(10));
     }
 
     @Test

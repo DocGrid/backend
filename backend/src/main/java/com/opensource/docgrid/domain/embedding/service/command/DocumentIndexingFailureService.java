@@ -100,7 +100,7 @@ public class DocumentIndexingFailureService {
                 documentRepository,
                 embeddingRepository,
                 indexingEventRepository,
-                workerProperties
+                new IndexingRetryDelayPolicy(workerProperties)
             ),
             clock,
             applicationEventPublisher
@@ -115,6 +115,21 @@ public class DocumentIndexingFailureService {
         Long attemptId,
         FailDocumentIndexingRequest request
     ) {
+        return fail(jobId, attemptId, request, Duration.ZERO);
+    }
+
+    /**
+     * 내부 Worker가 Provider의 안전한 최소 Retry 지연을 포함해 현재 Attempt 실패를 기록한다.
+     */
+    public DocumentIndexingFailureResponse fail(
+        Long jobId,
+        Long attemptId,
+        FailDocumentIndexingRequest request,
+        Duration minimumRetryDelay
+    ) {
+        if (minimumRetryDelay == null || minimumRetryDelay.isNegative()) {
+            throw new DocGridException(ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT);
+        }
         // 1. Claim 세대 교체와 완료·실패 경쟁을 Job 행에서 직렬화하고 요청 Attempt를 먼저 확인한다.
         EmbeddingJob embeddingJob = findLockedJob(jobId);
         EmbeddingJobAttempt attempt = findAttempt(embeddingJob, request.claimToken());
@@ -148,7 +163,8 @@ public class DocumentIndexingFailureService {
             request.failureType().name(),
             request.errorMessage(),
             request.failureType().isRetryable(),
-            failedAt
+            failedAt,
+            minimumRetryDelay
         );
 
         // 4. 대시보드가 최신 집계를 다시 계산하도록 상태 전이를 알린다. transition()이 재시도 예약

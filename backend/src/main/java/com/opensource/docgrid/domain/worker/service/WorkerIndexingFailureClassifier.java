@@ -1,10 +1,12 @@
 package com.opensource.docgrid.domain.worker.service;
 
+import java.time.Duration;
 import java.util.EnumSet;
 import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
+import com.opensource.docgrid.domain.embedding.client.EmbeddingProviderException;
 import com.opensource.docgrid.domain.embedding.enums.IndexingFailureType;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
@@ -88,7 +90,8 @@ public class WorkerIndexingFailureClassifier {
             return WorkerIndexingFailure.reportable(
                 IndexingFailureType.EMBEDDING_PROVIDER_UNAVAILABLE,
                 errorCode.getCode(),
-                "Embedding Provider를 사용할 수 없어 인덱싱을 완료하지 못했습니다."
+                "Embedding Provider를 사용할 수 없어 인덱싱을 완료하지 못했습니다.",
+                minimumRetryDelay(exception)
             );
         }
         // HTTP 429 admission 거절은 일시적이므로 Provider 비가용과 구분한 retryable 정책을 유지한다.
@@ -96,7 +99,31 @@ public class WorkerIndexingFailureClassifier {
             return WorkerIndexingFailure.reportable(
                 IndexingFailureType.EMBEDDING_PROVIDER_OVERLOADED,
                 errorCode.getCode(),
-                "Embedding Provider 처리 용량을 초과해 인덱싱을 완료하지 못했습니다."
+                "Embedding Provider 처리 용량을 초과해 인덱싱을 완료하지 못했습니다.",
+                minimumRetryDelay(exception)
+            );
+        }
+        if (errorCode == ErrorCode.EMBEDDING_PROVIDER_TIMEOUT) {
+            return WorkerIndexingFailure.reportable(
+                IndexingFailureType.EMBEDDING_PROVIDER_TIMEOUT,
+                errorCode.getCode(),
+                "Embedding Provider 응답 제한 시간을 초과했습니다.",
+                minimumRetryDelay(exception)
+            );
+        }
+        if (errorCode == ErrorCode.EMBEDDING_PROVIDER_CIRCUIT_OPEN) {
+            return WorkerIndexingFailure.reportable(
+                IndexingFailureType.EMBEDDING_PROVIDER_CIRCUIT_OPEN,
+                errorCode.getCode(),
+                "Embedding Provider 장애 보호로 호출을 중단했습니다.",
+                minimumRetryDelay(exception)
+            );
+        }
+        if (errorCode == ErrorCode.EMBEDDING_REQUEST_REJECTED) {
+            return WorkerIndexingFailure.reportable(
+                IndexingFailureType.EMBEDDING_REQUEST_INVALID,
+                errorCode.getCode(),
+                "Embedding Provider 요청 계약이 유효하지 않습니다."
             );
         }
         if (EMBEDDING_RESULT_ERRORS.contains(errorCode)) {
@@ -118,5 +145,12 @@ public class WorkerIndexingFailureClassifier {
             errorCode.getCode(),
             "Worker 내부 실행 오류로 인덱싱을 완료하지 못했습니다."
         );
+    }
+
+    private Duration minimumRetryDelay(RuntimeException exception) {
+        if (exception instanceof EmbeddingProviderException providerException) {
+            return providerException.getMinimumRetryDelay();
+        }
+        return Duration.ZERO;
     }
 }

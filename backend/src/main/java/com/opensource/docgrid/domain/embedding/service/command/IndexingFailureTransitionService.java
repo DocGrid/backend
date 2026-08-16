@@ -18,7 +18,6 @@ import com.opensource.docgrid.domain.document.repository.DocumentVersionReposito
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingRepository;
-import com.opensource.docgrid.domain.worker.config.IndexingWorkerProperties;
 import com.opensource.docgrid.domain.worker.entity.EmbeddingJobAttempt;
 import com.opensource.docgrid.domain.worker.entity.IndexingEvent;
 import com.opensource.docgrid.domain.worker.enums.IndexingEventType;
@@ -49,7 +48,7 @@ public class IndexingFailureTransitionService {
     private final DocumentRepository documentRepository;
     private final EmbeddingRepository embeddingRepository;
     private final IndexingEventRepository indexingEventRepository;
-    private final IndexingWorkerProperties workerProperties;
+    private final IndexingRetryDelayPolicy retryDelayPolicy;
 
     /**
      * 실패 원인과 Retry 가능 정책을 현재 Job, Attempt, Version, Document에 원자적으로 반영한다.
@@ -60,6 +59,7 @@ public class IndexingFailureTransitionService {
      * @param failureMessage 저장할 안전한 진단 메시지
      * @param retryable 재시도 가능 실패인지 여부
      * @param failedAt 모든 상태와 Event가 공유할 실패 시각
+     * @param minimumRetryDelay Provider가 요청한 안전한 최소 재실행 지연
      */
     public void transition(
         EmbeddingJob embeddingJob,
@@ -67,7 +67,8 @@ public class IndexingFailureTransitionService {
         String failureCode,
         String failureMessage,
         boolean retryable,
-        LocalDateTime failedAt
+        LocalDateTime failedAt,
+        Duration minimumRetryDelay
     ) {
         // 1. 호출 경로가 보장해야 하는 현재 Job과 실패 입력의 최소 불변식을 다시 확인한다.
         validateTransitionInput(
@@ -75,7 +76,8 @@ public class IndexingFailureTransitionService {
             attempt,
             failureCode,
             failureMessage,
-            failedAt
+            failedAt,
+            minimumRetryDelay
         );
 
         // 2. 완료·협력적 실패·Lease 복구가 같은 Job → Version → Document 잠금 순서를 사용한다.
@@ -99,7 +101,8 @@ public class IndexingFailureTransitionService {
                 stageEventType,
                 failureCode,
                 failureMessage,
-                failedAt
+                failedAt,
+                minimumRetryDelay
             );
             return;
         }
@@ -121,7 +124,8 @@ public class IndexingFailureTransitionService {
         Optional<EmbeddingJobAttempt> attempt,
         String failureCode,
         String failureMessage,
-        LocalDateTime failedAt
+        LocalDateTime failedAt,
+        Duration minimumRetryDelay
     ) {
         if (embeddingJob == null
             || embeddingJob.getStatus() != EmbeddingJobStatus.PROCESSING
@@ -130,7 +134,9 @@ public class IndexingFailureTransitionService {
             || failureCode.isBlank()
             || failureMessage == null
             || failureMessage.isBlank()
-            || failedAt == null) {
+            || failedAt == null
+            || minimumRetryDelay == null
+            || minimumRetryDelay.isNegative()) {
             throw new DocGridException(ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT);
         }
     }
@@ -195,9 +201,13 @@ public class IndexingFailureTransitionService {
         IndexingEventType stageEventType,
         String failureCode,
         String failureMessage,
-        LocalDateTime failedAt
+        LocalDateTime failedAt,
+        Duration minimumRetryDelay
     ) {
-        Duration retryDelay = calculateRetryDelay(embeddingJob.getRetryCount());
+        Duration retryDelay = retryDelayPolicy.calculate(
+            embeddingJob.getRetryCount(),
+            minimumRetryDelay
+        );
         LocalDateTime nextRetryAt = failedAt.plus(retryDelay);
         embeddingJob.scheduleRetry(failureCode, failureMessage, nextRetryAt);
 
@@ -312,19 +322,6 @@ public class IndexingFailureTransitionService {
             .metadataJson(stageFailureMetadata(attempt, failureCode))
             .occurredAt(failedAt)
             .build());
-    }
-
-    private Duration calculateRetryDelay(int currentRetryCount) {
-        Duration delay = workerProperties.getRetryInitialDelay();
-        Duration maxDelay = workerProperties.getRetryMaxDelay();
-        for (int retry = 0; retry < currentRetryCount; retry++) {
-            // 두 배가 최대 지연에 닿는 순간 상한을 반환해 Duration 곱셈 Overflow를 피한다.
-            if (delay.compareTo(maxDelay.minus(delay)) >= 0) {
-                return maxDelay;
-            }
-            delay = delay.multipliedBy(2);
-        }
-        return delay;
     }
 
     private String stageFailureMetadata(

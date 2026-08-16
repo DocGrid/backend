@@ -53,7 +53,8 @@ public class WorkerIndexingFailureReporter {
                     claimedJob.claimToken(),
                     failure.failureType(),
                     failure.safeMessage()
-                )
+                ),
+                failure.minimumRetryDelay()
             );
             log.info(
                 "Worker 인덱싱 실패를 기록했습니다. workerId={}, jobId={}, attemptId={}, failureType={}, errorCode={}",

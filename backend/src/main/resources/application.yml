@@ -63,6 +63,7 @@ indexing:
     # Retry 지연은 10초부터 지수 증가하며 운영 기본 상한인 5분에서 제한한다.
     retry-initial-delay: ${INDEXING_WORKER_RETRY_INITIAL_DELAY:10s}
     retry-max-delay: ${INDEXING_WORKER_RETRY_MAX_DELAY:5m}
+    retry-jitter-ratio: ${INDEXING_WORKER_RETRY_JITTER_RATIO:0.2}
     shutdown-grace-period: ${INDEXING_WORKER_SHUTDOWN_GRACE_PERIOD:30s}
 
 sync:
@@ -97,6 +98,11 @@ embedding:
   document:
     # PDF 동시 부하 p99의 2배 이상을 보장하되 단건 검색의 5초 예산은 유지한다.
     read-timeout: ${EMBEDDING_DOCUMENT_READ_TIMEOUT:30s}
+  provider:
+    circuit-breaker:
+      enabled: ${EMBEDDING_PROVIDER_CIRCUIT_BREAKER_ENABLED:true}
+      failure-threshold: ${EMBEDDING_PROVIDER_CIRCUIT_BREAKER_FAILURE_THRESHOLD:3}
+      open-duration: ${EMBEDDING_PROVIDER_CIRCUIT_BREAKER_OPEN_DURATION:30s}
     # 실제 PDF 3건의 Batch 4·8·16 비교에서 동시 부하 최고 처리량과 최소 p99·RSS를 모두 달성한 값이다.
     batch-size: ${EMBEDDING_DOCUMENT_BATCH_SIZE:4}
     # Chunk 개수만 같아도 입력 길이가 크게 다를 수 있어 Unicode 문자와 저장된 Token 예산을 함께 제한한다.

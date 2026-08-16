@@ -293,6 +293,21 @@ public enum ErrorCode {
         "SEARCH-003",
         "임베딩 서버가 처리 가능한 요청 수를 초과했습니다."
     ),
+    EMBEDDING_PROVIDER_TIMEOUT(
+        HttpStatus.GATEWAY_TIMEOUT,
+        "SEARCH-004",
+        "임베딩 서버 응답 제한 시간을 초과했습니다."
+    ),
+    EMBEDDING_PROVIDER_CIRCUIT_OPEN(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        "SEARCH-005",
+        "임베딩 서버 장애 보호가 활성화되었습니다."
+    ),
+    EMBEDDING_REQUEST_REJECTED(
+        HttpStatus.BAD_REQUEST,
+        "SEARCH-006",
+        "임베딩 서버가 요청 계약을 거부했습니다."
+    ),
 
     // RAG
     RAG_SERVICE_UNAVAILABLE(

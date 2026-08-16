@@ -190,14 +190,13 @@ tasks.register('realPdfVersionE2eTest', Test) {
 		includeTags 'real-pdf-version-e2e'
 	}
 	maxParallelForks = 1
-	if (System.getProperty('real.pdf.version.e2e.output') == null) {
-		systemProperty(
-			'real.pdf.version.e2e.output',
-			layout.buildDirectory.file(
+	systemProperty(
+		'real.pdf.version.e2e.output',
+		System.getProperty('real.pdf.version.e2e.output')
+			?: layout.buildDirectory.file(
 				'reports/real-pdf-embedding/real-pdf-version-e2e.json'
 			).get().asFile.absolutePath
-		)
-	}
+	)
 	// 외부 PDF·PostgreSQL·MinIO·BGE-M3를 점유하므로 일반 Test와 Cache에서 분리한다.
 	outputs.upToDateWhen { false }
 }

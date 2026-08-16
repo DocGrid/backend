@@ -61,6 +61,29 @@ def test_load_corpus_returns_texts_but_summary_excludes_raw_content(tmp_path):
     assert summary["corpus_sha256"]
 
 
+@pytest.mark.parametrize(
+    "metadata_path",
+    [
+        ("document", "sizeBytes"),
+        ("chunk", "chunkIndex"),
+        ("chunk", "codePointCount"),
+        ("chunk", "utf8Bytes"),
+        ("chunk", "estimatedTokenCount"),
+        ("chunk", "contentHash"),
+    ],
+)
+def test_load_corpus_wraps_missing_required_metadata(tmp_path, metadata_path):
+    path = write_corpus(tmp_path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    owner, field = metadata_path
+    target = payload["documents"][0] if owner == "document" else payload["documents"][0]["chunks"][0]
+    target.pop(field)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(benchmark.BenchmarkError, match="corpus chunk metadata is invalid"):
+        benchmark.load_corpus(path)
+
+
 def test_summarize_profile_uses_wall_time_for_concurrent_throughput():
     samples = [
         benchmark.RequestSample(4, 2, 0, 0, 4, 4000, 8000, 2.0, True, None),
@@ -83,6 +106,23 @@ def test_summarize_profile_uses_wall_time_for_concurrent_throughput():
     assert result["rss"]["maximum_bytes"] == 180
     assert result["oom_killed"] is False
     assert result["container_state_verified"] is True
+
+
+def test_recommendation_accepts_summarize_profile_output_contract():
+    result = benchmark.summarize_profile(
+        4,
+        2,
+        [benchmark.RequestSample(4, 2, 0, 0, 4, 4000, 8000, 2.0, True, None)],
+        [benchmark.DocumentSample(4, 2, 0, 0, "a.pdf", "a" * 64, 4, 1, 2.0, True)],
+        [],
+        [benchmark.ProfileWindow(4, 2, 0, 10.0, 12.0)],
+        [benchmark.ProfileContainerState(4, 2, True, False, 0, 0, 1024, None)],
+    )
+
+    recommendation = benchmark.recommendation([result], (1, 2))
+
+    assert recommendation["decision"] == "APPLY_SAFE_DEFAULTS"
+    assert recommendation["selected_batch_size"] == 4
 
 
 def test_run_round_preserves_document_boundaries_and_sequential_batches(tmp_path, monkeypatch):
@@ -153,6 +193,23 @@ def test_write_payload_replaces_checkpoint_atomically(tmp_path):
 
     assert json.loads(output.read_text(encoding="utf-8")) == {"value": 2}
     assert not output.with_suffix(".json.tmp").exists()
+
+
+@pytest.mark.parametrize(
+    "variable_name",
+    [
+        "REAL_PDF_BENCHMARK_CORPUS_REPETITIONS",
+        "REAL_PDF_BENCHMARK_WARMUP_ROUNDS",
+        "REAL_PDF_BENCHMARK_ROUNDS",
+        "REAL_PDF_BENCHMARK_TIMEOUT_SECONDS",
+        "REAL_PDF_BENCHMARK_MEMORY_SAMPLE_INTERVAL_SECONDS",
+    ],
+)
+def test_parse_args_wraps_invalid_numeric_environment(tmp_path, monkeypatch, variable_name):
+    monkeypatch.setenv(variable_name, "invalid")
+
+    with pytest.raises(benchmark.BenchmarkError, match=variable_name):
+        benchmark.parse_args(["--corpus", str(write_corpus(tmp_path))])
 
 
 def profile(batch_size, concurrency, throughput, p99):

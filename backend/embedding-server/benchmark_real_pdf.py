@@ -135,6 +135,22 @@ def parse_positive_integers(raw_value: str, maximum: int | None = None) -> tuple
     return values
 
 
+def environment_int(name: str, default: int) -> int:
+    """환경 변수의 정수 값을 읽고 잘못된 입력을 Benchmark 오류로 통일한다."""
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError as exception:
+        raise BenchmarkError(f"{name} must be an integer") from exception
+
+
+def environment_float(name: str, default: float) -> float:
+    """환경 변수의 실수 값을 읽고 잘못된 입력을 Benchmark 오류로 통일한다."""
+    try:
+        return float(os.getenv(name, str(default)))
+    except ValueError as exception:
+        raise BenchmarkError(f"{name} must be a number") from exception
+
+
 def load_corpus(path: Path) -> tuple[tuple[tuple[CorpusText, ...], ...], dict[str, Any]]:
     """운영 Java Exporter의 JSON에서 Text를 읽고 원문 없는 공개 요약을 만든다."""
     try:
@@ -148,6 +164,8 @@ def load_corpus(path: Path) -> tuple[tuple[tuple[CorpusText, ...], ...], dict[st
     all_texts: list[CorpusText] = []
     documents: list[dict[str, Any]] = []
     for document in payload["documents"]:
+        if not isinstance(document, dict):
+            raise BenchmarkError("corpus document metadata is invalid")
         chunks = document.get("chunks")
         if not isinstance(chunks, list) or not chunks:
             raise BenchmarkError("corpus document must contain chunks")
@@ -156,25 +174,34 @@ def load_corpus(path: Path) -> tuple[tuple[tuple[CorpusText, ...], ...], dict[st
         if not isinstance(source_name, str) or not isinstance(file_sha256, str):
             raise BenchmarkError("corpus document identity is invalid")
         document_texts: list[CorpusText] = []
-        for chunk in chunks:
-            text = chunk.get("text")
-            if not isinstance(text, str) or not text.strip():
-                raise BenchmarkError("corpus chunk text must be non-blank")
-            document_texts.append(CorpusText(
-                source_name=source_name,
-                file_sha256=file_sha256,
-                chunk_index=int(chunk["chunkIndex"]),
-                text=text,
-                code_point_count=int(chunk["codePointCount"]),
-                utf8_bytes=int(chunk["utf8Bytes"]),
-                estimated_token_count=int(chunk["estimatedTokenCount"]),
-                content_hash=str(chunk["contentHash"]),
-            ))
+        try:
+            size_bytes = int(document["sizeBytes"])
+            for chunk in chunks:
+                if not isinstance(chunk, dict):
+                    raise TypeError
+                text = chunk.get("text")
+                if not isinstance(text, str) or not text.strip():
+                    raise BenchmarkError("corpus chunk text must be non-blank")
+                content_hash = chunk["contentHash"]
+                if not isinstance(content_hash, str) or not content_hash:
+                    raise TypeError
+                document_texts.append(CorpusText(
+                    source_name=source_name,
+                    file_sha256=file_sha256,
+                    chunk_index=int(chunk["chunkIndex"]),
+                    text=text,
+                    code_point_count=int(chunk["codePointCount"]),
+                    utf8_bytes=int(chunk["utf8Bytes"]),
+                    estimated_token_count=int(chunk["estimatedTokenCount"]),
+                    content_hash=content_hash,
+                ))
+        except (KeyError, TypeError, ValueError) as exception:
+            raise BenchmarkError("corpus chunk metadata is invalid") from exception
         corpus_documents.append(tuple(document_texts))
         all_texts.extend(document_texts)
         documents.append({
             "source_name": source_name,
-            "size_bytes": int(document["sizeBytes"]),
+            "size_bytes": size_bytes,
             "file_sha256": file_sha256,
             "chunk_count": len(chunks),
         })
@@ -735,22 +762,22 @@ def parse_args(argv: Sequence[str] | None = None) -> SafetyBenchmarkConfig:
     parser.add_argument(
         "--corpus-repetitions",
         type=int,
-        default=int(os.getenv("REAL_PDF_BENCHMARK_CORPUS_REPETITIONS", "1")),
+        default=environment_int("REAL_PDF_BENCHMARK_CORPUS_REPETITIONS", 1),
     )
     parser.add_argument(
         "--warmup-rounds",
         type=int,
-        default=int(os.getenv("REAL_PDF_BENCHMARK_WARMUP_ROUNDS", "1")),
+        default=environment_int("REAL_PDF_BENCHMARK_WARMUP_ROUNDS", 1),
     )
     parser.add_argument(
         "--measurement-rounds",
         type=int,
-        default=int(os.getenv("REAL_PDF_BENCHMARK_ROUNDS", "3")),
+        default=environment_int("REAL_PDF_BENCHMARK_ROUNDS", 3),
     )
     parser.add_argument(
         "--timeout-seconds",
         type=float,
-        default=float(os.getenv("REAL_PDF_BENCHMARK_TIMEOUT_SECONDS", "60")),
+        default=environment_float("REAL_PDF_BENCHMARK_TIMEOUT_SECONDS", 60.0),
     )
     parser.add_argument(
         "--container-name",
@@ -759,7 +786,7 @@ def parse_args(argv: Sequence[str] | None = None) -> SafetyBenchmarkConfig:
     parser.add_argument(
         "--memory-sample-interval-seconds",
         type=float,
-        default=float(os.getenv("REAL_PDF_BENCHMARK_MEMORY_SAMPLE_INTERVAL_SECONDS", "0.25")),
+        default=environment_float("REAL_PDF_BENCHMARK_MEMORY_SAMPLE_INTERVAL_SECONDS", 0.25),
     )
     parser.add_argument(
         "--output",

@@ -1,11 +1,13 @@
 package com.opensource.docgrid.domain.embedding.benchmark;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 
@@ -38,7 +40,7 @@ public final class RealPdfEmbeddingCorpusExporter {
         }
 
         Path outputPath = Path.of(args[0]).toAbsolutePath().normalize();
-        List<Path> pdfPaths = java.util.Arrays.stream(args)
+        List<Path> pdfPaths = Arrays.stream(args)
             .skip(1)
             .map(Path::of)
             .map(path -> path.toAbsolutePath().normalize())
@@ -90,7 +92,7 @@ public final class RealPdfEmbeddingCorpusExporter {
                     draft.chunkIndex(),
                     draft.chunkText(),
                     draft.chunkText().codePointCount(0, draft.chunkText().length()),
-                    draft.chunkText().getBytes(java.nio.charset.StandardCharsets.UTF_8).length,
+                    draft.chunkText().getBytes(StandardCharsets.UTF_8).length,
                     draft.tokenCount(),
                     draft.contentHash()
                 ))

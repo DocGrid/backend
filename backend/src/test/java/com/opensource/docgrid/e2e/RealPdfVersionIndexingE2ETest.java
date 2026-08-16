@@ -186,6 +186,8 @@ class RealPdfVersionIndexingE2ETest {
         double elapsedSeconds = Duration.ofNanos(System.nanoTime() - pipelineStartedAt).toNanos()
             / 1_000_000_000.0;
         int totalChunks = measurements.stream().mapToInt(VersionMeasurement::chunkCount).sum();
+        boolean latestVersionSearchable = measurements.get(measurements.size() - 1)
+            .searchableCurrent();
         RealPdfVersionReport report = new RealPdfVersionReport(
             1,
             Instant.now().toString(),
@@ -197,7 +199,7 @@ class RealPdfVersionIndexingE2ETest {
             measurements.stream().mapToInt(VersionMeasurement::retryCount).sum(),
             elapsedSeconds * 1_000.0,
             totalChunks / elapsedSeconds,
-            true,
+            latestVersionSearchable,
             List.copyOf(measurements)
         );
         assertThat(report.jobSuccessRate()).isEqualTo(1.0);
@@ -246,7 +248,8 @@ class RealPdfVersionIndexingE2ETest {
             versionId
         );
 
-        assertThat(job.get("status").toString()).isEqualTo("INDEXED");
+        boolean jobSucceeded = "INDEXED".equals(job.get("status").toString());
+        assertThat(jobSucceeded).isTrue();
         assertThat(((Number) job.get("retry_count")).intValue()).isZero();
         assertThat(attemptCount).isOne();
         assertThat(successfulAttempts).isOne();
@@ -262,7 +265,8 @@ class RealPdfVersionIndexingE2ETest {
             versionId
         )).isZero();
 
-        boolean searchable = assertSearchUsesCurrentVersion(documentId, versionId);
+        boolean searchable = searchUsesCurrentVersion(documentId, versionId);
+        assertThat(searchable).isTrue();
         return new VersionMeasurement(
             versionNo,
             sourcePath.getFileName().toString(),
@@ -270,7 +274,7 @@ class RealPdfVersionIndexingE2ETest {
             sha256(Files.readAllBytes(sourcePath)),
             versionId,
             jobId,
-            true,
+            jobSucceeded,
             ((Number) job.get("retry_count")).intValue(),
             attemptCount,
             ((Number) job.get("duration_ms")).doubleValue(),
@@ -281,7 +285,7 @@ class RealPdfVersionIndexingE2ETest {
         );
     }
 
-    private boolean assertSearchUsesCurrentVersion(Long documentId, Long versionId) {
+    private boolean searchUsesCurrentVersion(Long documentId, Long versionId) {
         String sourceChunk = jdbcTemplate.queryForObject(
             "SELECT chunk_text FROM document_chunks WHERE document_version_id = ? "
                 + "ORDER BY chunk_index LIMIT 1",
@@ -298,19 +302,19 @@ class RealPdfVersionIndexingE2ETest {
             List.of(documentId),
             10
         );
-        assertThat(candidates).isNotEmpty();
-        for (VectorSearchCandidate candidate : candidates) {
-            assertThat(queryLong(
+        return !candidates.isEmpty() && candidates.stream().allMatch(candidate ->
+            versionId.equals(queryLong(
                 "SELECT document_version_id FROM embeddings WHERE id = ?",
                 candidate.embeddingId()
-            )).isEqualTo(versionId);
-        }
-        return true;
+            ))
+        );
     }
 
     private List<Path> realPdfPaths() {
         String rawPaths = System.getenv("REAL_PDF_PATHS");
-        assertThat(rawPaths).as("REAL_PDF_PATHS").isNotBlank();
+        assertThat(rawPaths)
+            .as("실제 PDF E2E 실행 전에 REAL_PDF_PATHS에 세 PDF 경로를 설정해야 합니다.")
+            .isNotBlank();
         List<Path> paths = java.util.Arrays.stream(rawPaths.split(java.util.regex.Pattern.quote(
                 File.pathSeparator
             )))

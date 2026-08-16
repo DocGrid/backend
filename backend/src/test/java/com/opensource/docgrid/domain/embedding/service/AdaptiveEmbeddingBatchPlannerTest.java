@@ -14,7 +14,9 @@ import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
 /**
- * Adaptive Embedding Batch의 개수·Unicode 문자·Token 예산과 입력 순서 보존을 검증한다.
+ * AdaptiveEmbeddingBatchPlanner의 Batch 개수·Unicode 문자·Token 예산과 입력 순서 보존만 검증한다.
+ *
+ * <p>외부 HTTP 호출과 Spring ConfigurationProperties Binding은 이 단위 테스트의 경계에 포함하지 않는다.
  */
 @DisplayName("AdaptiveEmbeddingBatchPlanner 테스트")
 class AdaptiveEmbeddingBatchPlannerTest {

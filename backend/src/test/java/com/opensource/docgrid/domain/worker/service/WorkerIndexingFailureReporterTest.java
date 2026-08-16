@@ -6,6 +6,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 
 import org.junit.jupiter.api.DisplayName;
@@ -15,6 +16,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.opensource.docgrid.domain.embedding.client.EmbeddingProviderException;
 import com.opensource.docgrid.domain.embedding.dto.request.FailDocumentIndexingRequest;
 import com.opensource.docgrid.domain.embedding.dto.response.ClaimedEmbeddingJobResponse;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
@@ -42,6 +44,7 @@ class WorkerIndexingFailureReporterTest {
         ClaimedEmbeddingJobResponse claimedJob = claimedJob();
         ArgumentCaptor<FailDocumentIndexingRequest> requestCaptor =
             ArgumentCaptor.forClass(FailDocumentIndexingRequest.class);
+        ArgumentCaptor<Duration> delayCaptor = ArgumentCaptor.forClass(Duration.class);
 
         reporter.report(
             claimedJob,
@@ -52,12 +55,46 @@ class WorkerIndexingFailureReporterTest {
         then(failureService).should().fail(
             org.mockito.ArgumentMatchers.eq(10L),
             org.mockito.ArgumentMatchers.eq(100L),
-            requestCaptor.capture()
+            requestCaptor.capture(),
+            delayCaptor.capture()
         );
         assertThat(requestCaptor.getValue().failureType())
             .isEqualTo(IndexingFailureType.STORAGE_UNAVAILABLE);
         assertThat(requestCaptor.getValue().errorMessage()).doesNotContain("sensitive");
         assertThat(requestCaptor.getValue().claimToken()).isEqualTo(claimedJob.claimToken());
+        assertThat(delayCaptor.getValue()).isZero();
+    }
+
+    @Test
+    @DisplayName("Provider Retry-After를 과부하 실패의 최소 Job 지연으로 전달한다")
+    void report_forwardsProviderMinimumRetryDelay() {
+        WorkerIndexingFailureReporter reporter = new WorkerIndexingFailureReporter(
+            new WorkerIndexingFailureClassifier(),
+            failureService
+        );
+        ArgumentCaptor<FailDocumentIndexingRequest> requestCaptor =
+            ArgumentCaptor.forClass(FailDocumentIndexingRequest.class);
+        ArgumentCaptor<Duration> delayCaptor = ArgumentCaptor.forClass(Duration.class);
+
+        reporter.report(
+            claimedJob(),
+            100L,
+            new EmbeddingProviderException(
+                ErrorCode.EMBEDDING_PROVIDER_OVERLOADED,
+                Duration.ofSeconds(15),
+                true
+            )
+        );
+
+        then(failureService).should().fail(
+            org.mockito.ArgumentMatchers.eq(10L),
+            org.mockito.ArgumentMatchers.eq(100L),
+            requestCaptor.capture(),
+            delayCaptor.capture()
+        );
+        assertThat(requestCaptor.getValue().failureType())
+            .isEqualTo(IndexingFailureType.EMBEDDING_PROVIDER_OVERLOADED);
+        assertThat(delayCaptor.getValue()).isEqualTo(Duration.ofSeconds(15));
     }
 
     @Test
@@ -74,7 +111,7 @@ class WorkerIndexingFailureReporterTest {
             new DocGridException(ErrorCode.EMBEDDING_JOB_OWNERSHIP_INVALID)
         );
 
-        then(failureService).should(never()).fail(any(), any(), any());
+        then(failureService).should(never()).fail(any(), any(), any(), any());
     }
 
     @Test
@@ -84,12 +121,12 @@ class WorkerIndexingFailureReporterTest {
             new WorkerIndexingFailureClassifier(),
             failureService
         );
-        given(failureService.fail(any(), any(), any()))
+        given(failureService.fail(any(), any(), any(), any()))
             .willThrow(new IllegalStateException("report failed"));
 
         reporter.report(claimedJob(), 100L, new IllegalStateException("pipeline failed"));
 
-        then(failureService).should().fail(any(), any(), any());
+        then(failureService).should().fail(any(), any(), any(), any());
     }
 
     private ClaimedEmbeddingJobResponse claimedJob() {

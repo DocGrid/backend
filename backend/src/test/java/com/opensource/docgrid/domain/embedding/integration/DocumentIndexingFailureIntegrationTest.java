@@ -134,6 +134,36 @@ class DocumentIndexingFailureIntegrationTest {
     }
 
     @Test
+    @DisplayName("Provider Retry-After 전에는 과부하 Job을 Queue 후보로 선택하지 않는다")
+    void overloadedJob_respectsProviderMinimumRetryDelay() {
+        ExecutionContext context = insertFirstVersionExecution("EMBEDDING", false);
+
+        DocumentIndexingFailureResponse response = failureService.fail(
+            context.jobId(),
+            context.attemptId(),
+            failureRequest(
+                context.workerId(),
+                IndexingFailureType.EMBEDDING_PROVIDER_OVERLOADED,
+                "Embedding provider overloaded"
+            ),
+            Duration.ofSeconds(15)
+        );
+
+        LocalDateTime nextRetryAt = queryDateTime(
+            "SELECT next_retry_at FROM embedding_jobs WHERE id = ?",
+            context.jobId()
+        );
+        assertThat(Duration.between(response.failedAt(), nextRetryAt))
+            .isEqualTo(Duration.ofSeconds(15));
+        assertThat(findPendingJobAt(nextRetryAt.minusNanos(1_000))).isNull();
+        assertThat(findPendingJobAt(nextRetryAt)).isEqualTo(context.jobId());
+        assertThat(queryInteger(
+            "SELECT COUNT(*) FROM embedding_job_attempts WHERE embedding_job_id = ?",
+            context.jobId()
+        )).isOne();
+    }
+
+    @Test
     @DisplayName("같은 실패 요청 두 건은 단일 Retry와 동일한 Attempt 응답으로 수렴한다")
     void failConcurrently_isIdempotent() throws Exception {
         ExecutionContext context = insertFirstVersionExecution("PARSING", false);

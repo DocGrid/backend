@@ -13,7 +13,7 @@ import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 
 /**
- * Worker Polling, 실행 동시성, Lease와 종료 설정의 기본값 및 시작 단계 유효성 검사를 검증한다.
+ * Worker Polling, 실행 동시성, Lease, Retry와 종료 설정의 기본값 및 시작 단계 유효성 검사를 검증한다.
  *
  * <p>정상적인 양수 기간은 허용하고 발급 즉시 만료되는 0 또는 음수 기간은 차단하는지 확인한다.
  */
@@ -105,7 +105,24 @@ class IndexingWorkerPropertiesTest {
 
         assertThat(properties.getRetryInitialDelay()).isEqualTo(Duration.ofSeconds(10));
         assertThat(properties.getRetryMaxDelay()).isEqualTo(Duration.ofMinutes(5));
+        assertThat(properties.getRetryJitterRatio()).isEqualTo(0.2);
         assertThat(properties.isRetryDelayValid()).isTrue();
+        assertThat(validator.validate(properties)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Retry Jitter 비율은 0 이상 1 이하만 허용한다")
+    void retryJitterRatio_isInvalid_when_outOfRange() {
+        IndexingWorkerProperties properties = new IndexingWorkerProperties();
+
+        properties.setRetryJitterRatio(-0.01);
+        assertThat(validator.validate(properties)).isNotEmpty();
+
+        properties.setRetryJitterRatio(1.01);
+        assertThat(validator.validate(properties)).isNotEmpty();
+
+        properties.setRetryJitterRatio(0.0);
+        assertThat(validator.validate(properties)).isEmpty();
     }
 
     @Test

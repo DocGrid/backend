@@ -2,9 +2,12 @@ package com.opensource.docgrid.domain.worker.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Duration;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.opensource.docgrid.domain.embedding.client.EmbeddingProviderException;
 import com.opensource.docgrid.domain.embedding.enums.IndexingFailureType;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
@@ -27,7 +30,21 @@ class WorkerIndexingFailureClassifierTest {
             new DocGridException(ErrorCode.EMBEDDING_SERVER_UNAVAILABLE, "sensitive endpoint")
         );
         WorkerIndexingFailure overloaded = classifier.classify(
-            new DocGridException(ErrorCode.EMBEDDING_PROVIDER_OVERLOADED, "sensitive queue state")
+            new EmbeddingProviderException(
+                ErrorCode.EMBEDDING_PROVIDER_OVERLOADED,
+                Duration.ofSeconds(15),
+                true
+            )
+        );
+        WorkerIndexingFailure timeout = classifier.classify(
+            new DocGridException(ErrorCode.EMBEDDING_PROVIDER_TIMEOUT)
+        );
+        WorkerIndexingFailure circuitOpen = classifier.classify(
+            new EmbeddingProviderException(
+                ErrorCode.EMBEDDING_PROVIDER_CIRCUIT_OPEN,
+                Duration.ofSeconds(30),
+                false
+            )
         );
 
         assertThat(storage.failureType()).isEqualTo(IndexingFailureType.STORAGE_UNAVAILABLE);
@@ -38,6 +55,11 @@ class WorkerIndexingFailureClassifierTest {
         assertThat(overloaded.failureType())
             .isEqualTo(IndexingFailureType.EMBEDDING_PROVIDER_OVERLOADED);
         assertThat(overloaded.safeMessage()).doesNotContain("sensitive");
+        assertThat(overloaded.minimumRetryDelay()).isEqualTo(Duration.ofSeconds(15));
+        assertThat(timeout.failureType()).isEqualTo(IndexingFailureType.EMBEDDING_PROVIDER_TIMEOUT);
+        assertThat(circuitOpen.failureType())
+            .isEqualTo(IndexingFailureType.EMBEDDING_PROVIDER_CIRCUIT_OPEN);
+        assertThat(circuitOpen.minimumRetryDelay()).isEqualTo(Duration.ofSeconds(30));
     }
 
     @Test
@@ -55,6 +77,8 @@ class WorkerIndexingFailureClassifierTest {
             .failureType()).isEqualTo(IndexingFailureType.EMBEDDING_RESULT_INVALID);
         assertThat(classifier.classify(new DocGridException(ErrorCode.DOCUMENT_CHUNKS_INCONSISTENT))
             .failureType()).isEqualTo(IndexingFailureType.INDEXING_STATE_INCONSISTENT);
+        assertThat(classifier.classify(new DocGridException(ErrorCode.EMBEDDING_REQUEST_REJECTED))
+            .failureType()).isEqualTo(IndexingFailureType.EMBEDDING_REQUEST_INVALID);
     }
 
     @Test

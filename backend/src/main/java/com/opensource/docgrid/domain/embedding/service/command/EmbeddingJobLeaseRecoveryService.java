@@ -1,5 +1,6 @@
 package com.opensource.docgrid.domain.embedding.service.command;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.Optional;
@@ -80,7 +81,8 @@ public class EmbeddingJobLeaseRecoveryService {
             LEASE_EXPIRED_FAILURE_CODE,
             LEASE_EXPIRED_MESSAGE,
             true,
-            recoveredAt
+            recoveredAt,
+            Duration.ZERO
         );
         return RecoveryResult.recovered(embeddingJob);
     }

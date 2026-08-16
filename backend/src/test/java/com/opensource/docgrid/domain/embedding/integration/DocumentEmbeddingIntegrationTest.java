@@ -3,6 +3,7 @@ package com.opensource.docgrid.domain.embedding.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +36,8 @@ import org.springframework.web.client.RestClient;
 
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 import com.opensource.docgrid.domain.embedding.client.EmbeddingClient;
+import com.opensource.docgrid.domain.embedding.client.EmbeddingProviderCircuitBreaker;
+import com.opensource.docgrid.domain.embedding.config.EmbeddingProviderCircuitBreakerProperties;
 import com.opensource.docgrid.domain.embedding.dto.request.CreateDocumentEmbeddingsRequest;
 import com.opensource.docgrid.domain.embedding.dto.response.EmbedBatchItemResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.EmbedBatchServerResponse;
@@ -351,7 +354,18 @@ class DocumentEmbeddingIntegrationTest {
         private volatile CyclicBarrier barrier;
 
         DeterministicEmbeddingClient() {
-            super(RestClient.builder().build(), RestClient.builder().build());
+            super(
+                RestClient.builder().build(),
+                RestClient.builder().build(),
+                disabledCircuitBreaker()
+            );
+        }
+
+        private static EmbeddingProviderCircuitBreaker disabledCircuitBreaker() {
+            EmbeddingProviderCircuitBreakerProperties properties =
+                new EmbeddingProviderCircuitBreakerProperties();
+            properties.setEnabled(false);
+            return new EmbeddingProviderCircuitBreaker(properties, Clock.systemUTC());
         }
 
         @Override

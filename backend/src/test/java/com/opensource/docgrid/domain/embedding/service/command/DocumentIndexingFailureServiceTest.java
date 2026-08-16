@@ -89,6 +89,7 @@ class DocumentIndexingFailureServiceTest {
     @BeforeEach
     void setUp() {
         workerProperties = new IndexingWorkerProperties();
+        workerProperties.setRetryJitterRatio(0.0);
         Clock clock = Clock.fixed(
             Instant.parse("2026-08-03T01:30:00Z"),
             ZoneId.of("Asia/Seoul")
@@ -107,6 +108,23 @@ class DocumentIndexingFailureServiceTest {
             applicationEventPublisher
         );
         prepareExecution(DocumentVersionStatus.PARSING, DocumentStatus.INDEXING);
+    }
+
+    @Test
+    @DisplayName("Provider Retry-After가 기본 Backoff보다 길면 다음 실행 최소 지연으로 적용한다")
+    void fail_appliesProviderMinimumRetryDelay() {
+        prepareExecution(DocumentVersionStatus.EMBEDDING, DocumentStatus.INDEXING);
+        givenLockedExecution();
+
+        service.fail(
+            JOB_ID,
+            ATTEMPT_ID,
+            request(IndexingFailureType.EMBEDDING_PROVIDER_OVERLOADED, "Provider overloaded"),
+            Duration.ofSeconds(15)
+        );
+
+        assertThat(embeddingJob.getRetryCount()).isEqualTo(1);
+        assertThat(embeddingJob.getNextRetryAt()).isEqualTo(FAILED_AT.plusSeconds(15));
     }
 
     @Test

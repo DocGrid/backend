@@ -7,6 +7,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.validation.annotation.Validated;
 
 import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -14,7 +16,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 인덱싱 Worker의 실행 여부, Polling, 동시 실행, Heartbeat와 Job Lease 생명주기를 바인딩하는 설정 클래스.
+ * 인덱싱 Worker의 실행 여부, Polling, 동시 실행, Heartbeat, Job Lease와 Retry를 바인딩하는 설정 클래스.
  *
  * <p>{@code indexing.worker} 환경 설정을 타입 안전한 {@link Duration}으로 제공하고, 애플리케이션 시작
  * 단계에서 서로 모순되거나 0 이하인 시간 설정을 차단한다.
@@ -70,6 +72,11 @@ public class IndexingWorkerProperties {
 
     @NotNull
     private Duration retryMaxDelay = Duration.ofMinutes(5);
+
+    // 같은 시각에 실패한 Job의 다음 Claim이 다시 몰리지 않도록 지수 Backoff를 양방향으로 분산한다.
+    @DecimalMin("0.0")
+    @DecimalMax("1.0")
+    private double retryJitterRatio = 0.2;
 
     // 종료 시 신규 Claim을 막은 뒤 활성 실행이 스스로 끝나기를 기다리는 최대 시간이다.
     @NotNull

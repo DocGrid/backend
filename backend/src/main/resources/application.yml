@@ -113,6 +113,28 @@ ollama:
   server:
     base-url: ${OLLAMA_SERVER_URL:http://localhost:11434}
     # 프론트의 29초 및 Sites Worker의 30초 제한 전에 검색 결과 Fallback을 반환한다.
+    # Docker 컨테이너(GPU 미가속) 기준이 아니라 macOS 네이티브 Ollama(Metal 가속) 실측 기준값이다.
     connect-timeout: ${OLLAMA_SERVER_CONNECT_TIMEOUT:3s}
-    read-timeout: ${OLLAMA_SERVER_READ_TIMEOUT:18s}
+    # 요청 시작부터 스트리밍 본문 수신까지 전체에 적용되는 전송 계층 제한(Spring JdkClientHttpRequestFactory가
+    # 본문 스트림에도 적용). 스트림이 멈췄을 때의 최후 방어선이며, 이때도 이미 받은 부분 답변은 보존된다.
+    # 정상 스트림의 시간 상한은 ollama.generate-deadline(25s)이 먼저 담당하므로 이 값은 그보다 커야 한다.
+    read-timeout: ${OLLAMA_SERVER_READ_TIMEOUT:27s}
   model: ${OLLAMA_MODEL:qwen2.5:7b}
+  # 요청 사이 모델을 상주시켜 매 요청마다 재로딩(수 초)이 발생하지 않게 한다.
+  keep-alive: ${OLLAMA_KEEP_ALIVE:30m}
+  # 생성 토큰 수 상한. 시간 상한은 generate-deadline이 담당하므로 여기는 답변이 무한정 길어지는
+  # 것만 막는다 — 스트리밍 전환으로 250까지 조이던 것을 완화했다 (디코드가 빠른 세션에서는 더 긴 답변 허용).
+  num-predict: ${OLLAMA_NUM_PREDICT:400}
+  # 스트리밍 생성의 전체 데드라인. 초과 시 요청을 끊고 그때까지 받은 부분 답변을 잘림 안내와 함께
+  # 반환한다. 프론트 29초 제한보다 확실히 작아야 프론트가 포기하기 전에 응답할 수 있다.
+  generate-deadline: ${OLLAMA_GENERATE_DEADLINE:25s}
+  # RAG는 문서 내용을 그대로 답하는 용도라 창의성이 불필요하다. 낮은 temperature/top-p로
+  # 확률 꼬리의 한자·가나 토큰이 뽑힐 확률을 줄여 한국어 답변에 중국어/일본어가 섞이는 것을 완화한다.
+  temperature: ${OLLAMA_TEMPERATURE:0.3}
+  top-p: ${OLLAMA_TOP_P:0.8}
+  # Ollama 기본값이 1.0(반복 억제 없음)으로 확인됨 — 모델이 답을 끝내고도 "한국어로만 답변했습니다"류의
+  # 잡담을 반복하며 토큰 상한까지 채우는 루프를 억제한다.
+  repeat-penalty: ${OLLAMA_REPEAT_PENALTY:1.1}
+  # repeat_penalty가 되돌아보는 토큰 창. 기본 64로는 64토큰보다 긴 블록이 통째로 반복되는 것을
+  # 못 잡아서 넓혔다. 목록형 답변의 정당한 반복 표현이 어색해지면 128로 낮춰볼 것.
+  repeat-last-n: ${OLLAMA_REPEAT_LAST_N:256}

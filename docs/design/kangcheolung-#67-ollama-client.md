@@ -91,19 +91,26 @@ ollama:
 
 > **주의**: "재배포 없이 교체 가능"은 코드 변경/재빌드가 필요 없다는 뜻이지, 무중단으로 자동 전환된다는 뜻은 아니다. `OllamaClient`가 `model`을 생성자 주입(`@Value("${ollama.model}")`)으로 받기 때문에, 이미 떠 있는 프로세스는 `OLLAMA_MODEL` 값이 바뀌어도 그 값을 다시 읽지 않는다. 실제로 교체하려면 ① 새 모델을 `ollama pull`로 미리 받아두고 ② 애플리케이션을 재시작해야 한다.
 
-### 3. `global/config/OllamaServerConfig.java` (신규)
+### 3. `global/config/OllamaServerConfig.java` (신규, `connect-timeout`/`read-timeout` 기본값 3차례 조정됨)
 
+**현재 코드**:
 ```java
+/**
+ * Ollama HTTP 연결과 추론 응답 제한 시간을 실행 환경별로 구성한다.
+ *
+ * <p>RAG 도메인은 Timeout 이후의 검색 결과 Fallback을 책임지고, 이 설정은 프론트의 29초 검색 제한과
+ * Sites의 30초 요청 제한보다 먼저 호출을 종료할 수 있는 Transport 경계만 책임진다.</p>
+ */
 @Configuration
 public class OllamaServerConfig {
 
     @Value("${ollama.server.base-url}")
     private String baseUrl;
 
-    @Value("${ollama.server.connect-timeout:5s}")
+    @Value("${ollama.server.connect-timeout:3s}")
     private Duration connectTimeout;
 
-    @Value("${ollama.server.read-timeout:20s}")
+    @Value("${ollama.server.read-timeout:18s}")
     private Duration readTimeout;
 
     @Bean("ollamaRestClient")
@@ -121,45 +128,52 @@ public class OllamaServerConfig {
     }
 }
 ```
+`application.yml`의 실제 기본값은 `connect-timeout: 3s`, `read-timeout: 27s`다(`${OLLAMA_SERVER_READ_TIMEOUT:27s}`) — 위 `@Value`의 인라인 기본값(`18s`)은 `application.yml`이 항상 값을 제공하므로 실행 시 도달하지 않는, 갱신되지 않은 fallback이다.
 
 **한 줄 요약**: `EmbeddingServerConfig`와 완전히 동일한 구조로, Ollama 전용 `RestClient` Bean을 하나 등록한다.
 
-- `connectTimeout`(기본 5초): 로컬 docker 컨테이너라 연결 자체는 임베딩 서버와 마찬가지로 빨리 되거나 안 되거나이므로 5초로 동일하게 뒀다.
-- `readTimeout`(기본 20초): 임베딩 서버(5초)보다 4배 길게 잡았다. 벡터 변환은 순간적으로 끝나지만, LLM이 텍스트를 토큰 단위로 하나씩 생성하는 건 본질적으로 훨씬 오래 걸린다. 명세의 NFR("전체 응답 5초 이내")은 목표치이지 하드 타임아웃이 아니라서, 너무 짧게 잡아 정상적으로 생성 중인 요청을 조기에 503으로 끊어버리는 걸 피하고자 여유 있게 잡았다.
-- `@Value("${ollama.server.connect-timeout:5s}")`/`read-timeout`: 값을 코드에 하드코딩하지 않고 `application.yml`(`OLLAMA_SERVER_CONNECT_TIMEOUT`/`OLLAMA_SERVER_READ_TIMEOUT`)로 외부화했다 — Sites Worker의 30초 요청 제한보다 먼저 종료해 검색 결과 Fallback을 반환해야 한다는 요구가 후속 이슈에서 추가되며, 환경별로 값을 조정할 수 있게 바뀌었다.
 - `@Bean("ollamaRestClient")`: 임베딩용 `RestClient`와 이름으로 구분해서, `OllamaClient`가 `@Qualifier`로 정확히 이 Bean만 주입받게 한다.
+- **타임아웃 값 변천**: 최초 `connect-timeout: 5s`, `read-timeout: 20s`(임베딩 서버 5s의 4배 — LLM 생성이 벡터 변환보다 본질적으로 오래 걸림) → 프론트 29초/Sites Worker 30초 요청 제한이 추가되며 `3s`/`18s`로 축소(그 제한들보다 먼저 종료해 fallback을 반환하기 위함) → `#210`에서 `read-timeout`이 다시 **27s**로 상향. Ollama를 Docker(CPU 전용)에서 macOS 네이티브(Metal 가속)로 옮기면서 18s는 오히려 부족한 값이 됐고("18초"는 Docker/CPU 기준 산정값이었음), 실측 결과 디코드 속도가 세션 중 초당 12~18토큰으로 흔들리는 것이 확인돼 27s까지 올렸다(프론트 29초 제한보다는 여전히 확실히 작음). Docker vs 네이티브 실측 벤치마크와 시간 예산 조정의 전체 히스토리는 `docs/design/kangcheolung-#210-ollama-rag-timeout-fix.md` 참고.
 
-> **업데이트(RAG 프롬프트 예산과 타임아웃 정렬)**: `connect-timeout`/`read-timeout` 기본값이 각각 5s/20s → 3s/18s로 줄었다. 프론트엔드에 29초 검색 요청 제한이 추가되면서, 기존 Sites Worker 30초 제한뿐 아니라 그보다 짧은 프론트 제한 안에서도 먼저 안전하게 끊고 fallback을 반환하도록 재조정한 것이다.
->
-> ```java
-> @Value("${ollama.server.connect-timeout:3s}")
-> private Duration connectTimeout;
->
-> @Value("${ollama.server.read-timeout:18s}")
-> private Duration readTimeout;
-> ```
->
-> `application.yml` 기본값과 주석도 동일하게 갱신됐다.
-> ```yaml
-> ollama:
->   server:
->     # 프론트의 29초 및 Sites Worker의 30초 제한 전에 검색 결과 Fallback을 반환한다.
->     connect-timeout: ${OLLAMA_SERVER_CONNECT_TIMEOUT:3s}
->     read-timeout: ${OLLAMA_SERVER_READ_TIMEOUT:18s}
-> ```
+### 4. DTO 3종 (신규, 이후 `OllamaGenerateRequest`에 필드 다수 추가됨)
 
-### 4. DTO 3종 (신규)
-
-**`domain/rag/dto/request/OllamaGenerateRequest.java`** — 우리가 Ollama에 보내는 요청
+**`domain/rag/dto/request/OllamaGenerateRequest.java`** — 우리가 Ollama에 보내는 요청. **현재 코드**:
 ```java
-public record OllamaGenerateRequest(String model, String prompt, boolean stream) {
+public record OllamaGenerateRequest(
+    String model,
+    String prompt,
+    boolean stream,
+    // 채팅 템플릿(및 그에 딸린 tool-call PEG 파서)을 거치지 않고 프롬프트를 그대로 전달한다.
+    // 템플릿을 타면 답변에 섞인 백틱(`ls` 등) 코드 표기를 모델이 tool-call 시도로 오인해
+    // 생성이 done:false로 중간에 끊기는 문제가 있었다.
+    boolean raw,
+    @JsonProperty("keep_alive") String keepAlive,
+    OllamaGenerateOptions options
+) {
+    public record OllamaGenerateOptions(
+        @JsonProperty("num_predict") int numPredict,
+        double temperature,
+        @JsonProperty("top_p") double topP,
+        @JsonProperty("repeat_penalty") double repeatPenalty,
+        @JsonProperty("repeat_last_n") int repeatLastN
+    ) {
+    }
 }
 ```
-Ollama `/api/generate`가 요구하는 요청 body 그대로다. `stream`은 항상 `false`로 고정해서 호출한다 — 답변을 토큰 단위로 실시간 스트리밍 받는 대신, 완성된 답변을 한 번에 받는다. RAG 명세 11장("실시간 스트리밍 응답은 1단계 제외 범위")과 일치하는 선택이고, 스트리밍을 받으면 우리 쪽에서 조각난 응답을 다시 이어붙이는 로직이 추가로 필요해지는데 지금 필요 없는 복잡도다.
+`stream`은 최초 구현엔 `false`로 고정했다(RAG 명세 11장 "실시간 스트리밍 응답은 1단계 제외 범위"와
+일치하는 선택). `#210`에서 `true`로 전환했다 — 이유는 아래 "5. `OllamaClient.java`" 절 참고.
 
-**`domain/rag/dto/response/OllamaGenerateResponse.java`** — Ollama가 주는 원본 응답
+`raw`/`keepAlive`/`options`는 최초 구현엔 없던 필드다(`#210`에서 추가, 원인 규명 과정과 실측 데이터는 `docs/design/kangcheolung-#210-ollama-rag-timeout-fix.md` 참고).
+- `raw: true` — `/api/generate`가 기본으로 태우는 채팅 템플릿과 tool-call용 PEG 파서가, 답변 속 백틱 코드 표기(예: `` `ls` ``)를 tool-call 시도로 오인해서 생성을 `done:false`로 중간에 끊어버리는 버그를 직접 curl로 재현해서 찾아냈다. **다만 이걸로 완전히 해결된 건 아니었다** — 별개로, 한글이 토큰 경계에서 UTF-8 바이트 단위로 쪼개질 때 이 PEG 파서가 파싱 실패로 생성을 취소하는 알려진 llama.cpp 버그(#24807, #24863)가 남아있어, `raw:true` 이후에도 같은 문서/질문이 반복적으로 특정 지점에서 끊기는 현상이 재발했다. 자세한 재규명 과정은 `#210` 문서 6단계 참고.
+- `keep_alive: "30m"`(`application.yml`의 `ollama.keep-alive`) — 요청 사이 모델을 GPU 메모리에 상주시켜, 매 요청마다 발생하던 콜드 로딩 비용(9~11초)을 없앤다.
+- `options.num_predict` — 생성 토큰 상한. 초기 300 → 500(컷오프 대응, 오진단) → 300 → 220 → 250 → 스트리밍 전환 후 시간 상한을 `generate-deadline`이 넘겨받으면서 **400(최종)**으로 완화. 자세한 변천 과정은 `#210` 문서 3단계 표 참고.
+- `options.temperature`(0.3) / `top_p`(0.8) — Ollama 기본값(temperature≈0.7)이 확률 꼬리의 한자/가나 토큰을 뽑을 여지를 키운다고 보고 낮췄다(`#210`).
+- `options.repeat_penalty`(1.1) / `repeat_last_n`(256) — Ollama 기본값이 각각 1.0(반복 억제 없음)/64(짧은 창)로 확인됨. 모델이 답을 끝내고도 잡담을 반복하거나, 64토큰보다 긴 블록을 통째로 반복하는 현상을 억제하기 위해 추가(`#210`).
+
+**`domain/rag/dto/response/OllamaGenerateResponse.java`** — Ollama가 주는 원본 응답. **현재 코드**:
 ```java
 public record OllamaGenerateResponse(
+    String model,
     String response,
     boolean done,
     @JsonProperty("prompt_eval_count") Integer promptEvalCount,
@@ -167,11 +181,12 @@ public record OllamaGenerateResponse(
 ) {
 }
 ```
-Ollama는 실제로는 `total_duration`, `context`(토큰 ID 배열) 등 훨씬 많은 필드를 돌려주는데, 우리가 실제로 쓰는 4개만 뽑아서 받는다. `@JsonProperty("prompt_eval_count")`는 "JSON 필드명은 snake_case(`prompt_eval_count`)로 오지만 자바 필드는 camelCase(`promptEvalCount`)로 매핑해라"는 Jackson 지시다. 로컬 Ollama에 curl로 실제 호출해서 이 필드명들이 정확히 일치하는 것을 확인했다(아래 "로컬 검증" 참고).
+Ollama는 실제로는 `total_duration`, `context`(토큰 ID 배열) 등 훨씬 많은 필드를 돌려주는데, 우리가 실제로 쓰는 필드만 뽑아서 받는다. `@JsonProperty("prompt_eval_count")`는 "JSON 필드명은 snake_case(`prompt_eval_count`)로 오지만 자바 필드는 camelCase(`promptEvalCount`)로 매핑해라"는 Jackson 지시다. 로컬 Ollama에 curl로 실제 호출해서 이 필드명들이 정확히 일치하는 것을 확인했다(아래 "로컬 검증" 참고). `model` 필드는 최초 구현엔 없었으나 이후 추가됐다(정확한 시점 미상 — `#210` 범위는 아님).
 
-**`domain/rag/dto/OllamaGenerateResult.java`** — `OllamaClient`가 최종적으로 반환하는 결과
+**`domain/rag/dto/OllamaGenerateResult.java`** — `OllamaClient`가 최종적으로 반환하는 결과. **현재 코드**:
 ```java
 public record OllamaGenerateResult(
+    String model,                // 실제 응답을 생성한 모델명 (Ollama 응답의 model 필드)
     String answerText,          // Ollama가 생성한 답변 문장 (Ollama 응답의 response 필드)
     Integer inputTokenCount,    // 프롬프트(지시문+출처+질문)가 소비한 토큰 수 (Ollama 응답의 prompt_eval_count)
     Integer outputTokenCount,   // 생성된 답변이 소비한 토큰 수 (Ollama 응답의 eval_count)
@@ -181,70 +196,160 @@ public record OllamaGenerateResult(
 ```
 `OllamaGenerateResponse`(Ollama 응답 형식에 종속)와 `OllamaGenerateResult`(우리 서비스가 실제로 쓰는 값)를 굳이 두 단계로 나눈 이유는, `QueryEmbeddingService`가 `EmbedResult`를 반환하는 것과 같은 이유다 — 나중에 Ollama 응답 형식이 바뀌거나 다른 LLM 서버로 갈아타도, `OllamaClient`를 호출하는 쪽(Issue 3, 5)은 `OllamaGenerateResult`만 알면 되고 영향을 안 받는다. 또한 `RagResponse` 엔티티(Issue 1 이전부터 존재)에 이미 `inputTokenCount`/`outputTokenCount`/`latencyMs` 컬럼이 있어서, Ollama 응답에 마침 포함돼 있던 토큰 수(`prompt_eval_count`, `eval_count`)를 버리지 않고 여기 담아 Issue 3이 그대로 저장할 수 있게 했다. `latencyMs`는 Ollama가 주는 값을 쓰지 않고 `OllamaClient`가 호출 앞뒤로 직접 `System.currentTimeMillis()`를 재서 계산한다 — 순수 모델 연산 시간이 아니라 네트워크 왕복까지 포함한 "사용자가 실제로 기다린 시간"이 명세 NFR의 의도와 맞기 때문이다.
 
-### 5. `domain/rag/service/OllamaClient.java` (신규 + 코드리뷰 반영)
+### 5. `domain/rag/service/OllamaClient.java` (신규 + 코드리뷰 반영; `#210`에서 raw/샘플링 옵션 추가 후, 같은 이슈 내에서 스트리밍+데드라인 방식으로 재작성)
+
+최초 구현은 `stream:false`로 완성된 응답을 한 번에 기다리다 실패하면 즉시 503을 던지는 동기 호출이었다.
+`#210` 진행 중 이 방식의 한계(전체 응답에 걸리는 read-timeout을 넘기면 이미 생성된 내용까지 통째로
+버려짐)가 드러나 `stream:true` + NDJSON 청크 누적 + 애플리케이션 레벨 데드라인 방식으로 재작성했다.
+전체 배경은 `docs/design/kangcheolung-#210-ollama-rag-timeout-fix.md` 6단계 참고. **현재 코드**:
 
 ```java
 @Slf4j
 @Service
 public class OllamaClient {
 
+    private static final String TRUNCATION_NOTICE =
+        "\n\n(※ 답변이 길어 일부 내용이 생략됐을 수 있습니다. 자세한 내용은 문서를 확인해주세요.)";
+
+    private static final ObjectMapper CHUNK_MAPPER = new ObjectMapper()
+        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+    private static final Pattern FOREIGN_CJK_PATTERN =
+        Pattern.compile("[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}]+");
+    private static final int FOREIGN_CJK_CUT_THRESHOLD = 8;
+
     private final String model;
+    private final String keepAlive;
+    private final int numPredict;
+    private final double temperature;
+    private final double topP;
+    private final double repeatPenalty;
+    private final int repeatLastN;
+    private final Duration generateDeadline;
     private final RestClient restClient;
 
     public OllamaClient(
         @Value("${ollama.model}") String model,
+        @Value("${ollama.keep-alive}") String keepAlive,
+        @Value("${ollama.num-predict}") int numPredict,
+        @Value("${ollama.temperature}") double temperature,
+        @Value("${ollama.top-p}") double topP,
+        @Value("${ollama.repeat-penalty}") double repeatPenalty,
+        @Value("${ollama.repeat-last-n}") int repeatLastN,
+        @Value("${ollama.generate-deadline}") Duration generateDeadline,
         @Qualifier("ollamaRestClient") RestClient restClient
     ) {
         this.model = model;
+        this.keepAlive = keepAlive;
+        this.numPredict = numPredict;
+        this.temperature = temperature;
+        this.topP = topP;
+        this.repeatPenalty = repeatPenalty;
+        this.repeatLastN = repeatLastN;
+        this.generateDeadline = generateDeadline;
         this.restClient = restClient;
     }
 
     public OllamaGenerateResult generate(String prompt) {
         long start = System.currentTimeMillis();
+        long deadline = start + generateDeadline.toMillis();
 
-        OllamaGenerateResponse response;
+        StreamChunks chunks;
         try {
-            response = restClient.post()
+            chunks = restClient.post()
                 .uri("/api/generate")
-                .body(new OllamaGenerateRequest(model, prompt, false))
-                .retrieve()
-                .body(OllamaGenerateResponse.class);
+                .body(new OllamaGenerateRequest(
+                    model, prompt, true, true, keepAlive,
+                    new OllamaGenerateOptions(numPredict, temperature, topP, repeatPenalty, repeatLastN)
+                ))
+                .exchange((request, response) -> {
+                    if (response.getStatusCode().isError()) {
+                        log.error("Ollama 서버 오류 응답: status={}", response.getStatusCode());
+                        throw new DocGridException(ErrorCode.RAG_SERVICE_UNAVAILABLE);
+                    }
+                    return readStream(response.getBody(), deadline);
+                });
         } catch (RestClientException e) {
             log.error("Ollama 서버 호출 실패: {}", e.getMessage());
             throw new DocGridException(ErrorCode.RAG_SERVICE_UNAVAILABLE);
         }
 
-        if (response == null || response.response() == null) {
-            log.error("Ollama 응답이 비어있음: response={}", response);
+        // 한 토큰도 못 받았으면 부분 답변 반환 대신 예외를 던져 상위의 extractive fallback에 맡긴다.
+        if (chunks.last() == null || chunks.answer().isBlank()) {
+            log.error("Ollama 스트리밍 응답에서 답변을 받지 못함: deadlineExceeded={}", chunks.deadlineExceeded());
             throw new DocGridException(ErrorCode.RAG_SERVICE_UNAVAILABLE);
+        }
+
+        boolean prematureEnd = !chunks.last().done();
+        if (prematureEnd && !chunks.deadlineExceeded()) {
+            log.warn("Ollama 스트림이 done 없이 조기 종료됨(서버 측 생성 취소 추정): 수신 텍스트 길이={}", chunks.answer().length());
+        }
+
+        SanitizedAnswer sanitized = sanitizeAnswer(chunks.answer());
+        if (sanitized.text().isBlank()) {
+            log.error("한자/가나 혼입 처리 후 답변이 비어 있음");
+            throw new DocGridException(ErrorCode.RAG_SERVICE_UNAVAILABLE);
+        }
+
+        String answerText = sanitized.text();
+        boolean hitTokenLimit = chunks.last().evalCount() != null && chunks.last().evalCount() >= numPredict;
+        if (hitTokenLimit || prematureEnd || sanitized.cutAtMixing()) {
+            answerText = trimToSentenceBoundary(answerText) + TRUNCATION_NOTICE;
         }
 
         int latencyMs = (int) (System.currentTimeMillis() - start);
         return new OllamaGenerateResult(
-            response.response(), response.promptEvalCount(), response.evalCount(), latencyMs
+            chunks.last().model(), answerText, chunks.last().promptEvalCount(), chunks.last().evalCount(), latencyMs
         );
     }
+
+    private StreamChunks readStream(InputStream body, long deadline) throws IOException { /* NDJSON 라인 단위로 읽어 응답을 누적, 데드라인 초과 시 중단 */ }
+
+    private static SanitizedAnswer sanitizeAnswer(String text) { /* 한자/가나 낱자는 제거, 8자 초과 대량 혼입은 시작 지점에서 컷 */ }
+
+    private static String trimToSentenceBoundary(String text) { /* 숫자 목록·경로(..) 마침표를 문장 끝으로 오인하지 않고 마지막 완결 문장까지만 남김 */ }
 }
 ```
 
-**한 줄 요약**: 프롬프트 문자열 하나를 받아 Ollama에 전송하고, 성공하면 답변/토큰수/latency를 담은 결과를, 실패하면 예외를 던지는 얇은 HTTP 클라이언트.
+**한 줄 요약**: 프롬프트 문자열 하나를 받아 Ollama에 스트리밍으로 전송하고, 청크를 누적하며 데드라인을 감시하다가 성공하면 언어 혼입 제거·잘림 처리를 거친 답변/토큰수/latency를 담은 결과를, 실패하면 예외를 던지는 HTTP 클라이언트.
 
-- **①시작 시각 기록 → ②요청 조립·전송 → ③실패 시 503 변환 → ④빈 응답 방어 → ⑤latency 계산 후 결과 포장** 순서로 진행된다.
-- `model`/`restClient`는 생성자 주입이다. `model`은 `@Value("${ollama.model}")`로 설정값을, `restClient`는 `@Qualifier("ollamaRestClient")`로 3번에서 만든 그 Bean만 정확히 받는다.
-- `catch (RestClientException e)`: 타임아웃, 연결 거부(Ollama 컨테이너가 안 떠 있는 경우) 등 HTTP 레벨 실패를 전부 포괄한다. `QueryEmbeddingService.embed()`의 catch 블록과 동일한 패턴.
-- **`if (response == null || response.response() == null)` — 코드리뷰(CodeRabbit)로 추가된 방어 로직.** 처음 구현했을 때는 이 체크가 없었는데, `RestClient`가 빈 body를 받으면 `retrieve().body(...)`가 예외를 던지지 않고 `null`을 반환할 수 있고, 그러면 바로 다음 줄의 `response.response()`에서 `NullPointerException`이 그대로 튀어나가 503이 아니라 처리되지 않은 500으로 응답될 위험이 있었다. `QueryEmbeddingService`가 임베딩 벡터에 대해 이미 하고 있는 null 체크(`response == null || response.vector() == null`)와 동일한 패턴을 그대로 가져왔다. 자세한 내용은 "코드리뷰 반영" 절 참고.
+- `model`/`restClient`는 최초 구현부터 생성자 주입. `#210`에서 `keepAlive`/`numPredict`, 이어서 `temperature`/`topP`/`repeatPenalty`/`repeatLastN`/`generateDeadline`이 같은 방식(`@Value`)으로 추가됐다.
+- `catch (RestClientException e)`: 타임아웃, 연결 거부 등 HTTP 레벨 실패를 전부 포괄한다. `QueryEmbeddingService.embed()`의 catch 블록과 동일한 패턴.
+- **응답이 없거나(`chunks.last() == null`) 답변이 비었으면(`chunks.answer().isBlank()`)** 503으로 처리 — 최초 구현의 "빈 응답 방어"(코드리뷰 반영) 취지를 스트리밍 구조에 맞게 이어받은 것이다.
 - NO_CONTEXT(검색 결과 0건일 때 호출 생략) 판단 로직은 여기 없다 — 이 메서드는 항상 받은 프롬프트를 그대로 보낸다.
+- **`raw: true`** — `/api/generate`가 기본으로 태우는 채팅 템플릿과 tool-call용 PEG 파서가 답변 속 백틱 코드를 tool-call 시도로 오인해 생성을 끊는 버그를 우회한다. **다만 완전한 해결책은 아니었다** — 한글이 토큰 경계에서 바이트 단위로 쪼개질 때 같은 파서가 파싱 실패로 생성을 취소하는 별개의 llama.cpp 버그(#24807, #24863)가 남아있다.
+- **`stream:true` + `readStream()` + `generate-deadline`** (`#210`) — 기존 "전체 응답에 read-timeout, 초과 시 통째로 버림" 방식을, "청크 단위로 누적하며 데드라인 감시, 초과 시 그때까지 받은 부분 답변 반환"으로 바꿨다. `read-timeout`(27s)은 요청 시작부터 본문 스트림까지 전체에 적용되는 전송 계층 최후 방어선으로 남고(스트림이 멈춰 이 타임아웃이 발동해도 읽기 중 IOException을 잡아 이미 받은 부분 답변은 잘림으로 보존), 정상 스트림의 시간 상한은 그보다 짧은 `generate-deadline`(25s)이 먼저 담당한다.
+- **`prematureEnd`(`done:true` 없이 스트림 종료)** (`#210`) — 데드라인 초과와는 별개로, 위 PEG 파서 버그가 발생하면 최종 청크에 `done:true`가 오지 않는다. 이 경우도 잘림으로 간주해 트리밍+안내 문구를 붙이고, 데드라인 초과가 아닌 조기 종료는 `log.warn`으로 빈도를 추적한다(재시도는 검토만 하고 보류 — `#210` 문서 7단계).
+- **`sanitizeAnswer()` — 언어 혼입 코드 가드** (`#210`) — 한국어 RAG 답변에 한자·히라가나·가타카나가 나올 일은 없다는 전제로 정규식 감지. 8자 이하 낱자 혼입은 문자만 제거하고, 8자를 초과하는 대량 혼입(모델이 중국어 반복 루프로 넘어간 경우)은 문자만 지우면 구두점 뼈대가 지저분하게 남아서 **혼입이 시작된 지점에서 답변 자체를 자른다**. 전각 구두점(。、：，！？)은 삭제 대신 반각으로 치환.
+- **`trimToSentenceBoundary()` 정교화** (`#210`) — 숫자 목록 마커("6.")와 경로 표기("..")의 마침표를 문장 끝으로 오인하지 않도록 전후 문자를 검사하고, `` `ls .` ``처럼 백틱 코드 스팬 안의 문장 부호는 앞쪽 백틱 개수 홀짝 판별(`insideInlineCode`)로 제외한다. 처음엔 마침표(`.`)에만 이 검사를 걸었는데, QA에서 `` `taskkill -F -PID <?` `` 같은 **코드 스팬 안의 물음표**에서도 똑같이 잘못 끊기는 사례가 나와 `?`/`!`까지 검사 범위를 넓혔다.
+- **잘림 판단 근거**: `hitTokenLimit`(`eval_count >= num_predict`) 외에 `prematureEnd`, `sanitized.cutAtMixing()`도 트리밍+안내 문구를 트리거한다 — LLM의 자기 판단에 의존하지 않고 코드로 확정 판별한다는 원칙은 그대로 유지된다.
+- **스트림 정지 시 부분 답변 보존** (`#210`, PR 코드리뷰 반영) — `readStream()`이 `readLine()`으로 블로킹 대기 중일 때는 데드라인을 못 보므로, 스트림이 멈춘 채 `read-timeout`(27s)이 먼저 발동해 본문 연결이 끊기면 `IOException`이 발생한다. 이걸 잡지 않으면 이미 받은 부분 답변까지 통째로 버려지고 상위(`RagFacade`)의 extractive fallback으로 대체됐다. 읽기 루프를 `try/catch`로 감싸 `IOException` 발생 시에도 이미 받은 텍스트가 있으면 잘림(트리밍+안내 문구)으로 반환하고, 한 글자도 못 받았을 때만 예외를 그대로 전파한다.
+- **답변 중간에 섞인 "관련 문서를 찾지 못했습니다" 문구 처리는 `OllamaClient`가 아니라 `RagFacade`의 책임**이다 (`#210`) — 자세한 내용은 `#75` 문서 참고.
 
-### 6. `src/test/java/.../rag/service/OllamaClientTest.java` (신규)
+### 6. `src/test/java/.../rag/service/OllamaClientTest.java` (신규, 이후 스트리밍 구조로 재작성되며 15개로 확장)
 
-`QueryEmbeddingServiceTest`와 동일한 Mockito 패턴 — `RestClient.post()` → `RequestBodyUriSpec`(`Answers.RETURNS_SELF`로 메서드 체이닝을 그대로 흉내) → `retrieve()` → `ResponseSpec.body(...)`를 mocking한다.
+Mockito 패턴이 스트리밍 구조에 맞춰 바뀌었다 — 최초 구현은 `RestClient.post()` → `retrieve()` →
+`ResponseSpec.body(...)`를 mocking했으나, `exchange()` 기반으로 바뀌면서 `givenStreamBody(String ndjson)`
+헬퍼가 `ExchangeFunction`을 가로채 주어진 NDJSON 문자열을 `InputStream`으로 흘려보내는 방식으로
+교체됐다.
 
 | 테스트 | 검증 내용 |
 |---|---|
-| `generate_success` | 정상 응답 시 `answerText`/`inputTokenCount`/`outputTokenCount`가 그대로 담기고 `latencyMs >= 0`인지 |
-| `generate_serverUnavailable_throwsException` | `ResourceAccessException`(RestClientException의 하위 타입) 발생 시 `RAG_SERVICE_UNAVAILABLE` 예외로 변환되는지 |
-| `generate_nullResponse_throwsException` | `body(...)`가 `null`을 반환할 때 `RAG_SERVICE_UNAVAILABLE` 예외로 변환되는지 (코드리뷰 반영) |
-| `generate_nullAnswerText_throwsException` | 응답 객체는 있지만 `response` 필드가 `null`일 때 `RAG_SERVICE_UNAVAILABLE` 예외로 변환되는지 (코드리뷰 반영) |
+| `generate_success` | NDJSON 청크를 누적해 `answerText`/`model`/토큰수/`latencyMs`가 올바르게 조립되는지 |
+| `generate_hitsNumPredict_appendsTruncationNotice` | `eval_count`가 `num_predict` 이상이면 답변 끝에 잘림 안내 문구가 붙는지 |
+| `generate_hitsNumPredict_trimsToLastSentence` | 토큰 상한 도달 시 마지막 완결 문장까지만 남기고 트리밍되는지 |
+| `generate_deadlineExceeded_returnsPartialAnswer` | 데드라인 초과 시 스트림을 중단하고 그때까지 받은 부분 답변에 안내 문구를 붙이는지 |
+| `generate_prematureStreamEnd_treatsAsTruncation` | `done:true` 없이 스트림이 끝나면(PEG 파서 버그 재현) 잘림으로 처리되는지 |
+| `generate_streamStalled_returnsPartialAnswer` | 스트림 읽기 중 `IOException`이 나도 이미 받은 부분 답변을 잘림으로 반환하는지 (PR 코드리뷰 반영) |
+| `generate_trims_ignoresDotInsideInlineCode` | 백틱 코드 스팬(`` `ls .` ``) 안의 마침표를 문장 끝으로 오인하지 않는지 |
+| `generate_stripsForeignCjkCharacters` | 낱자 수준(8자 이하) 한자/가나 혼입을 제거하고 한국어만 남기는지 |
+| `generate_trims_ignoresQuestionMarkInsideInlineCode` | 백틱 코드 스팬 안의 물음표를 문장 끝으로 오인하지 않는지 |
+| `generate_heavyCjkMixing_cutsAtMixingPoint` | 8자를 초과하는 대량 혼입은 혼입 시작 지점에서 잘라내는지 |
+| `generate_trims_ignoresConsecutiveDots` | 경로 표기(`..`)의 연속 마침표를 문장 끝으로 오인하지 않는지 |
+| `generate_serverUnavailable_throwsException` | `ResourceAccessException` 발생 시 `RAG_SERVICE_UNAVAILABLE` 예외로 변환되는지 |
+| `generate_emptyStream_throwsException` | 스트림에서 청크를 하나도 못 받으면 `RAG_SERVICE_UNAVAILABLE` 예외로 변환되는지 (코드리뷰 반영 취지 계승) |
+| `generate_blankAnswer_throwsException` | 답변 텍스트 없이 `done`만 오면 `RAG_SERVICE_UNAVAILABLE` 예외로 변환되는지 (코드리뷰 반영 취지 계승) |
+| `generate_errorStatus_throwsException` | Ollama가 5xx를 반환하면 `RAG_SERVICE_UNAVAILABLE` 예외로 변환되는지 |
 
 ---
 
@@ -390,8 +495,8 @@ PR에 자동 코드리뷰 코멘트 2건이 달렸고, 각각 다음과 같이 �
 **기존 임베딩 서버 연동 패턴을 그대로 재사용**
 `RestClient` Bean 분리 + 얇은 서비스가 `RestClientException`을 도메인 예외로 변환하는 구조를, 새로 고안하지 않고 `EmbeddingServerConfig`/`QueryEmbeddingService`에서 그대로 가져왔다. 같은 유형의 문제(로컬 사이드카 HTTP 호출)에 다른 해법을 쓸 이유가 없었다.
 
-**readTimeout을 임베딩 서버보다 길게(5초 → 기본 20초, 설정으로 조정 가능)**
-LLM 텍스트 생성은 벡터 변환과 걸리는 시간의 성격이 다르다. NFR의 "5초 이내"는 목표치이지 하드 타임아웃이 아니므로, 짧은 타임아웃으로 정상 생성 중인 요청을 조기에 끊는 것을 피했다. 이후 Sites Worker의 30초 요청 제한보다 먼저 종료해 검색 결과 Fallback을 반환해야 한다는 요구가 추가되며 하드코딩 값이 `OLLAMA_SERVER_READ_TIMEOUT` 설정값으로 외부화됐다(위 "3. `OllamaServerConfig.java`" 절 참고).
+**readTimeout을 임베딩 서버보다 길게(설정으로 조정 가능, 현재 기본 27초)**
+LLM 텍스트 생성은 벡터 변환과 걸리는 시간의 성격이 다르다. NFR의 "5초 이내"는 목표치이지 하드 타임아웃이 아니므로, 짧은 타임아웃으로 정상 생성 중인 요청을 조기에 끊는 것을 피했다. 값 자체는 5s→20s(최초)→3s/18s(프론트/Worker 제한 대응)→3s/**27s**(`#210`, 네이티브 전환 후 디코드 속도 실측 반영)로 여러 차례 조정됐다 — 변천 과정은 위 "3. `OllamaServerConfig.java`" 절 참고.
 
 **모델명을 설정값으로 외부화**
 `qwen2.5:3b` → `7b` 같은 향후 교체 시나리오(명세 0.3)에 대비해, `OllamaClient` 코드에는 모델명을 전혀 하드코딩하지 않았다. `application.yml`의 `ollama.model` 값만 바꾸면 재배포 없이(환경변수 재주입만으로) 교체 가능하다.
@@ -416,9 +521,15 @@ Qwen2.5 `3b`가 Apache 2.0이 아니라 비상업 연구용 "Qwen Research Licen
 ## 남은 이슈 / TODO
 
 ### 코드
-- `OllamaClient`는 아직 어디에서도 호출되지 않는 독립 컴포넌트 — Issue 5에서 `RagFacade`가 실제로 연결한다.
+- ~~`OllamaClient`는 아직 어디에서도 호출되지 않는 독립 컴포넌트 — Issue 5에서 `RagFacade`가 실제로 연결한다.~~ → 해결됨: `#75`에서 `RagFacade.generate()`가 연결했다. 검색 후보 개수 제한(`MAX_PROMPT_CANDIDATES`), citations 숨김, extractive fallback은 `OllamaClient`가 아니라 `RagFacade`(`#75` 문서)에서 처리한다 — `OllamaClient`는 여전히 "받은 프롬프트를 그대로 전송하는 순수 HTTP 클라이언트"라는 원래 책임 경계를 그대로 유지한다.
 - `OllamaGenerateRequest`에 대한 명시적 유효성 검증은 현재 호출 경로상 불필요하다고 판단해 추가하지 않았다(위 "코드리뷰 반영" 표 참고). 향후 `OllamaClient.generate()`를 다른 곳에서도 직접 호출하게 되는 상황이 생기면 재검토가 필요하다.
 - ~~`qwen2.5:3b`의 컨텍스트 한도(32,768 토큰)에 대한 명시적 방어(예: 프롬프트가 너무 길면 사전에 잘라내기)는 아직 없다. 지금 topK 범위(1~20)에서는 실질적 위험이 낮아 보류.~~ → 기본 모델이 `qwen2.5:7b`로 바뀌었으나(#184) `qwen2.context_length`는 동일하게 32,768로 확인되어(로컬 `ollama show` 검증) 이 판단은 그대로 유효했다. ~~방어 로직 자체는 여전히 미구현 상태.~~ → `PromptBuilder`에 청크별/전체 컨텍스트 텍스트 예산(truncate) 로직이 추가되어 해결됨 — 문자(코드포인트) 수 기준 근사 방어이며 정밀한 tokenizer 기반은 아니다(`#65` 문서 참고).
+- ~~Ollama 서비스 자체(`~/Library/LaunchAgents/homebrew.mxcl.ollama.plist`)에 설정된 `OLLAMA_KV_CACHE_TYPE=q8_0`(KV 캐시 정밀도를 낮추는 옵션)이 답변에 한자/가타카나가 한글 자리에 섞이는 글자 깨짐 현상의 유력 원인으로 지목됐으나, 아직 제거하지 않았다.~~ → 해결됨(`#210`): plist에서 해당 항목을 제거하고 `launchctl` 재로드. `OllamaClient.sanitizeAnswer()` 코드 가드도 별도로 추가해 이중 방어.
+- ~~**(신규, `#210`, 미해결)** `trimToSentenceBoundary()`가 `` `ls .` ``처럼 백틱 코드 스팬 안의 마침표를 문장 끝으로 오인하는 경우가 QA에서 재현됨. 마침표 앞의 백틱 개수 홀짝으로 코드 스팬 내부 여부를 판별하는 수정이 필요.~~ → 해결됨: `insideInlineCode` 검사 추가 (PR 리뷰 반영).
+- **(신규, `#210`, 미해결)** 내용상 완결된 답변에도 잘림 안내 문구가 붙는 오탐 사례 관찰됨. `hitTokenLimit`/`prematureEnd` 중 어느 조건이 오탐인지 실제 응답 로그로 확인 필요.
+- **(신규, `#210`, 보류)** PEG 파서 버그로 `prematureEnd`가 발생했을 때의 재시도 — 확률적 샘플링(temperature 0.3)이라 재시도하면 우회될 가능성이 높지만, 응답 지연과 코드 복잡도 트레이드오프가 있어 `log.warn` 빈도 관찰 후 필요성 재판단하기로 보류.
 
 ### 다음 단계
 Issue 3 — `RagResponseRepository` + `RagResponseCommandService` 구현. 이번 이슈에서 만든 `OllamaGenerateResult`를 받아 `rag_responses`에 SUCCESS/FAILED 상태로 저장한다. FAILED 기록은 `SearchQueryCommandService.markFailed()`와 동일하게 `@Transactional(propagation = REQUIRES_NEW)` 패턴을 검토한다.
+
+RAG 타임아웃/컷오프 수정 전체 배경은 `docs/design/kangcheolung-#210-ollama-rag-timeout-fix.md` 참고.

@@ -42,14 +42,21 @@ docker compose up -d embedding-server
 
 ## Ollama (RAG LLM 서버)
 
-RAG 답변 생성에 사용하는 로컬 LLM(`qwen2.5:7b`) 서버입니다. 공식 이미지를 그대로 사용하므로 별도 build 없이 실행만 하면 됩니다.
+RAG 답변 생성에 사용하는 로컬 LLM(`qwen2.5:7b`) 서버입니다. **Docker로 실행하지 않고 macOS에 네이티브로
+설치합니다** — Docker Desktop for Mac은 컨테이너에 GPU(Metal)를 넘길 방법이 없어 CPU로만 추론하게 되고,
+실제 RAG 규모 프롬프트 기준 응답이 50초 이상 걸려 항상 타임아웃됩니다. 네이티브로 설치하면 Apple Silicon
+Metal 가속을 받아 같은 프롬프트가 10~15초대로 줄어듭니다.
 
 ```bash
-docker compose up -d --wait --wait-timeout 120 ollama
-docker compose exec ollama ollama pull qwen2.5:7b
-docker compose exec ollama ollama run qwen2.5:7b "안녕"
+brew install ollama
+brew services start ollama   # 로그인할 때마다 자동 기동
+ollama pull qwen2.5:7b
+ollama run qwen2.5:7b "안녕"
 ```
 
-- `pull`은 최초 1회만 필요합니다 (약 4.7GB, `ollama-data` 볼륨에 캐시되어 이후 재구동 시 재다운로드하지 않습니다).
+- `pull`은 최초 1회만 필요합니다 (약 4.7GB, `~/.ollama`에 캐시됩니다).
 - 정상 응답이 텍스트로 출력되면 준비 완료입니다.
+- `ollama ps`의 `PROCESSOR` 컬럼이 `100% GPU`로 나오는지 확인하세요. `CPU`로 나오면 Metal 가속을 못
+  받고 있는 것이라 응답이 매우 느립니다.
 - 기본 접속 정보는 `http://localhost:11434`이며, Spring Boot에서는 `OLLAMA_SERVER_URL` 환경변수로 오버라이드할 수 있습니다.
+- 중지하려면 `brew services stop ollama`를 실행하세요.

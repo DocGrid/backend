@@ -1,13 +1,26 @@
 package com.opensource.docgrid.domain.rag.service;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import com.opensource.docgrid.domain.rag.dto.OllamaGenerateResult;
 import com.opensource.docgrid.domain.rag.dto.request.OllamaGenerateRequest;
+import com.opensource.docgrid.domain.rag.dto.request.OllamaGenerateRequest.OllamaGenerateOptions;
 import com.opensource.docgrid.domain.rag.dto.response.OllamaGenerateResponse;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
@@ -24,40 +37,217 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class OllamaClient {
 
+    // eval_count(실제 생성된 토큰 수)가 num_predict에 도달했다는 건 모델이 할 말을 다 못 하고
+    // 토큰 상한에 걸려 끊겼다는 확정적 신호다 — LLM이 스스로 이를 감지·보고하게 하는 것보다 신뢰할 수 있다.
+    private static final String TRUNCATION_NOTICE =
+        "\n\n(※ 답변이 길어 일부 내용이 생략됐을 수 있습니다. 자세한 내용은 문서를 확인해주세요.)";
+
+    // Ollama의 NDJSON 청크에는 created_at, total_duration 등 우리가 매핑하지 않는 필드가 있다.
+    private static final ObjectMapper CHUNK_MAPPER = new ObjectMapper()
+        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+    // 한국어 RAG 답변에 한자·히라가나·가타카나가 나올 일은 없다. qwen 계열의 code-switching으로
+    // 섞여 나온 문자를 프롬프트 지시(모델이 무시할 수 있음)가 아닌 코드로 제거한다.
+    private static final Pattern FOREIGN_CJK_PATTERN =
+        Pattern.compile("[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}]+");
+
+    // 혼입이 이 글자 수를 넘으면 낱자 노이즈가 아니라 모델이 중국어로 넘어가 무너진 구간으로 판단하고,
+    // 문자만 지워 구두점 뼈대를 남기는 대신 혼입 시작 지점에서 답변을 자른다.
+    private static final int FOREIGN_CJK_CUT_THRESHOLD = 8;
+
     private final String model;
+    private final String keepAlive;
+    private final int numPredict;
+    private final double temperature;
+    private final double topP;
+    private final double repeatPenalty;
+    private final int repeatLastN;
+    private final Duration generateDeadline;
     private final RestClient restClient;
 
     public OllamaClient(
         @Value("${ollama.model}") String model,
+        @Value("${ollama.keep-alive}") String keepAlive,
+        @Value("${ollama.num-predict}") int numPredict,
+        @Value("${ollama.temperature}") double temperature,
+        @Value("${ollama.top-p}") double topP,
+        @Value("${ollama.repeat-penalty}") double repeatPenalty,
+        @Value("${ollama.repeat-last-n}") int repeatLastN,
+        @Value("${ollama.generate-deadline}") Duration generateDeadline,
         @Qualifier("ollamaRestClient") RestClient restClient
     ) {
         this.model = model;
+        this.keepAlive = keepAlive;
+        this.numPredict = numPredict;
+        this.temperature = temperature;
+        this.topP = topP;
+        this.repeatPenalty = repeatPenalty;
+        this.repeatLastN = repeatLastN;
+        this.generateDeadline = generateDeadline;
         this.restClient = restClient;
     }
 
     public OllamaGenerateResult generate(String prompt) {
         long start = System.currentTimeMillis();
+        long deadline = start + generateDeadline.toMillis();
 
-        OllamaGenerateResponse response;
+        StreamChunks chunks;
         try {
-            response = restClient.post()
+            chunks = restClient.post()
                 .uri("/api/generate")
-                .body(new OllamaGenerateRequest(model, prompt, false))
-                .retrieve()
-                .body(OllamaGenerateResponse.class);
+                .body(new OllamaGenerateRequest(
+                    model, prompt, true, true, keepAlive,
+                    new OllamaGenerateOptions(numPredict, temperature, topP, repeatPenalty, repeatLastN)
+                ))
+                .exchange((request, response) -> {
+                    if (response.getStatusCode().isError()) {
+                        log.error("Ollama 서버 오류 응답: status={}", response.getStatusCode());
+                        throw new DocGridException(ErrorCode.RAG_SERVICE_UNAVAILABLE);
+                    }
+                    return readStream(response.getBody(), deadline);
+                });
         } catch (RestClientException e) {
             log.error("Ollama 서버 호출 실패: {}", e.getMessage());
             throw new DocGridException(ErrorCode.RAG_SERVICE_UNAVAILABLE);
         }
 
-        if (response == null || response.response() == null) {
-            log.error("Ollama 응답이 비어있음: response={}", response);
+        // 한 토큰도 못 받았으면 부분 답변 반환 대신 예외를 던져 상위의 extractive fallback에 맡긴다.
+        if (chunks.last() == null || chunks.answer().isBlank()) {
+            log.error("Ollama 스트리밍 응답에서 답변을 받지 못함: deadlineExceeded={}", chunks.deadlineExceeded());
             throw new DocGridException(ErrorCode.RAG_SERVICE_UNAVAILABLE);
+        }
+
+        // done:true 없이 스트림이 끝나는 경우가 있다: 데드라인 조기 종료 외에도, Ollama의 PEG 파서가
+        // 한글이 토큰 경계에서 바이트 단위로 쪼개진 출력을 파싱하지 못하고 생성을 취소하는 버그
+        // (llama.cpp #24807)가 확인됐다. 발생 빈도를 추적할 수 있게 경고 로그를 남긴다.
+        boolean prematureEnd = !chunks.last().done();
+        if (prematureEnd && !chunks.deadlineExceeded()) {
+            log.warn("Ollama 스트림이 done 없이 조기 종료됨(서버 측 생성 취소 추정): 수신 텍스트 길이={}", chunks.answer().length());
+        }
+
+        SanitizedAnswer sanitized = sanitizeAnswer(chunks.answer());
+        if (sanitized.text().isBlank()) {
+            log.error("한자/가나 혼입 처리 후 답변이 비어 있음");
+            throw new DocGridException(ErrorCode.RAG_SERVICE_UNAVAILABLE);
+        }
+
+        String answerText = sanitized.text();
+        boolean hitTokenLimit = chunks.last().evalCount() != null && chunks.last().evalCount() >= numPredict;
+        if (hitTokenLimit || prematureEnd || sanitized.cutAtMixing()) {
+            answerText = trimToSentenceBoundary(answerText) + TRUNCATION_NOTICE;
         }
 
         int latencyMs = (int) (System.currentTimeMillis() - start);
         return new OllamaGenerateResult(
-            response.model(), response.response(), response.promptEvalCount(), response.evalCount(), latencyMs
+            chunks.last().model(), answerText, chunks.last().promptEvalCount(), chunks.last().evalCount(), latencyMs
         );
+    }
+
+    /**
+     * NDJSON 스트림을 청크 단위로 읽어 답변을 누적한다. 데드라인을 넘기면 읽기를 중단하고
+     * 그때까지 모인 부분 답변을 반환한다 — 전체 응답에 read-timeout을 걸던 방식과 달리,
+     * 디코드가 느려져도 이미 생성된 내용을 잃지 않는다. 조기 반환으로 스트림이 닫히면
+     * Ollama가 클라이언트 이탈을 감지하고 생성을 중단하므로 자원도 낭비되지 않는다.
+     */
+    private StreamChunks readStream(InputStream body, long deadline) throws IOException {
+        StringBuilder answer = new StringBuilder();
+        OllamaGenerateResponse last = null;
+        boolean deadlineExceeded = false;
+        BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8));
+        try {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.isBlank()) {
+                    continue;
+                }
+                OllamaGenerateResponse chunk = CHUNK_MAPPER.readValue(line, OllamaGenerateResponse.class);
+                if (chunk.response() != null) {
+                    answer.append(chunk.response());
+                }
+                last = chunk;
+                if (chunk.done()) {
+                    break;
+                }
+                if (System.currentTimeMillis() >= deadline) {
+                    deadlineExceeded = true;
+                    break;
+                }
+            }
+        } catch (IOException e) {
+            // 스트림이 멈춰 read-timeout이 본문 연결을 끊는 경우 등. 이미 받은 부분 답변이 있으면
+            // 버리지 않고 done 없는 조기 종료로 처리해 반환하고, 하나도 없을 때만 실패로 전파한다.
+            if (answer.isEmpty()) {
+                throw e;
+            }
+            log.warn("Ollama 스트림 읽기 중단, 수신된 부분 답변 반환: 길이={}, 원인={}", answer.length(), e.getMessage());
+        }
+        return new StreamChunks(answer.toString(), last, deadlineExceeded);
+    }
+
+    private record StreamChunks(String answer, OllamaGenerateResponse last, boolean deadlineExceeded) {
+    }
+
+    /**
+     * 답변에 섞인 한자/가나를 처리한다. 낱자 수준의 혼입은 해당 문자만 제거하고, 대량 혼입은
+     * 모델이 중국어 반복 루프로 넘어간 것이므로 혼입 시작 지점에서 답변을 잘라 잘림으로 처리한다.
+     * 발생 빈도를 추적할 수 있게 감지 시 경고 로그를 남긴다.
+     */
+    private static SanitizedAnswer sanitizeAnswer(String text) {
+        // 전각 구두점은 문장 부호 역할을 유지해야 하므로 삭제하지 않고 반각으로 치환한다.
+        String normalized = text
+            .replace('。', '.').replace('、', ',').replace('：', ':')
+            .replace('，', ',').replace('！', '!').replace('？', '?');
+        Matcher matcher = FOREIGN_CJK_PATTERN.matcher(normalized);
+        if (!matcher.find()) {
+            return new SanitizedAnswer(normalized, false);
+        }
+        int firstMixIndex = matcher.start();
+        int mixedCount = matcher.group().length();
+        while (matcher.find()) {
+            mixedCount += matcher.group().length();
+        }
+        if (mixedCount > FOREIGN_CJK_CUT_THRESHOLD) {
+            log.warn("답변에 한자/가나 대량 혼입({}자) 감지, 혼입 시작 지점에서 잘라냄", mixedCount);
+            return new SanitizedAnswer(normalized.substring(0, firstMixIndex), true);
+        }
+        log.warn("답변에 한자/가나 혼입({}자) 감지, 제거함", mixedCount);
+        return new SanitizedAnswer(FOREIGN_CJK_PATTERN.matcher(normalized).replaceAll(""), false);
+    }
+
+    private record SanitizedAnswer(String text, boolean cutAtMixing) {
+    }
+
+    /**
+     * 토큰 상한에 걸려 잘린 답변을 마지막 완결 문장까지만 남긴다. 단어 중간에서 뚝 끊긴 꼬리를
+     * 제거해 의도적으로 요약한 것처럼 보이게 한다. 문장 경계를 하나도 못 찾으면 원문을 그대로
+     * 반환한다.
+     */
+    private static String trimToSentenceBoundary(String text) {
+        for (int i = text.length() - 1; i >= 0; i--) {
+            char c = text.charAt(i);
+            if ((c == '!' || c == '?' || (c == '.' && isSentenceEndDot(text, i))) && !insideInlineCode(text, i)) {
+                return text.substring(0, i + 1);
+            }
+        }
+        return text;
+    }
+
+    // 숫자 목록 마커("6.")나 경로 표기(".." 등 연속 마침표)의 마침표는 문장 끝이 아니다.
+    private static boolean isSentenceEndDot(String text, int i) {
+        boolean precededOk = i == 0
+            || (text.charAt(i - 1) != '.' && !Character.isDigit(text.charAt(i - 1)));
+        boolean followedOk = i == text.length() - 1 || text.charAt(i + 1) != '.';
+        return precededOk && followedOk;
+    }
+
+    // 백틱 코드 스팬(`taskkill /PID <?` 등) 안의 문장 부호는 문장 끝이 아니다. 앞쪽 백틱 개수가 홀수면 스팬 내부다.
+    private static boolean insideInlineCode(String text, int i) {
+        int backticks = 0;
+        for (int j = 0; j < i; j++) {
+            if (text.charAt(j) == '`') {
+                backticks++;
+            }
+        }
+        return backticks % 2 == 1;
     }
 }

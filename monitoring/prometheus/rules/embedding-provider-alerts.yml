@@ -1,0 +1,91 @@
+groups:
+  - name: embedding-provider
+    rules:
+      - alert: EmbeddingProviderDown
+        expr: up{job="embedding-provider"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Embedding Provider metric endpoint is unavailable
+          description: Prometheus has failed to scrape the Embedding Provider for one minute.
+
+      - alert: EmbeddingProviderNotReady
+        expr: embedding_provider_model_loaded{job="embedding-provider"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Embedding Provider model is not ready
+          description: The process is reachable but the embedding model has not been loaded for one minute.
+
+      - alert: EmbeddingProviderRestarted
+        expr: changes(process_start_time_seconds{job="embedding-provider"}[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Embedding Provider process restarted
+          description: Investigate OOMKilled, model load failure, or an operator restart.
+
+      - alert: EmbeddingProviderHighMemory
+        expr: |
+          (
+            process_resident_memory_bytes{job="embedding-provider"}
+            /
+            embedding_provider_memory_limit_bytes{job="embedding-provider"}
+          ) > 0.90
+          and on(job, instance)
+          embedding_provider_memory_limit_bytes{job="embedding-provider"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Embedding Provider is close to its memory limit
+          description: RSS has exceeded 90% of the cgroup memory limit for five minutes.
+
+      - alert: EmbeddingProviderHighP99Latency
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (job, instance, le) (
+              rate(embedding_provider_request_duration_seconds_bucket{job="embedding-provider",outcome="success"}[5m])
+            )
+          ) > 25
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Embedding Provider p99 is consuming the timeout budget
+          description: Successful request p99 has exceeded 25 seconds for five minutes.
+
+      - alert: EmbeddingProviderQueueSaturated
+        expr: |
+          embedding_provider_max_queue_size{job="embedding-provider"} > 0
+          and on(job, instance)
+          embedding_provider_waiting_requests{job="embedding-provider"}
+            >= embedding_provider_max_queue_size{job="embedding-provider"}
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Embedding Provider queue is continuously saturated
+          description: The FIFO wait queue has remained at capacity for one minute.
+
+      - alert: EmbeddingProviderOverloadSpike
+        expr: |
+          sum by (job, instance) (
+            rate(embedding_provider_requests_total{job="embedding-provider",outcome="overloaded"}[5m])
+          )
+          /
+          clamp_min(
+            sum by (job, instance) (
+              rate(embedding_provider_requests_total{job="embedding-provider"}[5m])
+            ),
+            0.001
+          ) > 0.10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Embedding Provider overload rejection ratio is high
+          description: More than 10% of requests have been rejected as overloaded for five minutes.

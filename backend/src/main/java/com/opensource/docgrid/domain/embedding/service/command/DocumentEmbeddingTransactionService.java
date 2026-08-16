@@ -118,6 +118,7 @@ public class DocumentEmbeddingTransactionService {
                     chunk.getId(),
                     chunk.getChunkIndex(),
                     chunk.getChunkText(),
+                    chunk.getTokenCount(),
                     chunk.getContentHash()
                 ))
                 .toList()
@@ -416,12 +417,13 @@ public class DocumentEmbeddingTransactionService {
     }
 
     /**
-     * 외부 호출에 전달하는 단일 Chunk의 식별자, 순서, Text와 내용 Hash Snapshot.
+     * 외부 호출에 전달하는 단일 Chunk의 식별자, 순서, Text, Token 수와 내용 Hash Snapshot.
      */
     public record ChunkSnapshot(
         Long chunkId,
         int chunkIndex,
         String chunkText,
+        int tokenCount,
         String contentHash
     ) {
     }

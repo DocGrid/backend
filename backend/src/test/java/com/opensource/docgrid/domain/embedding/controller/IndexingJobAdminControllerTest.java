@@ -879,7 +879,8 @@ class IndexingJobAdminControllerTest {
             Arguments.of(ErrorCode.DOCUMENT_CHUNKS_INCONSISTENT, 500, "DOCUMENT-CHUNK-001"),
             Arguments.of(ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT, 500, "DOCUMENT-EMBEDDING-001"),
             Arguments.of(ErrorCode.EMBEDDING_VECTOR_INVALID, 500, "DOCUMENT-EMBEDDING-002"),
-            Arguments.of(ErrorCode.EMBEDDING_SERVER_UNAVAILABLE, 503, "SEARCH-001")
+            Arguments.of(ErrorCode.EMBEDDING_SERVER_UNAVAILABLE, 503, "SEARCH-001"),
+            Arguments.of(ErrorCode.EMBEDDING_PROVIDER_OVERLOADED, 429, "SEARCH-003")
         );
     }
 

@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 import com.opensource.docgrid.domain.embedding.dto.request.EmbedBatchRequest;
 import com.opensource.docgrid.domain.embedding.dto.request.EmbedRequest;
@@ -52,8 +53,7 @@ public class EmbeddingClient {
                 .retrieve()
                 .body(EmbedServerResponse.class);
         } catch (RestClientException exception) {
-            log.error("임베딩 서버 호출에 실패했습니다. cause={}", exception.getClass().getSimpleName());
-            throw new DocGridException(ErrorCode.EMBEDDING_SERVER_UNAVAILABLE);
+            throw translateFailure("단건", exception);
         }
 
         return response == null ? null : response.vector();
@@ -71,12 +71,28 @@ public class EmbeddingClient {
                 .retrieve()
                 .body(EmbedBatchServerResponse.class);
         } catch (RestClientException exception) {
-            log.error("임베딩 서버 Batch 호출에 실패했습니다. cause={}", exception.getClass().getSimpleName());
-            throw new DocGridException(ErrorCode.EMBEDDING_SERVER_UNAVAILABLE);
+            throw translateFailure("Batch", exception);
         }
 
         validateBatchResponse(response, texts == null ? -1 : texts.size());
         return response;
+    }
+
+    private DocGridException translateFailure(String operation, RestClientException exception) {
+        // 1. Provider가 명시적으로 거절한 과부하는 연결·응답 장애와 분리해 Retry 정책의 입력으로 보존한다.
+        ErrorCode errorCode = exception instanceof RestClientResponseException responseException
+            && responseException.getStatusCode().value() == 429
+            ? ErrorCode.EMBEDDING_PROVIDER_OVERLOADED
+            : ErrorCode.EMBEDDING_SERVER_UNAVAILABLE;
+
+        // 2. 외부 응답 본문은 문서 내용이나 내부 정보를 포함할 수 있어 오류 유형만 기록한다.
+        log.error(
+            "임베딩 서버 {} 호출에 실패했습니다. errorCode={}, cause={}",
+            operation,
+            errorCode.getCode(),
+            exception.getClass().getSimpleName()
+        );
+        return new DocGridException(errorCode);
     }
 
     private void validateBatchResponse(EmbedBatchServerResponse response, int expectedCount) {

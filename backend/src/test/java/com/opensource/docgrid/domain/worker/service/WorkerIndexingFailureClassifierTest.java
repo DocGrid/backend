@@ -26,12 +26,18 @@ class WorkerIndexingFailureClassifierTest {
         WorkerIndexingFailure provider = classifier.classify(
             new DocGridException(ErrorCode.EMBEDDING_SERVER_UNAVAILABLE, "sensitive endpoint")
         );
+        WorkerIndexingFailure overloaded = classifier.classify(
+            new DocGridException(ErrorCode.EMBEDDING_PROVIDER_OVERLOADED, "sensitive queue state")
+        );
 
         assertThat(storage.failureType()).isEqualTo(IndexingFailureType.STORAGE_UNAVAILABLE);
         assertThat(storage.safeMessage()).doesNotContain("sensitive");
         assertThat(provider.failureType())
             .isEqualTo(IndexingFailureType.EMBEDDING_PROVIDER_UNAVAILABLE);
         assertThat(provider.safeMessage()).doesNotContain("sensitive");
+        assertThat(overloaded.failureType())
+            .isEqualTo(IndexingFailureType.EMBEDDING_PROVIDER_OVERLOADED);
+        assertThat(overloaded.safeMessage()).doesNotContain("sensitive");
     }
 
     @Test

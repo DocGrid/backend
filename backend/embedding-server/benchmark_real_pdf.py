@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
-from urllib import request
+from urllib import error, request
 
 from benchmark_batch_size import (
     BenchmarkError,
@@ -49,6 +49,7 @@ class SafetyBenchmarkConfig:
     container_name: str | None
     memory_sample_interval_seconds: float
     output_path: Path
+    allow_overload_rejections: bool = False
 
 
 @dataclass(frozen=True)
@@ -271,6 +272,13 @@ def execute_request(
             sum(text.utf8_bytes for text in texts),
             time.perf_counter() - started_at, True, None,
         )
+    except error.HTTPError as exception:
+        return RequestSample(
+            batch_size, concurrency, round_index, request_index, len(texts),
+            sum(text.code_point_count for text in texts),
+            sum(text.utf8_bytes for text in texts),
+            time.perf_counter() - started_at, False, f"HTTP_{exception.code}",
+        )
     except (
         BenchmarkError,
         OSError,
@@ -431,6 +439,12 @@ def summarize_profile(
     ]
     successes = [sample for sample in profile_samples if sample.success]
     failures = [sample for sample in profile_samples if not sample.success]
+    overload_rejections = [
+        sample for sample in failures if sample.error_type == "HTTP_429"
+    ]
+    unexpected_failures = [
+        sample for sample in failures if sample.error_type != "HTTP_429"
+    ]
     profile_documents = [
         sample for sample in document_samples
         if sample.batch_size == batch_size and sample.concurrency == concurrency
@@ -462,6 +476,11 @@ def summarize_profile(
         "success_count": len(successes),
         "failure_count": len(failures),
         "failure_rate": len(failures) / len(profile_samples) if profile_samples else 1.0,
+        "overload_rejection_count": len(overload_rejections),
+        "unexpected_failure_count": len(unexpected_failures),
+        "overload_rejection_latency_milliseconds": latency_summary([
+            sample.latency_seconds for sample in overload_rejections
+        ]),
         "successful_text_count": total_texts,
         "throughput_texts_per_second": total_texts / elapsed if elapsed > 0 else None,
         "request_latency_milliseconds": latency_summary(latencies),
@@ -604,6 +623,7 @@ def build_payload(
             "timeout_seconds": config.timeout_seconds,
             "container_name": config.container_name,
             "memory_sample_interval_seconds": config.memory_sample_interval_seconds,
+            "allow_overload_rejections": config.allow_overload_rejections,
         },
         "corpus": corpus_summary,
         "environment": environment,
@@ -679,7 +699,9 @@ def run_benchmark(config: SafetyBenchmarkConfig) -> dict[str, Any]:
                         started_at,
                         time.monotonic(),
                     ))
-                    if any(not sample.success for sample in round_samples):
+                    if has_unexpected_request_failure(
+                        round_samples, config.allow_overload_rejections
+                    ):
                         profile_failed = True
                         break
 
@@ -722,6 +744,18 @@ def run_benchmark(config: SafetyBenchmarkConfig) -> dict[str, Any]:
     )
     write_payload(config.output_path, payload)
     return payload
+
+
+def has_unexpected_request_failure(
+    samples: Sequence[RequestSample],
+    allow_overload_rejections: bool,
+) -> bool:
+    """Stress 모드에서만 HTTP 429를 보호 성공으로 인정하고 다른 실패는 모두 중단한다."""
+    return any(
+        not sample.success
+        and (not allow_overload_rejections or sample.error_type != "HTTP_429")
+        for sample in samples
+    )
 
 
 def validate_config(config: SafetyBenchmarkConfig) -> None:
@@ -796,6 +830,11 @@ def parse_args(argv: Sequence[str] | None = None) -> SafetyBenchmarkConfig:
             "build/reports/real-pdf-embedding/real-pdf-safety.json",
         )),
     )
+    parser.add_argument(
+        "--allow-overload-rejections",
+        action="store_true",
+        help="continue stress rounds when every request failure is an expected HTTP 429",
+    )
     args = parser.parse_args(argv)
     config = SafetyBenchmarkConfig(
         base_url=args.base_url,
@@ -809,6 +848,7 @@ def parse_args(argv: Sequence[str] | None = None) -> SafetyBenchmarkConfig:
         container_name=args.container_name.strip() or None,
         memory_sample_interval_seconds=args.memory_sample_interval_seconds,
         output_path=args.output,
+        allow_overload_rejections=args.allow_overload_rejections,
     )
     validate_config(config)
     return config

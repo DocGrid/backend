@@ -288,6 +288,11 @@ public enum ErrorCode {
         "SEARCH-002",
         "임베딩 차원이 설정된 모델과 일치하지 않습니다."
     ),
+    EMBEDDING_PROVIDER_OVERLOADED(
+        HttpStatus.TOO_MANY_REQUESTS,
+        "SEARCH-003",
+        "임베딩 서버가 처리 가능한 요청 수를 초과했습니다."
+    ),
 
     // RAG
     RAG_SERVICE_UNAVAILABLE(

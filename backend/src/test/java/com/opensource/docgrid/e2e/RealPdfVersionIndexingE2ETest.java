@@ -192,6 +192,8 @@ class RealPdfVersionIndexingE2ETest {
             1,
             Instant.now().toString(),
             batchProperties.getBatchSize(),
+            batchProperties.getMaxCodePoints(),
+            batchProperties.getMaxEstimatedTokens(),
             documentReadTimeout.toSeconds(),
             measurements.size(),
             measurements.stream().filter(VersionMeasurement::jobSucceeded).count()
@@ -371,6 +373,8 @@ class RealPdfVersionIndexingE2ETest {
         int schemaVersion,
         String generatedAt,
         int batchSize,
+        int maxBatchCodePoints,
+        int maxBatchEstimatedTokens,
         long documentReadTimeoutSeconds,
         int versionCount,
         double jobSuccessRate,

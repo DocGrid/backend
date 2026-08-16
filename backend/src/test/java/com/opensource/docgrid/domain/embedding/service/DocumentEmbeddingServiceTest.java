@@ -61,7 +61,7 @@ class DocumentEmbeddingServiceTest {
             MODEL_ID,
             "BAAI/bge-m3",
             2,
-            List.of(new ChunkSnapshot(20L, 0, "본문", CONTENT_HASH))
+            List.of(new ChunkSnapshot(20L, 0, "본문", 1, CONTENT_HASH))
         );
     }
 

@@ -357,7 +357,7 @@ Ollama 설치 자체가 이번 이슈 범위(docker-compose 서비스 등록)에
 - README의 기존 "Local DB" 섹션이 참조하는 `docs/local-db.md` 링크는 이번 작업 이전부터 실제 파일이 없는 broken 링크였다 — 이번 이슈 범위 밖이라 별도로 손대지 않음.
 
 ### 다음 단계
-Issue 2 — `OllamaServerConfig`(RestClient Bean) + `OllamaClient` 구현. `PromptBuilder.build()`로 만든 프롬프트를 `POST /api/generate`로 실제 전송하고, 타임아웃/장애 시 503 `SERVICE_UNAVAILABLE`로 처리하는 예외 처리까지 포함한다.
+~~Issue 2 — `OllamaServerConfig`(RestClient Bean) + `OllamaClient` 구현. `PromptBuilder.build()`로 만든 프롬프트를 `POST /api/generate`로 실제 전송하고, 타임아웃/장애 시 503 `SERVICE_UNAVAILABLE`로 처리하는 예외 처리까지 포함한다.~~ → 완료됨(`#67`). 이후 `#75`/`#210`에서 Ollama 실패 시 503을 그대로 반환하는 대신 `RagFacade`가 최상위 검색 후보 원문을 인용하는 extractive fallback을 반환하는 방식으로 바뀌었다.
 
 `OllamaClient` 쪽 변경(raw:true, num_predict, 잘림 감지)은 `#67` 문서, RAG 타임아웃 수정 전체 배경은
 `docs/design/kangcheolung-#210-ollama-rag-timeout-fix.md` 참고.

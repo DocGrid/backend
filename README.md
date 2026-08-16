@@ -121,7 +121,8 @@ curl -f http://localhost:9000/minio/health/live
 
 Ollama는 **Docker가 아니라 macOS에 네이티브로 설치**합니다. Docker Desktop for Mac은 컨테이너에
 GPU(Metal)를 넘길 방법이 없어 CPU로만 추론하게 되고, 실제 RAG 프롬프트 기준 50초 이상 걸려 항상
-타임아웃됩니다.
+타임아웃됩니다. GPU(Metal) 가속은 **Apple Silicon Mac 기준**이며, Intel Mac은 네이티브로 설치해도
+CPU로만 추론하므로 동일한 타임아웃 문제가 있습니다.
 
 ```bash
 brew install ollama
@@ -130,8 +131,15 @@ ollama pull qwen2.5:7b
 curl -f http://localhost:11434/api/tags
 ```
 
-`ollama ps`의 `PROCESSOR`가 `100% GPU`로 나오는지 확인하세요. 자세한 내용은
-[백엔드 README의 Ollama 절](backend/README.md#ollama-rag-llm-서버)을 참고하세요.
+`ollama pull`은 모델을 다운로드만 하고 메모리에 올리지는 않습니다. 아래처럼 모델을 한 번 실행해
+로드한 뒤, `ollama ps`의 `PROCESSOR`가 `100% GPU`로 나오는지 확인하세요.
+
+```bash
+ollama run qwen2.5:7b "안녕"
+ollama ps
+```
+
+자세한 내용은 [백엔드 README의 Ollama 절](backend/README.md#ollama-rag-llm-서버)을 참고하세요.
 
 ### 4. Spring Boot 실행
 

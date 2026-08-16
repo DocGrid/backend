@@ -318,13 +318,15 @@ public class OllamaClient {
 - **응답이 없거나(`chunks.last() == null`) 답변이 비었으면(`chunks.answer().isBlank()`)** 503으로 처리 — 최초 구현의 "빈 응답 방어"(코드리뷰 반영) 취지를 스트리밍 구조에 맞게 이어받은 것이다.
 - NO_CONTEXT(검색 결과 0건일 때 호출 생략) 판단 로직은 여기 없다 — 이 메서드는 항상 받은 프롬프트를 그대로 보낸다.
 - **`raw: true`** — `/api/generate`가 기본으로 태우는 채팅 템플릿과 tool-call용 PEG 파서가 답변 속 백틱 코드를 tool-call 시도로 오인해 생성을 끊는 버그를 우회한다. **다만 완전한 해결책은 아니었다** — 한글이 토큰 경계에서 바이트 단위로 쪼개질 때 같은 파서가 파싱 실패로 생성을 취소하는 별개의 llama.cpp 버그(#24807, #24863)가 남아있다.
-- **`stream:true` + `readStream()` + `generate-deadline`** (`#210`) — 기존 "전체 응답에 read-timeout, 초과 시 통째로 버림" 방식을, "청크 단위로 누적하며 데드라인 감시, 초과 시 그때까지 받은 부분 답변 반환"으로 바꿨다. `read-timeout`(27s)의 역할도 "스트리밍 헤더가 시작될 때까지"로 축소되고, 생성 전체 시간의 실질적 상한은 `generate-deadline`(25s)이 담당한다.
+- **`stream:true` + `readStream()` + `generate-deadline`** (`#210`) — 기존 "전체 응답에 read-timeout, 초과 시 통째로 버림" 방식을, "청크 단위로 누적하며 데드라인 감시, 초과 시 그때까지 받은 부분 답변 반환"으로 바꿨다. `read-timeout`(27s)은 요청 시작부터 본문 스트림까지 전체에 적용되는 전송 계층 최후 방어선으로 남고(스트림이 멈춰 이 타임아웃이 발동해도 읽기 중 IOException을 잡아 이미 받은 부분 답변은 잘림으로 보존), 정상 스트림의 시간 상한은 그보다 짧은 `generate-deadline`(25s)이 먼저 담당한다.
 - **`prematureEnd`(`done:true` 없이 스트림 종료)** (`#210`) — 데드라인 초과와는 별개로, 위 PEG 파서 버그가 발생하면 최종 청크에 `done:true`가 오지 않는다. 이 경우도 잘림으로 간주해 트리밍+안내 문구를 붙이고, 데드라인 초과가 아닌 조기 종료는 `log.warn`으로 빈도를 추적한다(재시도는 검토만 하고 보류 — `#210` 문서 7단계).
 - **`sanitizeAnswer()` — 언어 혼입 코드 가드** (`#210`) — 한국어 RAG 답변에 한자·히라가나·가타카나가 나올 일은 없다는 전제로 정규식 감지. 8자 이하 낱자 혼입은 문자만 제거하고, 8자를 초과하는 대량 혼입(모델이 중국어 반복 루프로 넘어간 경우)은 문자만 지우면 구두점 뼈대가 지저분하게 남아서 **혼입이 시작된 지점에서 답변 자체를 자른다**. 전각 구두점(。、：，！？)은 삭제 대신 반각으로 치환.
-- **`trimToSentenceBoundary()` 정교화** (`#210`) — 숫자 목록 마커("6.")와 경로 표기("..")의 마침표를 문장 끝으로 오인하지 않도록 전후 문자를 검사한다. **알려진 잔여 결함**: `` `ls .` ``처럼 백틱 코드 스팬 안의 마침표는 여전히 오인될 수 있음(`#210` 문서 6-4 참고, 아직 미수정).
+- **`trimToSentenceBoundary()` 정교화** (`#210`) — 숫자 목록 마커("6.")와 경로 표기("..")의 마침표를 문장 끝으로 오인하지 않도록 전후 문자를 검사하고, `` `ls .` ``처럼 백틱 코드 스팬 안의 문장 부호는 앞쪽 백틱 개수 홀짝 판별(`insideInlineCode`)로 제외한다. 처음엔 마침표(`.`)에만 이 검사를 걸었는데, QA에서 `` `taskkill -F -PID <?` `` 같은 **코드 스팬 안의 물음표**에서도 똑같이 잘못 끊기는 사례가 나와 `?`/`!`까지 검사 범위를 넓혔다.
 - **잘림 판단 근거**: `hitTokenLimit`(`eval_count >= num_predict`) 외에 `prematureEnd`, `sanitized.cutAtMixing()`도 트리밍+안내 문구를 트리거한다 — LLM의 자기 판단에 의존하지 않고 코드로 확정 판별한다는 원칙은 그대로 유지된다.
+- **스트림 정지 시 부분 답변 보존** (`#210`, PR 코드리뷰 반영) — `readStream()`이 `readLine()`으로 블로킹 대기 중일 때는 데드라인을 못 보므로, 스트림이 멈춘 채 `read-timeout`(27s)이 먼저 발동해 본문 연결이 끊기면 `IOException`이 발생한다. 이걸 잡지 않으면 이미 받은 부분 답변까지 통째로 버려지고 상위(`RagFacade`)의 extractive fallback으로 대체됐다. 읽기 루프를 `try/catch`로 감싸 `IOException` 발생 시에도 이미 받은 텍스트가 있으면 잘림(트리밍+안내 문구)으로 반환하고, 한 글자도 못 받았을 때만 예외를 그대로 전파한다.
+- **답변 중간에 섞인 "관련 문서를 찾지 못했습니다" 문구 처리는 `OllamaClient`가 아니라 `RagFacade`의 책임**이다 (`#210`) — 자세한 내용은 `#75` 문서 참고.
 
-### 6. `src/test/java/.../rag/service/OllamaClientTest.java` (신규, 이후 스트리밍 구조로 재작성되며 12개로 확장)
+### 6. `src/test/java/.../rag/service/OllamaClientTest.java` (신규, 이후 스트리밍 구조로 재작성되며 15개로 확장)
 
 Mockito 패턴이 스트리밍 구조에 맞춰 바뀌었다 — 최초 구현은 `RestClient.post()` → `retrieve()` →
 `ResponseSpec.body(...)`를 mocking했으나, `exchange()` 기반으로 바뀌면서 `givenStreamBody(String ndjson)`
@@ -338,7 +340,10 @@ Mockito 패턴이 스트리밍 구조에 맞춰 바뀌었다 — 최초 구현�
 | `generate_hitsNumPredict_trimsToLastSentence` | 토큰 상한 도달 시 마지막 완결 문장까지만 남기고 트리밍되는지 |
 | `generate_deadlineExceeded_returnsPartialAnswer` | 데드라인 초과 시 스트림을 중단하고 그때까지 받은 부분 답변에 안내 문구를 붙이는지 |
 | `generate_prematureStreamEnd_treatsAsTruncation` | `done:true` 없이 스트림이 끝나면(PEG 파서 버그 재현) 잘림으로 처리되는지 |
+| `generate_streamStalled_returnsPartialAnswer` | 스트림 읽기 중 `IOException`이 나도 이미 받은 부분 답변을 잘림으로 반환하는지 (PR 코드리뷰 반영) |
+| `generate_trims_ignoresDotInsideInlineCode` | 백틱 코드 스팬(`` `ls .` ``) 안의 마침표를 문장 끝으로 오인하지 않는지 |
 | `generate_stripsForeignCjkCharacters` | 낱자 수준(8자 이하) 한자/가나 혼입을 제거하고 한국어만 남기는지 |
+| `generate_trims_ignoresQuestionMarkInsideInlineCode` | 백틱 코드 스팬 안의 물음표를 문장 끝으로 오인하지 않는지 |
 | `generate_heavyCjkMixing_cutsAtMixingPoint` | 8자를 초과하는 대량 혼입은 혼입 시작 지점에서 잘라내는지 |
 | `generate_trims_ignoresConsecutiveDots` | 경로 표기(`..`)의 연속 마침표를 문장 끝으로 오인하지 않는지 |
 | `generate_serverUnavailable_throwsException` | `ResourceAccessException` 발생 시 `RAG_SERVICE_UNAVAILABLE` 예외로 변환되는지 |
@@ -520,7 +525,7 @@ Qwen2.5 `3b`가 Apache 2.0이 아니라 비상업 연구용 "Qwen Research Licen
 - `OllamaGenerateRequest`에 대한 명시적 유효성 검증은 현재 호출 경로상 불필요하다고 판단해 추가하지 않았다(위 "코드리뷰 반영" 표 참고). 향후 `OllamaClient.generate()`를 다른 곳에서도 직접 호출하게 되는 상황이 생기면 재검토가 필요하다.
 - ~~`qwen2.5:3b`의 컨텍스트 한도(32,768 토큰)에 대한 명시적 방어(예: 프롬프트가 너무 길면 사전에 잘라내기)는 아직 없다. 지금 topK 범위(1~20)에서는 실질적 위험이 낮아 보류.~~ → 기본 모델이 `qwen2.5:7b`로 바뀌었으나(#184) `qwen2.context_length`는 동일하게 32,768로 확인되어(로컬 `ollama show` 검증) 이 판단은 그대로 유효했다. ~~방어 로직 자체는 여전히 미구현 상태.~~ → `PromptBuilder`에 청크별/전체 컨텍스트 텍스트 예산(truncate) 로직이 추가되어 해결됨 — 문자(코드포인트) 수 기준 근사 방어이며 정밀한 tokenizer 기반은 아니다(`#65` 문서 참고).
 - ~~Ollama 서비스 자체(`~/Library/LaunchAgents/homebrew.mxcl.ollama.plist`)에 설정된 `OLLAMA_KV_CACHE_TYPE=q8_0`(KV 캐시 정밀도를 낮추는 옵션)이 답변에 한자/가타카나가 한글 자리에 섞이는 글자 깨짐 현상의 유력 원인으로 지목됐으나, 아직 제거하지 않았다.~~ → 해결됨(`#210`): plist에서 해당 항목을 제거하고 `launchctl` 재로드. `OllamaClient.sanitizeAnswer()` 코드 가드도 별도로 추가해 이중 방어.
-- **(신규, `#210`, 미해결)** `trimToSentenceBoundary()`가 `` `ls .` ``처럼 백틱 코드 스팬 안의 마침표를 문장 끝으로 오인하는 경우가 QA에서 재현됨. 마침표 앞의 백틱 개수 홀짝으로 코드 스팬 내부 여부를 판별하는 수정이 필요.
+- ~~**(신규, `#210`, 미해결)** `trimToSentenceBoundary()`가 `` `ls .` ``처럼 백틱 코드 스팬 안의 마침표를 문장 끝으로 오인하는 경우가 QA에서 재현됨. 마침표 앞의 백틱 개수 홀짝으로 코드 스팬 내부 여부를 판별하는 수정이 필요.~~ → 해결됨: `insideInlineCode` 검사 추가 (PR 리뷰 반영).
 - **(신규, `#210`, 미해결)** 내용상 완결된 답변에도 잘림 안내 문구가 붙는 오탐 사례 관찰됨. `hitTokenLimit`/`prematureEnd` 중 어느 조건이 오탐인지 실제 응답 로그로 확인 필요.
 - **(신규, `#210`, 보류)** PEG 파서 버그로 `prematureEnd`가 발생했을 때의 재시도 — 확률적 샘플링(temperature 0.3)이라 재시도하면 우회될 가능성이 높지만, 응답 지연과 코드 복잡도 트레이드오프가 있어 `log.warn` 빈도 관찰 후 필요성 재판단하기로 보류.
 

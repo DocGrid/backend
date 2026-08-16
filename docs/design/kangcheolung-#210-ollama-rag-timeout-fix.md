@@ -105,7 +105,8 @@ total time = 15986.66 ms / 892 tokens
 | ls 컷오프 대응(오진단 — 실제 원인은 raw 파서 버그) | 25s | 300 → 500 |
 | 500이 자체적으로 25s 예산 초과 확인 후 | 25s | 500 → 300 |
 | 후보 캡(3개) 이후에도 timeout 재현, 디코드 속도 변동 확인 | 25s → **27s** | 300 → 220 |
-| 답변이 너무 짧아진다는 피드백 반영 | **27s** | 220 → **250 (최종)** |
+| 답변이 너무 짧아진다는 피드백 반영 | **27s** | 220 → 250 |
+| 스트리밍 전환(6-1)으로 시간 상한을 generate-deadline이 담당 | **27s** | 250 → **400 (최종)** |
 
 ## 4단계 — 실패 시 사용자 경험 개선
 
@@ -177,30 +178,46 @@ private StreamChunks readStream(InputStream body, long deadline) throws IOExcept
     OllamaGenerateResponse last = null;
     boolean deadlineExceeded = false;
     BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8));
-    String line;
-    while ((line = reader.readLine()) != null) {
-        if (line.isBlank()) {
-            continue;
+    try {
+        String line;
+        while ((line = reader.readLine()) != null) {
+            if (line.isBlank()) {
+                continue;
+            }
+            OllamaGenerateResponse chunk = CHUNK_MAPPER.readValue(line, OllamaGenerateResponse.class);
+            if (chunk.response() != null) {
+                answer.append(chunk.response());
+            }
+            last = chunk;
+            if (chunk.done()) {
+                break;
+            }
+            if (System.currentTimeMillis() >= deadline) {
+                deadlineExceeded = true;
+                break;
+            }
         }
-        OllamaGenerateResponse chunk = CHUNK_MAPPER.readValue(line, OllamaGenerateResponse.class);
-        if (chunk.response() != null) {
-            answer.append(chunk.response());
+    } catch (IOException e) {
+        // 스트림이 멈춰 read-timeout이 본문 연결을 끊는 경우 등. 이미 받은 부분 답변이 있으면
+        // 버리지 않고 done 없는 조기 종료로 처리해 반환하고, 하나도 없을 때만 실패로 전파한다.
+        if (answer.isEmpty()) {
+            throw e;
         }
-        last = chunk;
-        if (chunk.done()) {
-            break;
-        }
-        if (System.currentTimeMillis() >= deadline) {
-            deadlineExceeded = true;
-            break;
-        }
+        log.warn("Ollama 스트림 읽기 중단, 수신된 부분 답변 반환: 길이={}, 원인={}", answer.length(), e.getMessage());
     }
     return new StreamChunks(answer.toString(), last, deadlineExceeded);
 }
 ```
 
-`read-timeout`(27s)의 역할도 바뀌었다 — 이제 "전체 응답 완료까지"가 아니라 "스트리밍 헤더가
-시작될 때까지"만 책임지고, 생성 전체 시간의 실질적 상한은 `generate-deadline`(25s)이 담당한다.
+`read-timeout`(27s)의 역할도 바뀌었다 — Spring `JdkClientHttpRequestFactory`의 read-timeout은
+요청 시작부터 스트리밍 본문 수신까지 전체에 적용되므로, 스트림이 멈췄을 때의 전송 계층 최후
+방어선이 된다. **처음엔 이 경우를 못 잡아서 문제가 있었다**: `readLine()`으로 블로킹 대기
+중일 때는 데드라인을 못 보는데, 그 상태로 read-timeout이 먼저 발동해 본문 연결이 끊기면
+`IOException`이 그대로 터져서 이미 받은 부분 답변까지 통째로 버려지고 상위 extractive
+fallback으로 대체되고 있었다(PR 코드리뷰로 지적됨). 위 코드처럼 읽기 루프를 `try/catch`로
+감싸 `IOException` 발생 시에도 부분 답변이 있으면 잘림으로 보존하고, 한 글자도 못 받았을 때만
+예외를 그대로 전파하도록 고쳤다. 정상 스트림의 시간 상한은 그보다 짧은 `generate-deadline`(25s)이
+먼저 담당한다.
 `num_predict`는 시간 상한을 `generate-deadline`이 넘겨받은 만큼 250 → **400**으로 완화했다
 (디코드가 빠른 세션에서는 더 긴 답변을 허용).
 
@@ -289,18 +306,47 @@ private static boolean isSentenceEndDot(String text, int i) {
 숫자 목록 마커("6.")와 경로 표기("..")의 마침표를 문장 끝으로 오인하지 않도록, 앞뒤에 숫자나
 마침표가 연이어 있으면 후보에서 제외한다.
 
-**알려진 잔여 결함(미해결)**: `` `ls .` `` 처럼 **백틱 코드 스팬 안에 있는 명령어 인자로서의
-마침표**는 이 조건을 통과해버려 잘못 문장 끝으로 오인된다 — 최신 QA에서 `` "(`ls . (※ 답변이...)" `` 처럼
-백틱·괄호가 안 닫힌 채 잘리는 사례로 재현됨. 해결 방향은 파악됨(마침표 앞의 백틱 개수 홀짝으로
-코드 스팬 내부 여부 판별) — 아직 미적용.
+**(해결됨)** `` `ls .` `` 처럼 백틱 코드 스팬 안에 있는 마침표가 문장 끝으로 오인되던 결함은,
+마침표 앞의 백틱 개수 홀짝으로 코드 스팬 내부 여부를 판별하는 `insideInlineCode` 검사를 추가해
+해결했다. 코드 스팬 내부의 마침표는 문장 경계 후보에서 제외된다. **처음엔 마침표(`.`)에만
+이 검사를 걸었는데**, 후속 QA에서 `` `taskkill -F -PID <?` `` 처럼 코드 스팬 안의 **물음표**에서도
+같은 방식으로 잘못 끊기는 사례가 나와, `?`/`!`까지 `insideInlineCode` 검사 범위를 넓혔다.
 
 **추가 관찰(원인 미확정)**: 내용상 완결된 것으로 보이는 답변(예: mv 명령어 요약)에도 잘림 안내가
 붙는 사례가 있었다. `hitTokenLimit`/`prematureEnd` 중 어느 쪽이 오탐인지는 실제 응답의
 `eval_count`/`done` 로그를 봐야 확정할 수 있어 조사 예정.
 
+### 6-5. LLM이 정상 답변 뒤에 무관 안내 문구를 메아리처럼 덧붙이는 현상 (`RagFacade`)
+
+QA 중 7B 모델이 **정상 답변을 끝까지 잘 마친 뒤**, `PromptBuilder`의 "무관하면 '관련 문서를 찾지
+못했습니다'라고만 답하라"는 지시문을 스스로 메아리치듯 답변 끝에 덧붙이는 패턴이 반복 관찰됐다
+(예: 디렉토리 명령어 요약을 멀쩡히 끝내놓고 "관련 문서를 찾지 못했습니다. 질문 주제와 관련된
+문서가 없습니다."를 이어 붙임). 기존 `RagFacade`는 이 문구를 `answerText.contains(...)` 한 방으로
+판정해서, 문구가 답변 어디에 있든 전체를 "무관"으로 오판해 **멀쩡한 답변의 근거 문서(citations)까지
+숨겨버렸다.**
+
+문구의 **위치**로 분기하도록 고쳤다 — 문구가 답변 맨 앞(사실상 전체)이면 기존대로 진짜 무관 처리,
+답변 중간·끝에 섞여 있으면 그 지점부터 잘라내고 citations는 그대로 유지한다:
+
+```java
+String answerText = result.answerText();
+int phraseIndex = answerText != null ? answerText.indexOf(NO_RELEVANT_DOC_PHRASE) : -1;
+if (phraseIndex >= 0) {
+    if (answerText.strip().startsWith(NO_RELEVANT_DOC_PHRASE)) {
+        return RagAnswer.of(answerText, List.of());
+    }
+    log.warn("[RAG] 정상 답변에 무관 안내 문구 혼입, 해당 지점부터 제거: queryId={} phraseIndex={}",
+        queryId, phraseIndex);
+    answerText = answerText.substring(0, phraseIndex).strip();
+}
+return RagAnswer.of(answerText, candidates);
+```
+
+발생 빈도는 `log.warn`으로 추적한다. 자세한 내용은 `#75` 문서 참고.
+
 ## 7단계 — 남은 미해결 항목
 
-- 위 6-4의 백틱 코드 스팬 마침표 오인식, 완결 답변에 잘림 안내가 붙는 오탐 케이스
+- 위 6-4의 완결 답변에 잘림 안내가 붙는 오탐 케이스 (백틱 코드 스팬 마침표/물음표 오인식은 해결됨)
 - 스프링부트(한글 음역) vs springboot(영문) 임베딩 매칭 — 조사만 하고 미해결. 현재 쿼리
   전처리/동의어 매칭/하이브리드(BM25) 검색이 전혀 없고 순수 벡터(BGE-M3 코사인 유사도, 임계값
   0.30)만 사용 중이라는 것까지만 확인함.
@@ -311,7 +357,7 @@ private static boolean isSentenceEndDot(String text, int i) {
 
 ## 최종 설정값 (이 문서 작성 시점)
 
-- `ollama.server.connect-timeout`: 3s / `read-timeout`: 27s (스트리밍 헤더 수신까지만 책임)
+- `ollama.server.connect-timeout`: 3s / `read-timeout`: 27s (본문 스트림 포함 전송 계층 최후 방어선)
 - `ollama.generate-deadline`: 25s (생성 전체 시간의 실질적 상한)
 - `ollama.num-predict`: 400
 - `ollama.temperature`: 0.3 / `top-p`: 0.8

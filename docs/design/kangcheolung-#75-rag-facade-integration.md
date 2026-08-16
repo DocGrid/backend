@@ -317,6 +317,23 @@ public class RagFacade {
 
 **LLM이 "무관하다"고 판단하면 citations를 비운다 (`#210`)**: `PromptBuilder`가 무관한 문서일 때 `"관련 문서를 찾지 못했습니다"`로만 답하도록 지시하는데(`#65` 문서), 검색 자체는 성공해서 `candidates`가 비어있지 않은 상태라 기존 로직대로면 이 후보들이 citations로 그대로 노출됐다. "관련 문서 없음" 메시지와 "근거 문서 목록"이 동시에 뜨는 게 모순돼 보여서, 답변이 이 문구를 포함하면 citations를 빈 배열로 반환하도록 분기를 추가했다(DB에는 그대로 저장 — 감사/분석용). **프론트도 같이 고쳐야 했다** — `frontend/app/lib/search-sources.ts`의 `groupSearchSources`가 "citations 비면 원본 검색 `results`로 대체해서 보여주는" fallback을 갖고 있어서, 백엔드만 고치면 이 fallback이 그대로 무력화시켰다. 이 fallback을 제거해 citations만 근거로 렌더링하게 바꿨다.
 
+**(추가 수정, `#210`) 문구 위치에 따라 처리를 분기**: 위 로직을 처음엔 `answerText.contains(NO_RELEVANT_DOC_PHRASE)` 한 방으로 판정했는데, QA 중 7B 모델이 **정상 답변을 다 끝내놓고 지시문을 메아리처럼 답변 끝에 덧붙이는** 패턴이 반복 관찰됐다(예: 디렉토리 요약을 멀쩡히 마친 뒤 "관련 문서를 찾지 못했습니다. 질문 주제와 관련된 문서가 없습니다."를 스스로 추가). `contains()`로는 이런 경우도 전부 "무관"으로 오판해 멀쩡한 답변의 근거 문서까지 숨겨버렸다. 문구의 **위치**로 분기하도록 고쳤다:
+
+```java
+String answerText = result.answerText();
+int phraseIndex = answerText != null ? answerText.indexOf(NO_RELEVANT_DOC_PHRASE) : -1;
+if (phraseIndex >= 0) {
+    if (answerText.strip().startsWith(NO_RELEVANT_DOC_PHRASE)) {
+        return RagAnswer.of(answerText, List.of());
+    }
+    log.warn("[RAG] 정상 답변에 무관 안내 문구 혼입, 해당 지점부터 제거: queryId={} phraseIndex={}",
+        queryId, phraseIndex);
+    answerText = answerText.substring(0, phraseIndex).strip();
+}
+return RagAnswer.of(answerText, candidates);
+```
+문구가 답변 맨 앞(사실상 전부)이면 기존대로 진짜 무관 처리(citations 비움). 문구가 중간·끝에 섞여 있으면 그 지점부터 잘라내고 **citations는 유지**한다 — 화면에는 잘린 정상 답변 + 정상 근거 문서가 나간다. `log.warn`으로 발생 빈도를 추적한다.
+
 전체 배경과 실측 데이터는 `docs/design/kangcheolung-#210-ollama-rag-timeout-fix.md` 참고.
 
 ---
@@ -334,9 +351,9 @@ $ ./gradlew build -x test
 BUILD SUCCESSFUL
 ```
 
-기존 검색 블록 테스트(`SearchFacadeTest`, `SearchResultCommandServiceTest`)와 RAG 블록 테스트(`RagResponseCommandServiceTest`, `ResponseCitationCommandServiceTest`)를 이번 이슈의 시그니처 변경에 맞춰 함께 수정했고, 신규 `RagFacadeTest`(NO_CONTEXT/정상/실패 3케이스)를 추가했다. 전체 테스트 스위트가 회귀 없이 통과했다. (`#210`에서 "LLM 무관 판단 시 citations 비움", "후보 3개 초과 시 프롬프트엔 상위 3개만" 2케이스가 추가되어 현재 5케이스다.)
+기존 검색 블록 테스트(`SearchFacadeTest`, `SearchResultCommandServiceTest`)와 RAG 블록 테스트(`RagResponseCommandServiceTest`, `ResponseCitationCommandServiceTest`)를 이번 이슈의 시그니처 변경에 맞춰 함께 수정했고, 신규 `RagFacadeTest`(NO_CONTEXT/정상/실패 3케이스)를 추가했다. 전체 테스트 스위트가 회귀 없이 통과했다. (`#210`에서 "LLM 무관 판단 시 citations 비움", "후보 3개 초과 시 프롬프트엔 상위 3개만", "무관 문구가 답변 중간에 섞이면 그 지점부터 제거하고 citations는 유지" 3케이스가 추가되어 현재 6케이스다.)
 
-실제 문서 업로드/인덱싱 후 `POST /search`를 Swagger로 호출하는 e2e 확인은 별도로 진행 예정이다(이 문서에는 자동화 테스트 결과만 기록).
+실제 문서 업로드/인덱싱 후 `POST /search`를 Swagger로 호출하는 e2e 확인은 이후 QA에서 완료됐다(아래 "다음 단계" 참고 — 그 과정에서 발견된 버그와 수정 내역은 `#210` 문서에 정리). 이 문서에는 자동화 테스트 결과만 기록한다.
 
 ---
 

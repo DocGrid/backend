@@ -180,7 +180,7 @@ class WorkerQueueBackpressureBenchmark {
         registry.add("indexing.worker.lease-renewal-interval", () -> "10s");
         registry.add("indexing.worker.lease-recovery-interval", () -> "10m");
         registry.add("indexing.worker.shutdown-grace-period", () -> "30s");
-        registry.add("embedding.server.read-timeout", () -> "2m");
+        registry.add("embedding.document.read-timeout", () -> "2m");
 
         // HTTP 접수와 Worker가 의도적으로 작은 같은 Pool을 경쟁하도록 측정 변수를 고정한다.
         registry.add("spring.datasource.hikari.pool-name", () -> "worker-backpressure-pool");

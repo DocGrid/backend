@@ -351,7 +351,7 @@ class DocumentEmbeddingIntegrationTest {
         private volatile CyclicBarrier barrier;
 
         DeterministicEmbeddingClient() {
-            super(RestClient.builder().build());
+            super(RestClient.builder().build(), RestClient.builder().build());
         }
 
         @Override

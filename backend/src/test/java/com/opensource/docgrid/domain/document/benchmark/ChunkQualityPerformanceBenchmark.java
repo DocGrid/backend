@@ -54,7 +54,7 @@ class ChunkQualityPerformanceBenchmark {
     void compareChunkSizeAndOverlapQuality() throws IOException {
         BenchmarkConfiguration configuration = BenchmarkConfiguration.fromSystemProperties();
         RestClient restClient = RestClient.builder().baseUrl(configuration.serverUri().toString()).build();
-        EmbeddingClient embeddingClient = new EmbeddingClient(restClient);
+        EmbeddingClient embeddingClient = new EmbeddingClient(restClient, restClient);
         List<QueryCase> corpus = ChunkQualityBenchmarkSupport.createCorpus();
         List<ChunkProfile> profiles = ChunkQualityBenchmarkSupport.profiles();
 

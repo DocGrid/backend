@@ -21,18 +21,23 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 외부 Embedding Server의 단건·Batch Vector 생성 HTTP 계약을 담당한다.
  *
- * <p>이 Client는 모델 선택과 Vector 차원 검증을 수행하지 않는다. 호출 Service가 실행 Context에 맞는
- * 모델을 선택하고 반환 Vector를 검증하며, 이 클래스는 전송 오류를 공통 서비스 장애로 변환하는 경계만
- * 책임진다.
+ * <p>검색 단건과 문서 Batch는 같은 Provider를 사용하지만 응답 시간 예산이 다르므로 전용 HTTP Client를
+ * 분리한다. 모델 선택과 Vector 차원 검증은 호출 Service가 담당하며, 이 클래스는 요청 계약과 전송 오류
+ * 변환 경계만 책임진다.
  */
 @Slf4j
 @Component
 public class EmbeddingClient {
 
-    private final RestClient restClient;
+    private final RestClient queryRestClient;
+    private final RestClient documentRestClient;
 
-    public EmbeddingClient(@Qualifier("embeddingRestClient") RestClient restClient) {
-        this.restClient = restClient;
+    public EmbeddingClient(
+        @Qualifier("embeddingRestClient") RestClient queryRestClient,
+        @Qualifier("documentEmbeddingRestClient") RestClient documentRestClient
+    ) {
+        this.queryRestClient = queryRestClient;
+        this.documentRestClient = documentRestClient;
     }
 
     /**
@@ -41,7 +46,7 @@ public class EmbeddingClient {
     public float[] embed(String text) {
         EmbedServerResponse response;
         try {
-            response = restClient.post()
+            response = queryRestClient.post()
                 .uri("/embed")
                 .body(new EmbedRequest(text))
                 .retrieve()
@@ -60,7 +65,7 @@ public class EmbeddingClient {
     public EmbedBatchServerResponse embedBatch(List<String> texts, int batchSize) {
         EmbedBatchServerResponse response;
         try {
-            response = restClient.post()
+            response = documentRestClient.post()
                 .uri("/embed/batch")
                 .body(new EmbedBatchRequest(texts, batchSize))
                 .retrieve()

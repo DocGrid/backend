@@ -142,7 +142,7 @@ class WorkerIndexingThroughputBenchmark {
         registry.add("indexing.worker.lease-recovery-interval", () -> "10m");
         registry.add("indexing.worker.shutdown-grace-period", () -> "30s");
         // CPU 기반 BGE-M3의 실측 추론 시간을 5초 기본 운영 Timeout과 분리한다.
-        registry.add("embedding.server.read-timeout", () -> "2m");
+        registry.add("embedding.document.read-timeout", () -> "2m");
     }
 
     @BeforeAll

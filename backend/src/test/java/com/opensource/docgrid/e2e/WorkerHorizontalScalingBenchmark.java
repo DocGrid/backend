@@ -152,7 +152,7 @@ class WorkerHorizontalScalingBenchmark {
         registry.add("minio.bucket", () -> TEST_BUCKET);
         // Coordinator는 HTTP 접수와 검증만 담당하고 Job Claim 경쟁에는 참여하지 않는다.
         registry.add("indexing.worker.enabled", () -> "false");
-        registry.add("embedding.server.read-timeout", () -> "2m");
+        registry.add("embedding.document.read-timeout", () -> "2m");
         registry.add("spring.datasource.hikari.maximum-pool-size", () -> "8");
     }
 
@@ -304,7 +304,7 @@ class WorkerHorizontalScalingBenchmark {
                         "indexing.worker.lease-renewal-interval=10s",
                         "indexing.worker.lease-recovery-interval=10m",
                         "indexing.worker.shutdown-grace-period=30s",
-                        "embedding.server.read-timeout=2m",
+                        "embedding.document.read-timeout=2m",
                         "server.port=0",
                         "spring.application.name=" + workerName,
                         "spring.datasource.hikari.pool-name=" + poolName,

@@ -17,11 +17,11 @@ class EmbeddingBatchPropertiesTest {
     private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
     @Test
-    @DisplayName("실제 BGE-M3 Benchmark로 선택한 기본 Batch 크기 32는 유효하다")
+    @DisplayName("실제 PDF BGE-M3 Benchmark로 선택한 기본 Batch 크기 4는 유효하다")
     void defaultBatchSizeIsValid() {
         EmbeddingBatchProperties properties = new EmbeddingBatchProperties();
 
-        assertThat(properties.getBatchSize()).isEqualTo(32);
+        assertThat(properties.getBatchSize()).isEqualTo(4);
         assertThat(validator.validate(properties)).isEmpty();
     }
 

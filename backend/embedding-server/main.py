@@ -1,6 +1,8 @@
 import math
 import os
 import threading
+import time
+from collections import deque
 from contextlib import asynccontextmanager, contextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator
@@ -72,49 +74,54 @@ class ProviderAdmissionController:
     ):
         if max_concurrency < 1 or max_queue_size < 0 or queue_wait_timeout_seconds <= 0:
             raise ValueError("provider admission settings are invalid")
-        self._permits = threading.BoundedSemaphore(max_concurrency)
+        self._available_permits = max_concurrency
         self._max_queue_size = max_queue_size
         self._queue_wait_timeout_seconds = queue_wait_timeout_seconds
-        self._state_lock = threading.Lock()
-        self._waiting = 0
+        self._condition = threading.Condition()
+        self._waiters: deque[object] = deque()
 
     @contextmanager
     def admission(self):
         """즉시 permit 또는 제한된 대기 자리를 확보하고 종료 시 permit을 반드시 반환한다."""
-        acquired = self._permits.acquire(blocking=False)
-        if not acquired:
-            # 1. 대기 카운터를 Lock 안에서 선점해 요청 폭주가 Queue 상한을 넘지 않게 한다.
-            with self._state_lock:
-                if self._waiting >= self._max_queue_size:
+        with self._condition:
+            # 1. 기존 Waiter가 없을 때만 즉시 permit을 주어 새 요청의 Queue 추월을 차단한다.
+            if self._available_permits > 0 and not self._waiters:
+                self._available_permits -= 1
+            else:
+                if len(self._waiters) >= self._max_queue_size:
                     raise ProviderOverloadedError(
                         "queue_full", self._queue_wait_timeout_seconds
                     )
-                self._waiting += 1
+                waiter = object()
+                self._waiters.append(waiter)
+                deadline = time.monotonic() + self._queue_wait_timeout_seconds
 
-            try:
-                # 2. 문서 read timeout보다 짧게 기다려 아직 계산 중인 요청 뒤에 무한히 쌓이지 않게 한다.
-                acquired = self._permits.acquire(
-                    timeout=self._queue_wait_timeout_seconds
-                )
-            finally:
-                with self._state_lock:
-                    self._waiting -= 1
+                # 2. Queue 선두만 반환된 permit을 얻도록 Condition 안에서 FIFO 순서를 확인한다.
+                while self._waiters[0] is not waiter or self._available_permits == 0:
+                    remaining_seconds = deadline - time.monotonic()
+                    if remaining_seconds <= 0:
+                        self._waiters.remove(waiter)
+                        self._condition.notify_all()
+                        raise ProviderOverloadedError(
+                            "queue_wait_timeout", self._queue_wait_timeout_seconds
+                        )
+                    self._condition.wait(timeout=remaining_seconds)
 
-            if not acquired:
-                raise ProviderOverloadedError(
-                    "queue_wait_timeout", self._queue_wait_timeout_seconds
-                )
+                self._waiters.popleft()
+                self._available_permits -= 1
 
         try:
             # 3. 실제 모델 실행 구간만 permit으로 보호해 응답 직렬화 비용은 포함하지 않는다.
             yield
         finally:
-            self._permits.release()
+            with self._condition:
+                self._available_permits += 1
+                self._condition.notify_all()
 
     def waiting_count(self) -> int:
         """동시성 계약 테스트와 진단을 위해 현재 대기 요청 수의 일관된 Snapshot을 반환한다."""
-        with self._state_lock:
-            return self._waiting
+        with self._condition:
+            return len(self._waiters)
 
 
 model: BGEM3FlagModel | None = None

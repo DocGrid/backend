@@ -184,6 +184,41 @@ def test_provider_releases_permit_after_model_failure(client):
     assert fake_model.encode.call_count == 2
 
 
+def test_provider_admits_waiting_requests_in_fifo_order():
+    """먼저 대기한 요청이 뒤 요청보다 먼저 반환된 permit을 획득한다."""
+    controller = embedding_server.ProviderAdmissionController(1, 2, 1.0)
+    entered = {name: threading.Event() for name in ("first", "second", "third")}
+    releases = {name: threading.Event() for name in ("first", "second", "third")}
+    order = []
+
+    def run(name):
+        with controller.admission():
+            order.append(name)
+            entered[name].set()
+            assert releases[name].wait(timeout=1)
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [executor.submit(run, "first")]
+        assert entered["first"].wait(timeout=1)
+
+        futures.append(executor.submit(run, "second"))
+        wait_until(lambda: controller.waiting_count() == 1)
+        futures.append(executor.submit(run, "third"))
+        wait_until(lambda: controller.waiting_count() == 2)
+
+        releases["first"].set()
+        assert entered["second"].wait(timeout=1)
+        assert entered["third"].is_set() is False
+        releases["second"].set()
+        assert entered["third"].wait(timeout=1)
+        releases["third"].set()
+
+        for future in futures:
+            future.result(timeout=1)
+
+    assert order == ["first", "second", "third"]
+
+
 def post_batch(client, text):
     return client.post(
         "/embed/batch",

@@ -6,7 +6,7 @@
 
 ## 1. 배경
 
-#213은 실제 PDF 기준 Batch와 timeout을 조정했고, #216은 실행 1건·FIFO 대기 1건의 bounded admission을
+이슈 `#213`은 실제 PDF 기준 Batch와 timeout을 조정했고, #216은 실행 1건·FIFO 대기 1건의 bounded admission을
 적용했으며, #219는 지수 backoff·jitter·Circuit Breaker를 추가했다. 현재 Provider는 정상 부하에서
 OOM 없이 동작하지만 다음 운영 경계가 남아 있다.
 

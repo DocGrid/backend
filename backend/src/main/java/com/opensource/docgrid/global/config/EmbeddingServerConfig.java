@@ -27,19 +27,34 @@ public class EmbeddingServerConfig {
     @Value("${embedding.server.read-timeout:5s}")
     private Duration readTimeout;
 
+    @Value("${embedding.document.read-timeout:30s}")
+    private Duration documentReadTimeout;
+
     /**
      * 실행 환경별 제한 시간을 적용한 Embedding Provider 전용 Client를 만든다.
      */
     @Bean("embeddingRestClient")
     public RestClient embeddingRestClient() {
-        // 1. 연결과 추론 응답 제한을 분리해 느린 CPU 추론 환경에서도 Timeout을 독립적으로 조정한다.
+        return buildRestClient(readTimeout);
+    }
+
+    /**
+     * 실제 문서 길이의 Batch 추론 시간을 허용하는 문서 인덱싱 전용 Client를 만든다.
+     */
+    @Bean("documentEmbeddingRestClient")
+    public RestClient documentEmbeddingRestClient() {
+        return buildRestClient(documentReadTimeout);
+    }
+
+    private RestClient buildRestClient(Duration configuredReadTimeout) {
+        // 1. 연결 제한은 공유하되 단건 검색과 문서 Batch가 서로 다른 응답 시간 예산을 사용하게 한다.
         HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(connectTimeout)
             .build();
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
-        requestFactory.setReadTimeout(readTimeout);
+        requestFactory.setReadTimeout(configuredReadTimeout);
 
-        // 2. Domain Client가 같은 Transport 정책을 공유하도록 단일 이름의 RestClient를 제공한다.
+        // 2. 두 Client가 Base URL과 연결 정책은 공유하면서 용도별 Read Timeout만 분리하게 한다.
         return RestClient.builder()
             .baseUrl(baseUrl)
             .requestFactory(requestFactory)

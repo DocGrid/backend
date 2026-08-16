@@ -76,6 +76,37 @@ final class LocalE2eApiClient {
         );
     }
 
+    UploadedVersion uploadVersion(String accessToken, Long documentId, DocumentPayload payload) {
+        HttpHeaders fileHeaders = new HttpHeaders();
+        fileHeaders.setContentType(payload.mediaType());
+
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("file", new HttpEntity<>(LocalE2eDocumentFactory.resource(payload), fileHeaders));
+
+        HttpHeaders headers = authorizedHeaders(accessToken);
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        ResponseEntity<JsonNode> response = restTemplate.exchange(
+            "/api/documents/" + documentId + "/versions",
+            HttpMethod.POST,
+            new HttpEntity<>(body, headers),
+            JsonNode.class
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(201);
+        assertThat(response.getBody()).isNotNull();
+        JsonNode data = response.getBody().path("data");
+        assertThat(data.path("jobStatus").asText()).isEqualTo("PENDING");
+        return new UploadedVersion(
+            data.path("documentId").asLong(),
+            data.path("documentVersionId").asLong(),
+            data.path("versionNo").asInt(),
+            data.path("embeddingJobId").asLong(),
+            data.path("currentVersionId").isNull()
+                ? null
+                : data.path("currentVersionId").asLong()
+        );
+    }
+
     ResponseEntity<JsonNode> get(String accessToken, String path) {
         return restTemplate.exchange(
             path,
@@ -105,6 +136,16 @@ final class LocalE2eApiClient {
         Long documentVersionId,
         Long fileObjectId,
         Long embeddingJobId
+    ) {
+    }
+
+    /** 새 버전 접수 뒤 current 전환과 Job 완료를 추적하는 식별자를 보존한다. */
+    record UploadedVersion(
+        Long documentId,
+        Long documentVersionId,
+        int versionNo,
+        Long embeddingJobId,
+        Long currentVersionIdAtUpload
     ) {
     }
 }

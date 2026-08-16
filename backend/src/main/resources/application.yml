@@ -95,8 +95,10 @@ embedding:
     connect-timeout: ${EMBEDDING_SERVER_CONNECT_TIMEOUT:5s}
     read-timeout: ${EMBEDDING_SERVER_READ_TIMEOUT:5s}
   document:
-    # 실제 BGE-M3 CPU Benchmark에서 최고 처리량의 98.3%를 유지하면서 Batch 64보다 p95가 47% 낮은 균형점이다.
-    batch-size: ${EMBEDDING_DOCUMENT_BATCH_SIZE:32}
+    # PDF 동시 부하 p99의 2배 이상을 보장하되 단건 검색의 5초 예산은 유지한다.
+    read-timeout: ${EMBEDDING_DOCUMENT_READ_TIMEOUT:30s}
+    # 실제 PDF 3건의 Batch 4·8·16 비교에서 동시 부하 최고 처리량과 최소 p99·RSS를 모두 달성한 값이다.
+    batch-size: ${EMBEDDING_DOCUMENT_BATCH_SIZE:4}
 
 search:
   vector:

@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import java.util.List;
 
@@ -33,7 +35,8 @@ import com.opensource.docgrid.global.exception.ErrorCode;
 @DisplayName("EmbeddingClient 단위 테스트")
 class EmbeddingClientTest {
 
-    @Mock private RestClient restClient;
+    @Mock private RestClient queryRestClient;
+    @Mock private RestClient documentRestClient;
     @Mock(answer = Answers.RETURNS_SELF) private RestClient.RequestBodyUriSpec requestBodyUriSpec;
     @Mock private RestClient.ResponseSpec responseSpec;
 
@@ -41,8 +44,9 @@ class EmbeddingClientTest {
 
     @BeforeEach
     void setUp() {
-        embeddingClient = new EmbeddingClient(restClient);
-        doReturn(requestBodyUriSpec).when(restClient).post();
+        embeddingClient = new EmbeddingClient(queryRestClient, documentRestClient);
+        doReturn(requestBodyUriSpec).when(queryRestClient).post();
+        doReturn(requestBodyUriSpec).when(documentRestClient).post();
         doReturn(responseSpec).when(requestBodyUriSpec).retrieve();
     }
 
@@ -56,6 +60,8 @@ class EmbeddingClientTest {
         float[] result = embeddingClient.embed("검색어");
 
         assertThat(result).containsExactly(vector);
+        verify(queryRestClient).post();
+        verify(documentRestClient, never()).post();
     }
 
     @Test
@@ -97,6 +103,8 @@ class EmbeddingClientTest {
         assertThat(result.embeddings())
             .extracting(EmbedBatchItemResponse::index)
             .containsExactly(0, 1);
+        verify(documentRestClient).post();
+        verify(queryRestClient, never()).post();
     }
 
     @Test

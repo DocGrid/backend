@@ -304,7 +304,7 @@ public enum ErrorCode {
         "임베딩 서버 장애 보호가 활성화되었습니다."
     ),
     EMBEDDING_REQUEST_REJECTED(
-        HttpStatus.BAD_REQUEST,
+        HttpStatus.INTERNAL_SERVER_ERROR,
         "SEARCH-006",
         "임베딩 서버가 요청 계약을 거부했습니다."
     ),

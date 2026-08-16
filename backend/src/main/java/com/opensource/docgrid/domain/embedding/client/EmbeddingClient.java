@@ -58,6 +58,7 @@ public class EmbeddingClient {
         EmbeddingProviderCircuitBreaker.CallPermission permission =
             circuitBreaker.acquirePermission();
         EmbedServerResponse response;
+        boolean resultRecorded = false;
         try {
             response = queryRestClient.post()
                 .uri("/embed")
@@ -65,13 +66,20 @@ public class EmbeddingClient {
                 .retrieve()
                 .body(EmbedServerResponse.class);
             circuitBreaker.recordSuccess(permission);
+            resultRecorded = true;
         } catch (RestClientException exception) {
             EmbeddingProviderException providerException = translateFailure("단건", exception);
             Duration circuitDelay = circuitBreaker.recordFailure(
                 permission,
                 providerException.isCircuitFailure()
             );
+            resultRecorded = true;
             throw providerException.withMinimumRetryDelay(circuitDelay);
+        } finally {
+            // 예상 밖 예외가 결과 기록을 건너뛰어도 Half-open Probe 소유권은 반드시 반환한다.
+            if (!resultRecorded) {
+                circuitBreaker.releasePermission(permission);
+            }
         }
 
         return response == null ? null : response.vector();
@@ -84,6 +92,7 @@ public class EmbeddingClient {
         EmbeddingProviderCircuitBreaker.CallPermission permission =
             circuitBreaker.acquirePermission();
         EmbedBatchServerResponse response;
+        boolean resultRecorded = false;
         try {
             response = documentRestClient.post()
                 .uri("/embed/batch")
@@ -91,13 +100,20 @@ public class EmbeddingClient {
                 .retrieve()
                 .body(EmbedBatchServerResponse.class);
             circuitBreaker.recordSuccess(permission);
+            resultRecorded = true;
         } catch (RestClientException exception) {
             EmbeddingProviderException providerException = translateFailure("Batch", exception);
             Duration circuitDelay = circuitBreaker.recordFailure(
                 permission,
                 providerException.isCircuitFailure()
             );
+            resultRecorded = true;
             throw providerException.withMinimumRetryDelay(circuitDelay);
+        } finally {
+            // 예상 밖 예외가 결과 기록을 건너뛰어도 Half-open Probe 소유권은 반드시 반환한다.
+            if (!resultRecorded) {
+                circuitBreaker.releasePermission(permission);
+            }
         }
 
         validateBatchResponse(response, texts == null ? -1 : texts.size());
@@ -137,6 +153,9 @@ public class EmbeddingClient {
             return ErrorCode.EMBEDDING_PROVIDER_TIMEOUT;
         }
         if (exception instanceof RestClientResponseException responseException) {
+            if (responseException.getStatusCode().value() == 408) {
+                return ErrorCode.EMBEDDING_PROVIDER_TIMEOUT;
+            }
             if (responseException.getStatusCode().value() == 429) {
                 return ErrorCode.EMBEDDING_PROVIDER_OVERLOADED;
             }

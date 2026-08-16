@@ -84,6 +84,18 @@ public class EmbeddingProviderCircuitBreaker {
     }
 
     /**
+     * 결과를 기록하지 못한 현재 세대의 Half-open Probe 소유권만 안전하게 반환한다.
+     */
+    public synchronized void releasePermission(CallPermission permission) {
+        if (permission.disabled() || permission.generation() != generation) {
+            return;
+        }
+        if (permission.halfOpenProbe() && state == CircuitState.HALF_OPEN) {
+            halfOpenProbeInProgress = false;
+        }
+    }
+
+    /**
      * Retryable Provider 실패만 연속 실패로 집계하고 임계치 또는 Probe 실패 시 Circuit을 연다.
      */
     public synchronized Duration recordFailure(

@@ -14,8 +14,8 @@ import lombok.RequiredArgsConstructor;
 /**
  * 인덱싱 Job의 지수 Backoff, Jitter와 Provider 최소 지연을 하나의 재예약 지연으로 계산한다.
  *
- * <p>Job 상태 변경이나 시각 저장은 수행하지 않는다. 외부 `Retry-After`는 설정 최대 지연으로 제한해
- * Provider 응답이 무제한 Job 정지를 만들지 못하게 한다.
+ * <p>Job 상태 변경이나 시각 저장은 수행하지 않는다. 설정 최대 지연은 애플리케이션 Backoff에만
+ * 적용하며 외부 `Retry-After`는 Provider가 요청한 최소 재호출 시각으로 보존한다.
  */
 @Component
 @RequiredArgsConstructor
@@ -27,21 +27,22 @@ public class IndexingRetryDelayPolicy {
      * 현재 Retry 횟수에 해당하는 다음 실행 지연을 반환한다.
      */
     public Duration calculate(int currentRetryCount, Duration minimumRetryDelay) {
+        // 1. 잘못된 Retry 상태가 예약 시각 계산으로 전파되지 않도록 입력을 검증한다.
         if (currentRetryCount < 0
             || minimumRetryDelay == null
             || minimumRetryDelay.isNegative()) {
             throw new DocGridException(ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT);
         }
 
+        // 2. Retry 횟수에 따른 지수 지연을 설정 상한 안에서 계산한다.
         Duration maxDelay = workerProperties.getRetryMaxDelay();
         Duration exponentialDelay = calculateExponentialDelay(currentRetryCount, maxDelay);
+        // 3. 동일 시각 재시도 집중을 피하도록 Jitter를 적용하되 설정 상한을 유지한다.
         Duration jitteredDelay = applyJitter(exponentialDelay, maxDelay);
-        Duration boundedMinimum = minimumRetryDelay.compareTo(maxDelay) > 0
-            ? maxDelay
-            : minimumRetryDelay;
-        return jitteredDelay.compareTo(boundedMinimum) >= 0
+        // 4. Provider 최소 지연이 더 크면 상한보다 우선해 허용 시각 전 재호출을 막는다.
+        return jitteredDelay.compareTo(minimumRetryDelay) >= 0
             ? jitteredDelay
-            : boundedMinimum;
+            : minimumRetryDelay;
     }
 
     private Duration calculateExponentialDelay(int currentRetryCount, Duration maxDelay) {

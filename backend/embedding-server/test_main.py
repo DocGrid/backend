@@ -25,6 +25,109 @@ def client():
     return TestClient(embedding_server.app)
 
 
+def test_liveness_stays_available_while_readiness_reports_model_unavailable(client):
+    live_response = client.get("/health/live")
+    ready_response = client.get("/health/ready")
+    compatibility_response = client.get("/health")
+
+    assert live_response.status_code == 200
+    assert live_response.json()["status"] == "alive"
+    assert live_response.json()["model"] is None
+    assert live_response.json()["uptime_seconds"] >= 0
+    assert ready_response.status_code == 503
+    assert compatibility_response.status_code == 503
+
+
+def test_readiness_reports_model_and_admission_snapshot(client):
+    embedding_server.model = Mock()
+    embedding_server.provider_admission_controller = (
+        embedding_server.ProviderAdmissionController(2, 3, 0.5)
+    )
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ready",
+        "uptime_seconds": response.json()["uptime_seconds"],
+        "model": "BAAI/bge-m3",
+        "admission": {
+            "active_requests": 0,
+            "waiting_requests": 0,
+            "max_concurrency": 2,
+            "max_queue_size": 3,
+            "saturated": False,
+        },
+    }
+
+
+def test_compatibility_health_preserves_existing_response_contract(client):
+    embedding_server.model = Mock()
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_lifespan_propagates_model_load_failure(monkeypatch):
+    model_factory = Mock(side_effect=RuntimeError("model load failure"))
+    monkeypatch.setattr(embedding_server, "BGEM3FlagModel", model_factory)
+
+    with pytest.raises(RuntimeError, match="model load failure"):
+        with TestClient(embedding_server.app):
+            pass
+
+    model_factory.assert_called_once_with("BAAI/bge-m3", use_fp16=True)
+
+
+def test_metrics_exposes_request_admission_memory_and_process_series(client):
+    fake_model = Mock()
+    fake_model.encode.return_value = {"dense_vecs": [[0.1, 0.2]]}
+    embedding_server.model = fake_model
+
+    assert client.post("/embed", json={"text": "검색어"}).status_code == 200
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert "embedding_provider_requests_total" in response.text
+    assert 'operation="single"' in response.text
+    assert 'outcome="success"' in response.text
+    assert "embedding_provider_request_duration_seconds_bucket" in response.text
+    assert "embedding_provider_queue_wait_seconds_bucket" in response.text
+    assert "embedding_provider_active_requests" in response.text
+    assert "embedding_provider_waiting_requests" in response.text
+    assert "embedding_provider_memory_limit_bytes" in response.text
+    assert "process_resident_memory_bytes" in response.text
+
+
+@pytest.mark.parametrize(
+    ("raw_limit", "expected"),
+    [
+        ("3221225472", 3221225472),
+        ("max", 0),
+        (str(2**60), 0),
+        ("invalid", 0),
+    ],
+)
+def test_cgroup_memory_limit_normalizes_runtime_values(
+    tmp_path,
+    monkeypatch,
+    raw_limit,
+    expected,
+):
+    limit_path = tmp_path / "memory.max"
+    limit_path.write_text(raw_limit, encoding="utf-8")
+    monkeypatch.setattr(
+        embedding_server,
+        "CGROUP_MEMORY_LIMIT_PATHS",
+        (limit_path,),
+    )
+
+    assert embedding_server._cgroup_memory_limit_bytes() == expected
+
+
 def test_embed_preserves_single_response_contract(client):
     fake_model = Mock()
     fake_model.encode.return_value = {"dense_vecs": [[0.1, 0.2]]}
@@ -139,6 +242,9 @@ def test_provider_serializes_model_execution_and_rejects_request_beyond_queue(cl
     assert rejected.headers["Retry-After"] == "1"
     assert rejection_seconds < 0.2
     assert fake_model.max_active == 1
+    metrics = client.get("/metrics").text
+    assert 'outcome="overloaded"' in metrics
+    assert 'outcome="queue_full"' in metrics
 
 
 def test_provider_returns_429_when_queued_request_waits_too_long(client):

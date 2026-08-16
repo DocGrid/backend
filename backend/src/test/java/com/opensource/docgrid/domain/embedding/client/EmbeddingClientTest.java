@@ -20,6 +20,8 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.http.HttpStatus;
 
 import com.opensource.docgrid.domain.embedding.dto.response.EmbedServerResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.EmbedBatchItemResponse;
@@ -83,6 +85,17 @@ class EmbeddingClientTest {
         assertThatThrownBy(() -> embeddingClient.embed("검색어"))
             .isInstanceOf(DocGridException.class)
             .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMBEDDING_SERVER_UNAVAILABLE);
+    }
+
+    @Test
+    @DisplayName("단건 과부하: HTTP 429를 Provider 과부하 오류로 분리한다")
+    void embed_mapsTooManyRequestsToOverload() {
+        given(responseSpec.body(EmbedServerResponse.class))
+            .willThrow(new HttpClientErrorException(HttpStatus.TOO_MANY_REQUESTS));
+
+        assertThatThrownBy(() -> embeddingClient.embed("검색어"))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMBEDDING_PROVIDER_OVERLOADED);
     }
 
     @Test
@@ -165,5 +178,16 @@ class EmbeddingClientTest {
         assertThatThrownBy(() -> embeddingClient.embedBatch(List.of("본문"), 16))
             .isInstanceOf(DocGridException.class)
             .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMBEDDING_SERVER_UNAVAILABLE);
+    }
+
+    @Test
+    @DisplayName("Batch 과부하: HTTP 429를 Provider 과부하 오류로 분리한다")
+    void embedBatch_mapsTooManyRequestsToOverload() {
+        given(responseSpec.body(EmbedBatchServerResponse.class))
+            .willThrow(new HttpClientErrorException(HttpStatus.TOO_MANY_REQUESTS));
+
+        assertThatThrownBy(() -> embeddingClient.embedBatch(List.of("본문"), 1))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMBEDDING_PROVIDER_OVERLOADED);
     }
 }

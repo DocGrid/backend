@@ -9,7 +9,7 @@ import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 
 /**
- * 문서 Embedding Batch 크기의 기본값과 서버 계약 범위 검증을 확인한다.
+ * 문서 Embedding Batch의 개수·문자·Token 기본 안전값과 설정 범위 검증을 확인한다.
  */
 @DisplayName("EmbeddingBatchProperties 테스트")
 class EmbeddingBatchPropertiesTest {
@@ -17,11 +17,13 @@ class EmbeddingBatchPropertiesTest {
     private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
     @Test
-    @DisplayName("실제 PDF BGE-M3 Benchmark로 선택한 기본 Batch 크기 4는 유효하다")
-    void defaultBatchSizeIsValid() {
+    @DisplayName("실제 PDF BGE-M3 Benchmark로 선택한 기본 안전 예산은 유효하다")
+    void defaultSafetyBudgetsAreValid() {
         EmbeddingBatchProperties properties = new EmbeddingBatchProperties();
 
         assertThat(properties.getBatchSize()).isEqualTo(4);
+        assertThat(properties.getMaxCodePoints()).isEqualTo(4_000);
+        assertThat(properties.getMaxEstimatedTokens()).isEqualTo(900);
         assertThat(validator.validate(properties)).isEmpty();
     }
 
@@ -34,6 +36,19 @@ class EmbeddingBatchPropertiesTest {
         assertThat(validator.validate(properties)).hasSize(1);
 
         properties.setBatchSize(65);
+        assertThat(validator.validate(properties)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("문자와 Token 안전 예산은 양수만 허용한다")
+    void adaptiveBudgetsMustBePositive() {
+        EmbeddingBatchProperties properties = new EmbeddingBatchProperties();
+
+        properties.setMaxCodePoints(0);
+        assertThat(validator.validate(properties)).hasSize(1);
+
+        properties.setMaxCodePoints(4_000);
+        properties.setMaxEstimatedTokens(0);
         assertThat(validator.validate(properties)).hasSize(1);
     }
 }

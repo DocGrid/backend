@@ -91,6 +91,14 @@ public class WorkerIndexingFailureClassifier {
                 "Embedding Provider를 사용할 수 없어 인덱싱을 완료하지 못했습니다."
             );
         }
+        // HTTP 429 admission 거절은 일시적이므로 Provider 비가용과 구분한 retryable 정책을 유지한다.
+        if (errorCode == ErrorCode.EMBEDDING_PROVIDER_OVERLOADED) {
+            return WorkerIndexingFailure.reportable(
+                IndexingFailureType.EMBEDDING_PROVIDER_OVERLOADED,
+                errorCode.getCode(),
+                "Embedding Provider 처리 용량을 초과해 인덱싱을 완료하지 못했습니다."
+            );
+        }
         if (EMBEDDING_RESULT_ERRORS.contains(errorCode)) {
             return WorkerIndexingFailure.reportable(
                 IndexingFailureType.EMBEDDING_RESULT_INVALID,

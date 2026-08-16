@@ -108,6 +108,43 @@ def test_summarize_profile_uses_wall_time_for_concurrent_throughput():
     assert result["container_state_verified"] is True
 
 
+def test_summarize_profile_reports_fast_overload_rejections_separately():
+    samples = [
+        benchmark.RequestSample(4, 4, 0, 0, 4, 4000, 8000, 0.03, False, "HTTP_429"),
+        benchmark.RequestSample(4, 4, 0, 1, 4, 4000, 8000, 1.00, False, "HTTP_500"),
+    ]
+
+    result = benchmark.summarize_profile(
+        4,
+        4,
+        samples,
+        [],
+        [],
+        [benchmark.ProfileWindow(4, 4, 0, 10.0, 11.0)],
+        [benchmark.ProfileContainerState(4, 4, True, False, 0, 0, 1024, None)],
+    )
+
+    assert result["overload_rejection_count"] == 1
+    assert result["unexpected_failure_count"] == 1
+    assert result["overload_rejection_latency_milliseconds"]["p99"] == 30.0
+    assert result["errors"] == ["HTTP_429", "HTTP_500"]
+
+
+def test_overload_stress_allows_only_http_429_failures():
+    overload = benchmark.RequestSample(
+        4, 4, 0, 0, 4, 4000, 8000, 0.03, False, "HTTP_429"
+    )
+    provider_failure = benchmark.RequestSample(
+        4, 4, 0, 1, 4, 4000, 8000, 1.0, False, "HTTP_500"
+    )
+
+    assert benchmark.has_unexpected_request_failure([overload], True) is False
+    assert benchmark.has_unexpected_request_failure([overload], False) is True
+    assert benchmark.has_unexpected_request_failure(
+        [overload, provider_failure], True
+    ) is True
+
+
 def test_recommendation_accepts_summarize_profile_output_contract():
     result = benchmark.summarize_profile(
         4,

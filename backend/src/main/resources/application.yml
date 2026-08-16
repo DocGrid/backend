@@ -99,6 +99,9 @@ embedding:
     read-timeout: ${EMBEDDING_DOCUMENT_READ_TIMEOUT:30s}
     # 실제 PDF 3건의 Batch 4·8·16 비교에서 동시 부하 최고 처리량과 최소 p99·RSS를 모두 달성한 값이다.
     batch-size: ${EMBEDDING_DOCUMENT_BATCH_SIZE:4}
+    # Chunk 개수만 같아도 입력 길이가 크게 다를 수 있어 Unicode 문자와 저장된 Token 예산을 함께 제한한다.
+    max-code-points: ${EMBEDDING_DOCUMENT_MAX_CODE_POINTS:4000}
+    max-estimated-tokens: ${EMBEDDING_DOCUMENT_MAX_ESTIMATED_TOKENS:900}
 
 search:
   vector:

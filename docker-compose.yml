@@ -47,6 +47,10 @@ services:
     container_name: docgrid-embedding
     ports:
       - "8000:8000"
+    environment:
+      EMBEDDING_PROVIDER_MAX_CONCURRENCY: ${EMBEDDING_PROVIDER_MAX_CONCURRENCY:-1}
+      EMBEDDING_PROVIDER_MAX_QUEUE_SIZE: ${EMBEDDING_PROVIDER_MAX_QUEUE_SIZE:-1}
+      EMBEDDING_PROVIDER_QUEUE_WAIT_TIMEOUT_SECONDS: ${EMBEDDING_PROVIDER_QUEUE_WAIT_TIMEOUT_SECONDS:-15}
     volumes:
       - huggingface-cache:/root/.cache/huggingface
     healthcheck:

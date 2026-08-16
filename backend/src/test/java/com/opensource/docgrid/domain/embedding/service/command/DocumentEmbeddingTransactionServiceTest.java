@@ -506,6 +506,7 @@ class DocumentEmbeddingTransactionServiceTest {
                     chunk.getId(),
                     chunk.getChunkIndex(),
                     chunk.getChunkText(),
+                    chunk.getTokenCount(),
                     chunk.getContentHash()
                 ))
                 .toList()

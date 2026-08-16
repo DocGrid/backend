@@ -8,7 +8,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import com.opensource.docgrid.domain.embedding.client.EmbeddingClient;
-import com.opensource.docgrid.domain.embedding.config.EmbeddingBatchProperties;
 import com.opensource.docgrid.domain.embedding.dto.response.EmbedBatchItemResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.EmbedBatchServerResponse;
 import com.opensource.docgrid.domain.embedding.service.command.DocumentEmbeddingTransactionService.ChunkSnapshot;
@@ -29,7 +28,7 @@ import lombok.RequiredArgsConstructor;
 public class DocumentEmbeddingGenerator {
 
     private final EmbeddingClient embeddingClient;
-    private final EmbeddingBatchProperties batchProperties;
+    private final AdaptiveEmbeddingBatchPlanner batchPlanner;
 
     /**
      * 정렬된 Chunk Snapshot을 Batch 순차 호출해 같은 순서의 Embedding Draft로 변환한다.
@@ -38,23 +37,21 @@ public class DocumentEmbeddingGenerator {
         validateWork(work);
 
         List<DocumentEmbeddingDraft> drafts = new ArrayList<>(work.chunks().size());
-        int batchSize = batchProperties.getBatchSize();
-        for (int start = 0; start < work.chunks().size(); start += batchSize) {
-            int end = Math.min(start + batchSize, work.chunks().size());
-            List<ChunkSnapshot> batchChunks = work.chunks().subList(start, end);
-
-            // 1. 현재 Batch의 원문만 전달해 DB Transaction 밖에서 Vector 목록을 생성한다.
+        // 1. 저장된 Token 수와 실제 Unicode 문자 수를 함께 반영한 순서 보존 Batch를 계획한다.
+        List<List<ChunkSnapshot>> batches = batchPlanner.plan(work.chunks());
+        for (List<ChunkSnapshot> batchChunks : batches) {
+            // 2. 현재 Batch의 원문만 전달해 DB Transaction 밖에서 Vector 목록을 생성한다.
             EmbedBatchServerResponse response = embeddingClient.embedBatch(
                 batchChunks.stream().map(ChunkSnapshot::chunkText).toList(),
-                batchSize
+                batchChunks.size()
             );
 
-            // 2. 응답 모델이 준비 단계에서 고정한 Job Model과 같은지 Batch별로 확인한다.
+            // 3. 응답 모델이 준비 단계에서 고정한 Job Model과 같은지 Batch별로 확인한다.
             if (!Objects.equals(response.model(), work.modelName())) {
                 throw new DocGridException(ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT);
             }
 
-            // 3. Client가 검증한 위치를 원본 Chunk와 결합하고 Vector 저장 계약을 다시 검증한다.
+            // 4. Client가 검증한 위치를 원본 Chunk와 결합하고 Vector 저장 계약을 다시 검증한다.
             for (int batchIndex = 0; batchIndex < batchChunks.size(); batchIndex++) {
                 ChunkSnapshot chunk = batchChunks.get(batchIndex);
                 EmbedBatchItemResponse item = response.embeddings().get(batchIndex);

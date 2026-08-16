@@ -14,7 +14,8 @@ class IndexingFailureTypeTest {
 
     @ParameterizedTest
     @EnumSource(value = IndexingFailureType.class, names = {
-        "STORAGE_UNAVAILABLE", "EMBEDDING_PROVIDER_UNAVAILABLE", "WORKER_INTERNAL_ERROR"
+        "STORAGE_UNAVAILABLE", "EMBEDDING_PROVIDER_UNAVAILABLE",
+        "EMBEDDING_PROVIDER_OVERLOADED", "WORKER_INTERNAL_ERROR"
     })
     @DisplayName("일시적인 인프라와 Worker 내부 오류는 Retry할 수 있다")
     void retryableTypes_returnTrue(IndexingFailureType failureType) {

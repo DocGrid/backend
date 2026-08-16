@@ -68,7 +68,7 @@ class DocumentEmbeddingGeneratorTest {
         DocumentEmbeddingGenerator generator = generator(2);
         given(embeddingClient.embedBatch(List.of("첫 번째", "두 번째"), 2))
             .willReturn(response(item(0, 1.0f, 0.0f), item(1, 2.0f, 0.0f)));
-        given(embeddingClient.embedBatch(List.of("세 번째"), 2))
+        given(embeddingClient.embedBatch(List.of("세 번째"), 1))
             .willReturn(response(item(0, 3.0f, 0.0f)));
 
         List<DocumentEmbeddingDraft> drafts = generator.generate(work(
@@ -79,7 +79,7 @@ class DocumentEmbeddingGeneratorTest {
 
         InOrder callOrder = inOrder(embeddingClient);
         callOrder.verify(embeddingClient).embedBatch(List.of("첫 번째", "두 번째"), 2);
-        callOrder.verify(embeddingClient).embedBatch(List.of("세 번째"), 2);
+        callOrder.verify(embeddingClient).embedBatch(List.of("세 번째"), 1);
         assertThat(drafts)
             .extracting(DocumentEmbeddingDraft::chunkId)
             .containsExactly(20L, 21L, 22L);
@@ -92,7 +92,7 @@ class DocumentEmbeddingGeneratorTest {
     @DisplayName("응답 모델이 Job 고정 모델과 다르면 Vector를 Draft로 만들지 않는다")
     void generate_rejectsModelMismatch() {
         DocumentEmbeddingGenerator generator = generator(2);
-        given(embeddingClient.embedBatch(List.of("첫 번째"), 2))
+        given(embeddingClient.embedBatch(List.of("첫 번째"), 1))
             .willReturn(new EmbedBatchServerResponse(
                 "different-model",
                 List.of(item(0, 1.0f, 0.0f))
@@ -194,7 +194,10 @@ class DocumentEmbeddingGeneratorTest {
     private DocumentEmbeddingGenerator generator(int batchSize) {
         EmbeddingBatchProperties properties = new EmbeddingBatchProperties();
         properties.setBatchSize(batchSize);
-        return new DocumentEmbeddingGenerator(embeddingClient, properties);
+        return new DocumentEmbeddingGenerator(
+            embeddingClient,
+            new AdaptiveEmbeddingBatchPlanner(properties)
+        );
     }
 
     private EmbedBatchServerResponse response(EmbedBatchItemResponse... items) {
@@ -206,6 +209,6 @@ class DocumentEmbeddingGeneratorTest {
     }
 
     private ChunkSnapshot chunk(Long chunkId, int chunkIndex, String text) {
-        return new ChunkSnapshot(chunkId, chunkIndex, text, CONTENT_HASH);
+        return new ChunkSnapshot(chunkId, chunkIndex, text, 1, CONTENT_HASH);
     }
 }

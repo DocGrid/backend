@@ -21,13 +21,21 @@ import com.opensource.docgrid.domain.search.dto.VectorSearchCandidate;
 public class PromptBuilder {
 
     private static final int MAX_CHUNK_TEXT_CODE_POINTS = 800;
-    private static final int MAX_CONTEXT_TEXT_CODE_POINTS = 6_000;
+    // Ollama 추론 시간은 대부분 prefill(문맥 토큰 수)에 비례한다 — 6000에서 절반으로 줄여
+    // read-timeout(25s) 안에서 생성에 쓸 수 있는 여유 시간을 확보한다.
+    private static final int MAX_CONTEXT_TEXT_CODE_POINTS = 3_200;
 
     private static final String INSTRUCTION =
-        "다음은 참고 문서입니다. 먼저 질문과 문서가 직접 관련 있는지 판단하세요.\n"
+        "다음은 검색으로 찾은 참고 문서입니다. 문서 내용이 질문 주제와 실제로 관련 있는지 판단하세요.\n"
             + "단순히 일부 단어가 겹친다는 이유만으로 관련 있다고 판단하지 마세요.\n"
-            + "질문에 답할 충분한 근거가 없거나 문서가 무관하면 \"관련 문서를 찾지 못했습니다.\"라고만 답하세요.\n"
-            + "관련 근거가 있을 때만 이 내용으로 답변하고, 문서에 없는 내용은 일반 지식이나 추측으로 보완하지 마세요.\n\n";
+            + "문서 주제 자체가 질문과 무관하면 \"관련 문서를 찾지 못했습니다.\"라고만 답하세요.\n"
+            + "질문이 특정 키워드나 항목(예: 특정 명령어, 용어)을 지정해 그 내용을 찾아달라는 요청이면, "
+            + "문서에서 해당 부분을 찾아 관련된 항목을 빠짐없이 구체적으로 정리해서 답변하세요. "
+            + "이 경우 문서가 어떤 주제인지 개괄적으로만 설명하지 마세요.\n"
+            + "질문이 특정 항목을 지정하지 않고 문서 전체를 요약하거나 소개해달라는 요청이면(예: \"문서 찾아줘\", "
+            + "\"요약해줘\", \"소개해줘\"), 문서가 무엇에 대한 내용인지 3~4문장 이내로 간결하게 설명하세요.\n"
+            + "문서에 없는 내용은 일반 지식이나 추측으로 보완하지 마세요.\n"
+            + "질문이나 문서에 다른 언어가 섞여 있어도 답변은 반드시 한국어로만 작성하세요.\n\n";
 
     public String build(String queryText, List<VectorSearchCandidate> candidates) {
         StringBuilder sb = new StringBuilder(INSTRUCTION);
@@ -39,6 +47,8 @@ public class PromptBuilder {
             sb.append(citationLine(i + 1, candidate, chunkTextLimit)).append('\n');
         }
         sb.append("\n질문: ").append(queryText);
+        sb.append("\n\n(다시 한번 강조: 답변은 한국어로만 작성하세요. 답변을 마쳤으면 같은 내용을 다른 언어로 "
+            + "번역하거나 반복해서 덧붙이지 말고 그대로 끝내세요.)");
         return sb.toString();
     }
 

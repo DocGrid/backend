@@ -39,8 +39,20 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class RagFacade {
 
-    private static final String LLM_FALLBACK_ANSWER =
-        "관련 문서는 찾았지만 AI 답변 생성이 지연되고 있습니다. 아래 검색 결과와 근거 문서를 확인해 주세요.";
+    private static final String LLM_FALLBACK_PREFIX = "AI 답변 생성이 지연되고 있습니다. "
+        + "가장 관련도 높은 문서에서 다음 내용을 찾았습니다:\n\n";
+
+    // fallback 문구에 원문을 통째로 붙이면 답변이 지나치게 길어져, 미리보기 수준으로만 잘라 보여준다.
+    private static final int FALLBACK_EXCERPT_MAX_CODE_POINTS = 300;
+
+    // topK는 호출자가 1~20까지 자유롭게 요청할 수 있어(SearchRequest), 후보 수를 그대로 프롬프트에
+    // 다 넣으면 prefill 시간이 예측 불가능해져 read-timeout(25s)을 넘기는 경우가 생긴다.
+    // 화면에 보여줄 인용 문서 수(topK)와 별개로, LLM이 실제로 읽는 후보 수는 이 값으로 고정한다.
+    private static final int MAX_PROMPT_CANDIDATES = 3;
+
+    // PromptBuilder가 LLM에게 무관한 문서일 때 이 문구로만 답하도록 지시한다 — 검색은 됐지만(candidates
+    // 존재) LLM이 무관하다고 판단한 경우, 화면에 근거 문서를 같이 보여주면 안내 문구와 모순돼 보인다.
+    private static final String NO_RELEVANT_DOC_PHRASE = "관련 문서를 찾지 못했습니다";
 
     private final PromptBuilder promptBuilder;
     private final OllamaClient ollamaClient;
@@ -60,22 +72,47 @@ public class RagFacade {
             return RagAnswer.noContext(ragResponse.getAnswerText());
         }
 
-        // 검색 후보가 있으면 프롬프트 조립 후 LLM 호출
-        String prompt = promptBuilder.build(queryText, candidates);
+        // 검색 후보가 있으면 프롬프트 조립 후 LLM 호출 (LLM 입력은 상위 MAX_PROMPT_CANDIDATES개로 제한)
+        List<VectorSearchCandidate> promptCandidates = candidates.size() > MAX_PROMPT_CANDIDATES
+            ? candidates.subList(0, MAX_PROMPT_CANDIDATES)
+            : candidates;
+        String prompt = promptBuilder.build(queryText, promptCandidates);
         OllamaGenerateResult result;
         try {
             result = ollamaClient.generate(prompt);
         } catch (DocGridException e) {
             ragResponseCommandService.createFailed(queryRef, prompt, e.getMessage());
-            // LLM 장애가 권한 검증을 통과한 벡터 검색 결과까지 숨기지 않도록 저하 응답으로 마무리한다.
+            // LLM 장애가 권한 검증을 통과한 벡터 검색 결과까지 숨기지 않도록, 최상위 후보 원문을
+            // 그대로 인용해 최소한의 답을 제공한다(extractive fallback).
             log.warn("[RAG] fallback queryId={} errorCode={}", queryId, e.getErrorCode().getCode());
-            return RagAnswer.of(LLM_FALLBACK_ANSWER, candidates);
+            return RagAnswer.of(buildExtractiveFallbackAnswer(candidates), candidates);
         }
 
         // LLM 이후의 영속화 실패는 검색 저하 응답으로 숨기지 않고 Transaction 오류로 전달한다.
         RagResponse ragResponse = ragResponseCommandService.createSuccess(queryRef, prompt, result);
         responseCitationCommandService.saveAll(ragResponse, candidates, searchResults);
         log.info("[RAG] done queryId={} responseId={} latencyMs={}", queryId, ragResponse.getId(), result.latencyMs());
+
+        // LLM이 무관하다고 판단해 안내 문구로만 답했으면, 후보 문서를 근거처럼 같이 보여주지 않는다.
+        if (result.answerText() != null && result.answerText().contains(NO_RELEVANT_DOC_PHRASE)) {
+            return RagAnswer.of(result.answerText(), List.of());
+        }
         return RagAnswer.of(result.answerText(), candidates);
+    }
+
+    private String buildExtractiveFallbackAnswer(List<VectorSearchCandidate> candidates) {
+        VectorSearchCandidate top = candidates.get(0);
+        String pageSuffix = top.pageNo() != null ? " " + top.pageNo() + "페이지" : "";
+        String excerpt = truncate(top.chunkText(), FALLBACK_EXCERPT_MAX_CODE_POINTS);
+        return "%s\"%s\" (%s%s)".formatted(LLM_FALLBACK_PREFIX, excerpt, top.documentTitle(), pageSuffix);
+    }
+
+    private String truncate(String text, int maxCodePoints) {
+        int codePointCount = text.codePointCount(0, text.length());
+        if (codePointCount <= maxCodePoints) {
+            return text;
+        }
+        int endIndex = text.offsetByCodePoints(0, maxCodePoints - 1);
+        return text.substring(0, endIndex) + "…";
     }
 }

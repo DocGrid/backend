@@ -3,6 +3,7 @@ package com.opensource.docgrid.domain.document.benchmark;
 import static com.opensource.docgrid.domain.document.benchmark.ChunkQualityBenchmarkSupport.summarizeTimings;
 
 import java.io.IOException;
+import java.time.Clock;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,6 +29,8 @@ import com.opensource.docgrid.domain.document.benchmark.ChunkQualityBenchmarkSup
 import com.opensource.docgrid.domain.document.benchmark.ChunkQualityBenchmarkSupport.QueryCase;
 import com.opensource.docgrid.domain.document.benchmark.ChunkQualityBenchmarkSupport.TimingSummary;
 import com.opensource.docgrid.domain.embedding.client.EmbeddingClient;
+import com.opensource.docgrid.domain.embedding.client.EmbeddingProviderCircuitBreaker;
+import com.opensource.docgrid.domain.embedding.config.EmbeddingProviderCircuitBreakerProperties;
 import com.opensource.docgrid.domain.embedding.dto.response.EmbedBatchItemResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.EmbedBatchServerResponse;
 
@@ -54,7 +57,14 @@ class ChunkQualityPerformanceBenchmark {
     void compareChunkSizeAndOverlapQuality() throws IOException {
         BenchmarkConfiguration configuration = BenchmarkConfiguration.fromSystemProperties();
         RestClient restClient = RestClient.builder().baseUrl(configuration.serverUri().toString()).build();
-        EmbeddingClient embeddingClient = new EmbeddingClient(restClient, restClient);
+        EmbeddingProviderCircuitBreakerProperties circuitProperties =
+            new EmbeddingProviderCircuitBreakerProperties();
+        circuitProperties.setEnabled(false);
+        EmbeddingClient embeddingClient = new EmbeddingClient(
+            restClient,
+            restClient,
+            new EmbeddingProviderCircuitBreaker(circuitProperties, Clock.systemUTC())
+        );
         List<QueryCase> corpus = ChunkQualityBenchmarkSupport.createCorpus();
         List<ChunkProfile> profiles = ChunkQualityBenchmarkSupport.profiles();
 

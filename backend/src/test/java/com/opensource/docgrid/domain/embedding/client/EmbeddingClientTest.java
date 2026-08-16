@@ -7,8 +7,12 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import java.net.http.HttpTimeoutException;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 
+import org.springframework.http.HttpHeaders;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,11 +30,14 @@ import org.springframework.http.HttpStatus;
 import com.opensource.docgrid.domain.embedding.dto.response.EmbedServerResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.EmbedBatchItemResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.EmbedBatchServerResponse;
+import com.opensource.docgrid.domain.embedding.client.EmbeddingProviderCircuitBreaker.CallPermission;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
 /**
- * EmbeddingClient의 HTTP 응답 전달과 외부 장애 변환 경계를 검증한다.
+ * EmbeddingClient의 HTTP 응답 전달, 실패 분류와 Circuit Callback 경계를 검증한다.
+ *
+ * <p>Circuit 자체 상태 전이와 실제 네트워크 I/O는 별도 단위 테스트의 범위다.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -41,12 +48,20 @@ class EmbeddingClientTest {
     @Mock private RestClient documentRestClient;
     @Mock(answer = Answers.RETURNS_SELF) private RestClient.RequestBodyUriSpec requestBodyUriSpec;
     @Mock private RestClient.ResponseSpec responseSpec;
+    @Mock private EmbeddingProviderCircuitBreaker circuitBreaker;
 
     private EmbeddingClient embeddingClient;
+    private CallPermission permission;
 
     @BeforeEach
     void setUp() {
-        embeddingClient = new EmbeddingClient(queryRestClient, documentRestClient);
+        permission = new CallPermission(1L, false, false);
+        given(circuitBreaker.acquirePermission()).willReturn(permission);
+        embeddingClient = new EmbeddingClient(
+            queryRestClient,
+            documentRestClient,
+            circuitBreaker
+        );
         doReturn(requestBodyUriSpec).when(queryRestClient).post();
         doReturn(requestBodyUriSpec).when(documentRestClient).post();
         doReturn(responseSpec).when(requestBodyUriSpec).retrieve();
@@ -64,6 +79,7 @@ class EmbeddingClientTest {
         assertThat(result).containsExactly(vector);
         verify(queryRestClient).post();
         verify(documentRestClient, never()).post();
+        verify(circuitBreaker).recordSuccess(permission);
     }
 
     @Test
@@ -85,6 +101,20 @@ class EmbeddingClientTest {
         assertThatThrownBy(() -> embeddingClient.embed("검색어"))
             .isInstanceOf(DocGridException.class)
             .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMBEDDING_SERVER_UNAVAILABLE);
+        verify(circuitBreaker).recordFailure(permission, true);
+    }
+
+    @Test
+    @DisplayName("서버 timeout: 응답 제한 초과를 별도 Retry 오류로 분류한다")
+    void embed_mapsTimeoutToDedicatedFailure() {
+        given(responseSpec.body(EmbedServerResponse.class)).willThrow(
+            new ResourceAccessException("timeout", new HttpTimeoutException("read timeout"))
+        );
+
+        assertThatThrownBy(() -> embeddingClient.embed("검색어"))
+            .isInstanceOf(EmbeddingProviderException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMBEDDING_PROVIDER_TIMEOUT);
+        verify(circuitBreaker).recordFailure(permission, true);
     }
 
     @Test
@@ -96,6 +126,81 @@ class EmbeddingClientTest {
         assertThatThrownBy(() -> embeddingClient.embed("검색어"))
             .isInstanceOf(DocGridException.class)
             .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMBEDDING_PROVIDER_OVERLOADED);
+    }
+
+    @Test
+    @DisplayName("단건 과부하: Retry-After delta-seconds를 Job 최소 지연으로 보존한다")
+    void embed_preservesRetryAfterForOverload() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.RETRY_AFTER, "15");
+        given(responseSpec.body(EmbedServerResponse.class)).willThrow(
+            HttpClientErrorException.create(
+                HttpStatus.TOO_MANY_REQUESTS,
+                "Too Many Requests",
+                headers,
+                new byte[0],
+                StandardCharsets.UTF_8
+            )
+        );
+
+        assertThatThrownBy(() -> embeddingClient.embed("검색어"))
+            .isInstanceOf(EmbeddingProviderException.class)
+            .hasFieldOrPropertyWithValue("minimumRetryDelay", Duration.ofSeconds(15));
+        verify(circuitBreaker).recordFailure(permission, true);
+    }
+
+    @Test
+    @DisplayName("Circuit 개방 실패: Retry-After보다 긴 Open 시간을 Job 최소 지연으로 사용한다")
+    void embed_prefersCircuitOpenDelay() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.RETRY_AFTER, "15");
+        given(responseSpec.body(EmbedServerResponse.class)).willThrow(
+            HttpClientErrorException.create(
+                HttpStatus.TOO_MANY_REQUESTS,
+                "Too Many Requests",
+                headers,
+                new byte[0],
+                StandardCharsets.UTF_8
+            )
+        );
+        given(circuitBreaker.recordFailure(permission, true))
+            .willReturn(Duration.ofSeconds(30));
+
+        assertThatThrownBy(() -> embeddingClient.embed("검색어"))
+            .isInstanceOf(EmbeddingProviderException.class)
+            .hasFieldOrPropertyWithValue("minimumRetryDelay", Duration.ofSeconds(30));
+    }
+
+    @Test
+    @DisplayName("영구 4xx: 요청 계약 오류로 분류하고 Circuit 실패에 포함하지 않는다")
+    void embed_mapsClientErrorToPermanentFailure() {
+        given(responseSpec.body(EmbedServerResponse.class))
+            .willThrow(new HttpClientErrorException(HttpStatus.BAD_REQUEST));
+
+        assertThatThrownBy(() -> embeddingClient.embed("검색어"))
+            .isInstanceOf(EmbeddingProviderException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMBEDDING_REQUEST_REJECTED);
+        verify(circuitBreaker).recordFailure(permission, false);
+    }
+
+    @Test
+    @DisplayName("Circuit Open: 실제 HTTP 호출 전에 빠르게 실패한다")
+    void embed_failsFastWhenCircuitIsOpen() {
+        given(circuitBreaker.acquirePermission()).willThrow(
+            new EmbeddingProviderException(
+                ErrorCode.EMBEDDING_PROVIDER_CIRCUIT_OPEN,
+                Duration.ofSeconds(30),
+                false
+            )
+        );
+
+        assertThatThrownBy(() -> embeddingClient.embed("검색어"))
+            .isInstanceOf(EmbeddingProviderException.class)
+            .hasFieldOrPropertyWithValue(
+                "errorCode",
+                ErrorCode.EMBEDDING_PROVIDER_CIRCUIT_OPEN
+            );
+        verify(queryRestClient, never()).post();
     }
 
     @Test

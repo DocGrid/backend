@@ -1,0 +1,212 @@
+package com.opensource.docgrid.domain.embedding.client;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import com.opensource.docgrid.domain.embedding.client.EmbeddingProviderCircuitBreaker.CallPermission;
+import com.opensource.docgrid.domain.embedding.config.EmbeddingProviderCircuitBreakerProperties;
+import com.opensource.docgrid.global.exception.ErrorCode;
+
+/**
+ * Embedding Provider Circuit의 연속 실패, Open fast-fail과 단일 Half-open Probe 상태 전이를 검증한다.
+ *
+ * <p>실제 HTTP 호출과 Worker Job 재예약은 제외하고 동시 Permission 발급과 Clock 기반 복구 경계만
+ * 확인한다.
+ */
+@DisplayName("EmbeddingProviderCircuitBreaker 테스트")
+class EmbeddingProviderCircuitBreakerTest {
+
+    private static final Instant STARTED_AT = Instant.parse("2026-08-16T10:00:00Z");
+
+    @Test
+    @DisplayName("연속 Provider 실패 3회 뒤 Circuit을 열고 실제 호출 Permission을 거절한다")
+    void recordFailure_opensAfterThreshold() {
+        MutableClock clock = new MutableClock(STARTED_AT);
+        EmbeddingProviderCircuitBreaker circuitBreaker = circuitBreaker(clock);
+
+        circuitBreaker.recordFailure(circuitBreaker.acquirePermission(), true);
+        circuitBreaker.recordFailure(circuitBreaker.acquirePermission(), true);
+        CallPermission third = circuitBreaker.acquirePermission();
+        Duration circuitDelay = circuitBreaker.recordFailure(third, true);
+
+        assertThat(circuitDelay).isEqualTo(Duration.ofSeconds(30));
+        assertThatThrownBy(circuitBreaker::acquirePermission)
+            .isInstanceOf(EmbeddingProviderException.class)
+            .hasFieldOrPropertyWithValue(
+                "errorCode",
+                ErrorCode.EMBEDDING_PROVIDER_CIRCUIT_OPEN
+            )
+            .hasFieldOrPropertyWithValue("minimumRetryDelay", Duration.ofSeconds(30));
+    }
+
+    @Test
+    @DisplayName("정상 호출은 연속 실패 횟수를 초기화한다")
+    void recordSuccess_resetsConsecutiveFailures() {
+        MutableClock clock = new MutableClock(STARTED_AT);
+        EmbeddingProviderCircuitBreaker circuitBreaker = circuitBreaker(clock);
+
+        circuitBreaker.recordFailure(circuitBreaker.acquirePermission(), true);
+        circuitBreaker.recordFailure(circuitBreaker.acquirePermission(), true);
+        circuitBreaker.recordSuccess(circuitBreaker.acquirePermission());
+        circuitBreaker.recordFailure(circuitBreaker.acquirePermission(), true);
+        circuitBreaker.recordFailure(circuitBreaker.acquirePermission(), true);
+
+        assertThat(circuitBreaker.acquirePermission().halfOpenProbe()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Open 시간이 지나면 동시 요청 중 한 건만 Half-open Probe를 획득한다")
+    void acquirePermission_allowsSingleHalfOpenProbe() throws Exception {
+        MutableClock clock = new MutableClock(STARTED_AT);
+        EmbeddingProviderCircuitBreaker circuitBreaker = openCircuit(clock);
+        clock.advance(Duration.ofSeconds(30));
+        CountDownLatch start = new CountDownLatch(1);
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Callable<Object> acquire = () -> {
+                start.await();
+                try {
+                    return circuitBreaker.acquirePermission();
+                } catch (EmbeddingProviderException exception) {
+                    return exception;
+                }
+            };
+            List<Future<Object>> results = List.of(
+                executor.submit(acquire),
+                executor.submit(acquire)
+            );
+            start.countDown();
+
+            List<Object> values = results.stream().map(this::get).toList();
+            assertThat(values).filteredOn(CallPermission.class::isInstance).hasSize(1);
+            assertThat(values).filteredOn(EmbeddingProviderException.class::isInstance).hasSize(1);
+
+            CallPermission probe = values.stream()
+                .filter(CallPermission.class::isInstance)
+                .map(CallPermission.class::cast)
+                .findFirst()
+                .orElseThrow();
+            assertThat(probe.halfOpenProbe()).isTrue();
+            circuitBreaker.recordSuccess(probe);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(circuitBreaker.acquirePermission().halfOpenProbe()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Half-open Probe가 실패하면 Open 시간을 새로 시작한다")
+    void recordFailure_reopensAfterProbeFailure() {
+        MutableClock clock = new MutableClock(STARTED_AT);
+        EmbeddingProviderCircuitBreaker circuitBreaker = openCircuit(clock);
+        clock.advance(Duration.ofSeconds(30));
+
+        CallPermission probe = circuitBreaker.acquirePermission();
+        circuitBreaker.recordFailure(probe, true);
+
+        assertThatThrownBy(circuitBreaker::acquirePermission)
+            .isInstanceOf(EmbeddingProviderException.class)
+            .hasFieldOrPropertyWithValue("minimumRetryDelay", Duration.ofSeconds(30));
+    }
+
+    @Test
+    @DisplayName("Open 전 시작한 요청의 늦은 성공은 새 Circuit 상태를 닫지 못한다")
+    void staleSuccess_doesNotCloseOpenedCircuit() {
+        MutableClock clock = new MutableClock(STARTED_AT);
+        EmbeddingProviderCircuitBreaker circuitBreaker = circuitBreaker(clock);
+        CallPermission stalePermission = circuitBreaker.acquirePermission();
+
+        circuitBreaker.recordFailure(circuitBreaker.acquirePermission(), true);
+        circuitBreaker.recordFailure(circuitBreaker.acquirePermission(), true);
+        circuitBreaker.recordFailure(circuitBreaker.acquirePermission(), true);
+        circuitBreaker.recordSuccess(stalePermission);
+
+        assertThatThrownBy(circuitBreaker::acquirePermission)
+            .isInstanceOf(EmbeddingProviderException.class);
+    }
+
+    @Test
+    @DisplayName("Open 전 시작한 요청의 늦은 실패에는 남은 Open 시간을 반환한다")
+    void staleFailure_returnsRemainingOpenDelay() {
+        MutableClock clock = new MutableClock(STARTED_AT);
+        EmbeddingProviderCircuitBreaker circuitBreaker = circuitBreaker(clock);
+        CallPermission stalePermission = circuitBreaker.acquirePermission();
+
+        circuitBreaker.recordFailure(circuitBreaker.acquirePermission(), true);
+        circuitBreaker.recordFailure(circuitBreaker.acquirePermission(), true);
+        circuitBreaker.recordFailure(circuitBreaker.acquirePermission(), true);
+        clock.advance(Duration.ofSeconds(7));
+
+        assertThat(circuitBreaker.recordFailure(stalePermission, true))
+            .isEqualTo(Duration.ofSeconds(23));
+    }
+
+    private EmbeddingProviderCircuitBreaker openCircuit(MutableClock clock) {
+        EmbeddingProviderCircuitBreaker circuitBreaker = circuitBreaker(clock);
+        for (int failure = 0; failure < 3; failure++) {
+            circuitBreaker.recordFailure(circuitBreaker.acquirePermission(), true);
+        }
+        return circuitBreaker;
+    }
+
+    private EmbeddingProviderCircuitBreaker circuitBreaker(Clock clock) {
+        EmbeddingProviderCircuitBreakerProperties properties =
+            new EmbeddingProviderCircuitBreakerProperties();
+        return new EmbeddingProviderCircuitBreaker(properties, clock);
+    }
+
+    private Object get(Future<Object> future) {
+        try {
+            return future.get();
+        } catch (Exception exception) {
+            throw new AssertionError(exception);
+        }
+    }
+
+    /**
+     * 실제 Sleep 없이 Circuit Open 경계를 이동시키는 Test 전용 Clock이다.
+     */
+    private static final class MutableClock extends Clock {
+
+        private Instant instant;
+
+        private MutableClock(Instant instant) {
+            this.instant = instant;
+        }
+
+        private void advance(Duration duration) {
+            instant = instant.plus(duration);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneId.of("UTC");
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
+    }
+}

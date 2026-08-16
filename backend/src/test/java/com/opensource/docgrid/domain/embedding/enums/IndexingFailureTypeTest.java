@@ -15,7 +15,8 @@ class IndexingFailureTypeTest {
     @ParameterizedTest
     @EnumSource(value = IndexingFailureType.class, names = {
         "STORAGE_UNAVAILABLE", "EMBEDDING_PROVIDER_UNAVAILABLE",
-        "EMBEDDING_PROVIDER_OVERLOADED", "WORKER_INTERNAL_ERROR"
+        "EMBEDDING_PROVIDER_OVERLOADED", "EMBEDDING_PROVIDER_TIMEOUT",
+        "EMBEDDING_PROVIDER_CIRCUIT_OPEN", "WORKER_INTERNAL_ERROR"
     })
     @DisplayName("일시적인 인프라와 Worker 내부 오류는 Retry할 수 있다")
     void retryableTypes_returnTrue(IndexingFailureType failureType) {
@@ -24,7 +25,8 @@ class IndexingFailureTypeTest {
 
     @ParameterizedTest
     @EnumSource(value = IndexingFailureType.class, names = {
-        "DOCUMENT_CONTENT_INVALID", "EMBEDDING_RESULT_INVALID", "INDEXING_STATE_INCONSISTENT"
+        "DOCUMENT_CONTENT_INVALID", "EMBEDDING_REQUEST_INVALID", "EMBEDDING_RESULT_INVALID",
+        "INDEXING_STATE_INCONSISTENT"
     })
     @DisplayName("데이터와 상태 불변식 오류는 Retry하지 않는다")
     void permanentTypes_returnFalse(IndexingFailureType failureType) {

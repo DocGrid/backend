@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -98,7 +99,8 @@ class EmbeddingJobLeaseRecoveryServiceTest {
             "WORKER_LEASE_EXPIRED",
             "Embedding Job Lease가 만료되어 현재 실행을 회수했습니다.",
             true,
-            RECOVERED_AT
+            RECOVERED_AT,
+            Duration.ZERO
         );
         assertThat(result.recovered()).isTrue();
         assertThat(result.jobId()).isEqualTo(JOB_ID);
@@ -126,7 +128,8 @@ class EmbeddingJobLeaseRecoveryServiceTest {
             "WORKER_LEASE_EXPIRED",
             "Embedding Job Lease가 만료되어 현재 실행을 회수했습니다.",
             true,
-            RECOVERED_AT
+            RECOVERED_AT,
+            Duration.ZERO
         );
         assertThat(result.recovered()).isTrue();
     }

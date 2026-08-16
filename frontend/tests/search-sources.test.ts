@@ -47,10 +47,12 @@ test("deduplicates repeated citations for one chunk", () => {
   assert.deepEqual(source.excerpts, ["근거"]);
 });
 
-test("groups raw search results when citations are unavailable", () => {
+test("returns no sources when citations are empty, even if raw search results exist", () => {
+  // citations가 비어있는 건 "관련 문서 없음"(NO_CONTEXT 또는 RAG가 무관 판단)이라는 의도된 신호이므로,
+  // 검색 자체는 히트가 있었더라도(results) 근거 문서 섹션에는 아무것도 보여주지 않는다.
   const response: SearchResponse = {
     queryId: 13,
-    answer: null,
+    answer: "관련 문서를 찾지 못했습니다.",
     results: [
       { rank: 1, documentId: 3, chunkId: 31, documentTitle: "회의록", chunkText: "일정", pageNo: null, similarityScore: 0.7 },
       { rank: 2, documentId: 3, chunkId: 32, documentTitle: "회의록", chunkText: "참석자", pageNo: null, similarityScore: 0.6 },
@@ -59,9 +61,5 @@ test("groups raw search results when citations are unavailable", () => {
     citations: [],
   };
 
-  const sources = groupSearchSources(response);
-  assert.equal(sources.length, 2);
-  assert.deepEqual(sources[0].labels, ["[1]", "[2]"]);
-  assert.equal(sources[0].chunkCount, 2);
-  assert.equal(sources[1].documentId, 4);
+  assert.deepEqual(groupSearchSources(response), []);
 });

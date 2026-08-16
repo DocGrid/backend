@@ -58,22 +58,6 @@ services:
     networks:
       - docgrid-local
 
-  ollama:
-    image: ollama/ollama
-    container_name: docgrid-ollama
-    ports:
-      - "127.0.0.1:11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    networks:
-      - docgrid-local
-
   redis:
     image: redis:7-alpine
     container_name: docgrid-redis
@@ -97,5 +81,4 @@ volumes:
     name: docgrid_postgres17_data
   minio-data:
   huggingface-cache:
-  ollama-data:
   redis-data:

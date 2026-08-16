@@ -95,22 +95,13 @@ nc -zv 127.0.0.1 55433
 로컬 Spring Boot는 `127.0.0.1:55433`으로 접속하지만, 실제 요청은 SSH Tunnel을 통해 EC2의
 OpenSQL `127.0.0.1:5432`로 전달됩니다.
 
-### 3. MinIO, BGE-M3, Ollama 실행
+### 3. MinIO, BGE-M3 실행 + Ollama 네이티브 설치
 
 Docker Desktop을 실행한 뒤 로컬 인프라를 기동합니다. 이 구성에서는 `postgres` Service를 실행하지
 않습니다.
 
 ```bash
-docker compose up -d --build minio embedding-server ollama
-```
-
-Ollama API가 준비될 때까지 Compose Health Check를 기다린 뒤, 루트 `.env`의 `OLLAMA_MODEL`에 지정한
-모델을 최초 한 번 내려받습니다. 값을 생략하면 Spring Boot 기본값인 `qwen2.5:7b`를 사용합니다.
-
-```bash
-docker compose up -d --wait --wait-timeout 120 ollama
-OLLAMA_MODEL_NAME=$(sed -n 's/^OLLAMA_MODEL=//p' .env | tail -n 1)
-docker compose exec ollama ollama pull "${OLLAMA_MODEL_NAME:-qwen2.5:7b}"
+docker compose up -d --build minio embedding-server
 ```
 
 BGE-M3는 첫 실행 시 약 3GB 모델을 내려받으므로 준비까지 10~15분 정도 걸릴 수 있습니다. 모델이
@@ -126,8 +117,21 @@ docker compose logs -f embedding-server
 ```bash
 curl -f http://localhost:8000/health
 curl -f http://localhost:9000/minio/health/live
+```
+
+Ollama는 **Docker가 아니라 macOS에 네이티브로 설치**합니다. Docker Desktop for Mac은 컨테이너에
+GPU(Metal)를 넘길 방법이 없어 CPU로만 추론하게 되고, 실제 RAG 프롬프트 기준 50초 이상 걸려 항상
+타임아웃됩니다.
+
+```bash
+brew install ollama
+brew services start ollama
+ollama pull qwen2.5:7b
 curl -f http://localhost:11434/api/tags
 ```
+
+`ollama ps`의 `PROCESSOR`가 `100% GPU`로 나오는지 확인하세요. 자세한 내용은
+[백엔드 README의 Ollama 절](backend/README.md#ollama-rag-llm-서버)을 참고하세요.
 
 ### 4. Spring Boot 실행
 
@@ -189,7 +193,7 @@ npm --prefix frontend run dev
 | `8000` | 로컬 Docker | BGE-M3 임베딩 서버 |
 | `9000` | 로컬 Docker | MinIO API |
 | `9001` | 로컬 Docker | MinIO Console |
-| `11434` | 로컬 Docker | Ollama RAG LLM 서버 |
+| `11434` | 로컬 (네이티브) | Ollama RAG LLM 서버 |
 
 ## 종료
 
@@ -197,18 +201,20 @@ npm --prefix frontend run dev
 Docker Service는 다음 명령으로 중지합니다.
 
 ```bash
-docker compose stop minio embedding-server ollama
+docker compose stop minio embedding-server
 ```
 
 로컬 PostgreSQL 구성까지 실행했다면 `postgres`도 함께 중지합니다.
 
 ```bash
-docker compose stop postgres minio embedding-server ollama
+docker compose stop postgres minio embedding-server
 ```
 
 위 명령은 Container만 중지하고 데이터를 보존합니다. 반면 `docker compose down -v`는
-`postgres17-data`, `minio-data`, `huggingface-cache`, `ollama-data` Volume의 DB·Object·모델 Cache를
+`postgres17-data`, `minio-data`, `huggingface-cache` Volume의 DB·Object·모델 Cache를
 삭제할 수 있으므로 일반적인 종료에는 사용하지 마세요.
+
+Ollama는 `brew services stop ollama`로 중지합니다.
 
 ## EC2 없이 로컬 PostgreSQL 사용
 

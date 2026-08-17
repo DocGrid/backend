@@ -39,20 +39,24 @@ public class SearchAnswerQueryService {
     private final ResponseCitationRepository responseCitationRepository;
 
     public SearchResponse getAnswer(Long queryId, Long userId) {
+        // 1. 소유권 검증 — 본인 것이 아니면 존재 자체를 숨긴다(404).
         SearchQuery query = searchQueryRepository.findByIdAndUser_Id(queryId, userId)
             .orElseThrow(() -> new DocGridException(ErrorCode.RAG_ANSWER_NOT_FOUND));
 
+        // 2. 검색 결과 재구성 — 항상 채워진다(RAG 상태와 무관).
         List<SearchResult> savedResults = searchResultRepository.findByQuery_IdOrderByRankNo(query.getId());
         List<SearchResultItem> items = new ArrayList<>();
         for (int i = 0; i < savedResults.size(); i++) {
             items.add(SearchResultItem.of(i + 1, VectorSearchCandidate.from(savedResults.get(i))));
         }
 
+        // 3. RAG 상태 판별 — 아직 PROCESSING이면 answer/citations 없이 바로 반환한다.
         RagResponse ragResponse = ragResponseRepository.findByQuery_Id(query.getId()).orElse(null);
         if (ragResponse == null || ragResponse.getStatus() == ResultStatus.PROCESSING) {
             return new SearchResponse(queryId, items, ResultStatus.PROCESSING, null, List.of());
         }
 
+        // 4. citation 재구성 — SUCCESS/FAILED 확정된 경우에만 조회한다.
         List<CitationResponse> citations = responseCitationRepository
             .findByResponse_IdOrderByCitationOrder(ragResponse.getId())
             .stream()

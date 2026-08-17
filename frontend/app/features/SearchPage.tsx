@@ -24,6 +24,9 @@ export function SearchPage() {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
   const pollTimer = useRef<number | null>(null);
+  // "지금 화면이 보여주고 있어야 할 queryId"를 별도로 들고 있는다 — refreshAnswer의 응답이
+  // 돌아왔을 때 그 사이 사용자가 새 검색을 시작해 이미 낡은 queryId가 됐는지 판별하는 용도다.
+  const activeQueryIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     apiRequest<Collection[]>("/collections").then(setCollections).catch(() => setCollections([]));
@@ -33,16 +36,19 @@ export function SearchPage() {
   const awaitingAnswer = result?.ragStatus === "PROCESSING";
 
   const refreshAnswer = useCallback(() => {
-    setResult((current) => {
-      if (!current) return current;
-      apiRequest<SearchResponse>(`/search/${current.queryId}`)
-        .then(setResult)
-        .catch(() => {
-          // 재조회 실패는 조용히 무시한다 — 다음 폴링/push 때 다시 시도된다. 검색 결과는 이미 화면에
-          //떠 있으니 사용자에게 굳이 에러를 보여줄 필요가 없다.
-        });
-      return current;
-    });
+    const queryId = activeQueryIdRef.current;
+    if (queryId === null) return;
+    apiRequest<SearchResponse>(`/search/${queryId}`)
+      .then((response) => {
+        // 응답이 돌아오는 사이 사용자가 다른 검색을 시작했다면(activeQueryIdRef가 바뀜), 이건
+        // 이미 화면과 무관해진 낡은 응답이다 — 새 검색 결과를 덮어쓰지 않도록 버린다.
+        if (activeQueryIdRef.current !== queryId) return;
+        setResult(response);
+      })
+      .catch(() => {
+        // 재조회 실패는 조용히 무시한다 — 다음 폴링/push 때 다시 시도된다. 검색 결과는 이미 화면에
+        // 떠 있으니 사용자에게 굳이 에러를 보여줄 필요가 없다.
+      });
   }, []);
 
   const socketStatus = useRagAnswerSocket(awaitingAnswer, refreshAnswer);
@@ -66,6 +72,9 @@ export function SearchPage() {
     setQuery(trimmed);
     setSearching(true);
     setError("");
+    // 새 검색을 시작하는 순간, 이전 queryId를 향해 날아가고 있을지 모르는 refreshAnswer 응답을
+    // 전부 무효화한다 — POST 응답이 오기 전까지는 "유효한 활성 queryId가 없는" 상태로 둔다.
+    activeQueryIdRef.current = null;
     try {
       // 검색 결과는 여기서 바로 오지만, AI 답변(answer)은 비동기 생성이라 이 응답엔 아직 없을 수
       // 있다(ragStatus: PROCESSING) — 그 경우 아래 useRagAnswerSocket/폴링이 이어받는다.
@@ -78,6 +87,7 @@ export function SearchPage() {
           collectionId: collectionId ? Number(collectionId) : null,
         },
       });
+      activeQueryIdRef.current = response.queryId;
       setResult(response);
     } catch (reason) {
       setResult(null);

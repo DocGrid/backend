@@ -46,6 +46,11 @@ public class RagFacade {
     private static final String LLM_FALLBACK_PREFIX = "AI 답변 생성이 지연되고 있습니다. "
         + "가장 관련도 높은 문서에서 다음 내용을 찾았습니다:\n\n";
 
+    // processJob() 내부에서 예상 못한 예외(버그 등)로 실패했을 때 쓰는 최소 안내 문구. extractive
+    // fallback과 달리 candidates를 다시 불러오지 않는다 — 이미 한 번 예상 밖으로 실패한 상황에서
+    // 추가 조회를 시도하다 또 실패할 위험을 만들지 않기 위함이다(RagJobWorker 참고).
+    private static final String UNEXPECTED_FAILURE_ANSWER_TEXT = "답변 생성 중 예상치 못한 오류가 발생했습니다.";
+
     // fallback 문구에 원문을 통째로 붙이면 답변이 지나치게 길어져, 미리보기 수준으로만 잘라 보여준다.
     private static final int FALLBACK_EXCERPT_MAX_CODE_POINTS = 300;
 
@@ -139,6 +144,14 @@ public class RagFacade {
             responseCitationCommandService.saveAll(job, candidates, searchResults);
         }
         log.info("[RAG] done queryId={} responseId={} latencyMs={}", queryId, job.getId(), result.latencyMs());
+    }
+
+    // RagJobWorker가 processJob() 호출 중 예상 못한 예외(버그 등)를 잡았을 때 호출한다. 여기서
+    // FAILED로 확정하지 않으면 job이 영원히 PROCESSING으로 남아, 같은 job을 Worker가 계속
+    // 다시 집어 무한 재시도하게 된다 — 4-5에서 고친 detached entity 버그와 증상이 같아진다.
+    public void markUnexpectedFailure(Long jobId, String errorMessage) {
+        ragResponseRepository.findById(jobId)
+            .ifPresent(job -> ragResponseCommandService.completeFailed(job, UNEXPECTED_FAILURE_ANSWER_TEXT, errorMessage));
     }
 
     // Worker는 검색 시점의 in-memory candidates를 갖고 있지 않으므로, 이미 영속화된 search_results(+chunk)에서

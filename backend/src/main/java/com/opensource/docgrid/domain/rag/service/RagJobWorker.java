@@ -2,6 +2,7 @@ package com.opensource.docgrid.domain.rag.service;
 
 import java.util.Optional;
 
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -52,11 +53,22 @@ public class RagJobWorker {
 
         try {
             ragFacade.processJob(job.getId());
+        } catch (OptimisticLockingFailureException e) {
+            // 설계상 Worker는 인스턴스 1개를 전제하지만(클래스 주석 참고), 롤링 배포로 신·구 인스턴스가
+            // 잠깐 겹치는 등 예외적으로 다른 트랜잭션이 같은 job을 먼저 처리했을 수 있다. 이 경우 그
+            // row는 이미 올바르게 SUCCESS/FAILED로 반영된 것이므로, markUnexpectedFailure로 덮어쓰면
+            // 정상 처리된 결과를 오답으로 바꿔버리는 2차 사고가 난다 — 조용히 다음 폴링으로 넘어간다.
+            log.warn("[RAG-WORKER] job이 이미 다른 트랜잭션에서 처리된 것으로 보임(경합) queryId={}", queryId);
+            return;
         } catch (Exception e) {
             // processJob() 내부에서 Ollama 관련 실패는 이미 DocGridException으로 잡아 fallback
             // 처리하므로, 여기까지 올라오는 예외는 예상 밖의 버그다. Worker 스레드가 죽어서 큐
-            // 전체가 멈추는 것보다는, 이 건을 건너뛰고 다음 폴링을 계속 도는 게 낫다.
+            // 전체가 멈추는 것보다는, 이 건을 건너뛰고 다음 폴링을 계속 도는 게 낫다. 단, job을
+            // PROCESSING 상태로 방치하면 Worker가 같은 job을 계속 다시 집어 무한 재시도하게
+            // 되므로(detached entity 버그와 같은 증상), 반드시 FAILED로 확정한 뒤 넘어간다.
             log.error("[RAG-WORKER] job 처리 중 예상치 못한 예외 queryId={}", queryId, e);
+            ragFacade.markUnexpectedFailure(job.getId(), e.getMessage());
+            ragWebSocketController.notifyAnswerReady(userEmail, queryId);
             return;
         }
 

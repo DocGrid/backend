@@ -3,6 +3,7 @@ package com.opensource.docgrid.domain.user.controller;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -12,9 +13,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.opensource.docgrid.domain.auth.annotation.CurrentUser;
 import com.opensource.docgrid.domain.user.dto.request.AssignRoleRequest;
+import com.opensource.docgrid.domain.user.dto.request.ChangeDepartmentRequest;
 import com.opensource.docgrid.domain.user.dto.response.AdminUserResponse;
 import com.opensource.docgrid.domain.user.dto.response.UserRoleResponse;
 import com.opensource.docgrid.domain.user.enums.UserStatus;
+import com.opensource.docgrid.domain.user.service.command.UserCommandService;
 import com.opensource.docgrid.domain.user.service.command.UserRoleCommandService;
 import com.opensource.docgrid.domain.user.service.query.AdminUserQueryService;
 import com.opensource.docgrid.global.common.response.ApiResponse;
@@ -41,6 +44,7 @@ import lombok.RequiredArgsConstructor;
 public class AdminUserController {
 
     private final UserRoleCommandService userRoleCommandService;
+    private final UserCommandService userCommandService;
     private final AdminUserQueryService adminUserQueryService;
 
     @Operation(
@@ -65,5 +69,17 @@ public class AdminUserController {
             @Parameter(hidden = true) @CurrentUser Long adminUserId,
             @RequestBody @Valid AssignRoleRequest request) {
         return ResponseUtils.ok(userRoleCommandService.assignRole(userId, adminUserId, request));
+    }
+
+    @Operation(
+            summary = "사용자 부서 변경",
+            description = "특정 사용자의 소속 부서를 변경합니다. ADMIN 권한이 필요합니다. "
+                    + "존재하지 않거나 비활성 상태인 부서면 400을 반환합니다."
+    )
+    @PatchMapping("/{userId}/department")
+    public ResponseEntity<ApiResponse<AdminUserResponse>> changeDepartment(
+            @PathVariable Long userId,
+            @RequestBody @Valid ChangeDepartmentRequest request) {
+        return ResponseUtils.ok(userCommandService.changeDepartment(userId, request));
     }
 }

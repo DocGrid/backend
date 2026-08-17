@@ -315,6 +315,11 @@ public enum ErrorCode {
         "RAG-001",
         "LLM 서버를 사용할 수 없습니다."
     ),
+    RAG_ANSWER_NOT_FOUND(
+        HttpStatus.NOT_FOUND,
+        "RAG-002",
+        "검색 요청을 찾을 수 없습니다."
+    ),
 
     // MCP
     RATE_LIMIT_EXCEEDED(

@@ -3,6 +3,7 @@ package com.opensource.docgrid.domain.search.dto;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
+import com.opensource.docgrid.domain.search.entity.SearchResult;
 import com.opensource.docgrid.domain.search.repository.VectorSearchRow;
 
 /**
@@ -34,6 +35,21 @@ public record VectorSearchCandidate(
             row.getPageNo(),
             row.getDocumentTitle(),
             score
+        );
+    }
+
+    // RAG Worker가 비동기로 citation을 재구성할 때, 이미 저장된 SearchResult(+chunk)에서 다시 조립한다.
+    public static VectorSearchCandidate from(SearchResult result) {
+        var chunk = result.getChunk();
+        var document = chunk.getDocumentVersion().getDocument();
+        return new VectorSearchCandidate(
+            result.getEmbedding() != null ? result.getEmbedding().getId() : null,
+            chunk.getId(),
+            document.getId(),
+            chunk.getChunkText(),
+            chunk.getPageNo(),
+            document.getTitle(),
+            result.getSimilarityScore()
         );
     }
 }

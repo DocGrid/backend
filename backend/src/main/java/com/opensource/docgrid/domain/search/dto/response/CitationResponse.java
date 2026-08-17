@@ -1,5 +1,6 @@
 package com.opensource.docgrid.domain.search.dto.response;
 
+import com.opensource.docgrid.domain.rag.entity.ResponseCitation;
 import com.opensource.docgrid.domain.search.dto.VectorSearchCandidate;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -20,6 +21,20 @@ public record CitationResponse(
             candidate.chunkId(),
             candidate.pageNo(),
             candidate.chunkText()
+        );
+    }
+
+    // GET /search/{queryId} 재조회 시, 이미 영속화된 response_citations에서 그대로 조립한다.
+    public static CitationResponse from(ResponseCitation citation) {
+        var chunk = citation.getChunk();
+        var document = chunk.getDocumentVersion().getDocument();
+        return new CitationResponse(
+            citation.getCitationLabel(),
+            document.getId(),
+            document.getTitle(),
+            chunk.getId(),
+            citation.getPageNo(),
+            citation.getQuotedText()
         );
     }
 }

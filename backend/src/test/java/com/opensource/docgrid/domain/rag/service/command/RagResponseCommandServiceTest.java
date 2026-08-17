@@ -32,46 +32,53 @@ class RagResponseCommandServiceTest {
     private RagResponseRepository ragResponseRepository;
 
     @Test
-    @DisplayName("createSuccess: SUCCESS 상태로 답변/모델명/토큰수/latency를 저장한다")
-    void createSuccess_savesWithSuccessStatus() {
+    @DisplayName("createPending: PROCESSING 상태로 프롬프트만 먼저 저장한다(답변 없음)")
+    void createPending_savesWithProcessingStatus() {
         SearchQuery query = SearchQueryFixture.createProcessing();
-        OllamaGenerateResult result = new OllamaGenerateResult(
-            "qwen2.5:3b", "연차는 입사 1년 기준 15일 부여됩니다.", 120, 45, 1800
-        );
         given(ragResponseRepository.save(any(RagResponse.class))).willAnswer(i -> i.getArgument(0));
 
-        ragResponseCommandService.createSuccess(query, "조립된 프롬프트", result);
+        ragResponseCommandService.createPending(query, "조립된 프롬프트");
 
         ArgumentCaptor<RagResponse> captor = ArgumentCaptor.forClass(RagResponse.class);
         then(ragResponseRepository).should(times(1)).save(captor.capture());
 
         RagResponse saved = captor.getValue();
-        assertThat(saved.getStatus()).isEqualTo(ResultStatus.SUCCESS);
-        assertThat(saved.getAnswerText()).isEqualTo("연차는 입사 1년 기준 15일 부여됩니다.");
+        assertThat(saved.getStatus()).isEqualTo(ResultStatus.PROCESSING);
+        assertThat(saved.getAnswerText()).isNull();
         assertThat(saved.getLlmProvider()).isEqualTo("Ollama");
-        assertThat(saved.getLlmModelName()).isEqualTo("qwen2.5:3b");
         assertThat(saved.getPromptText()).isEqualTo("조립된 프롬프트");
-        assertThat(saved.getInputTokenCount()).isEqualTo(120);
-        assertThat(saved.getOutputTokenCount()).isEqualTo(45);
-        assertThat(saved.getLatencyMs()).isEqualTo(1800);
     }
 
     @Test
-    @DisplayName("createFailed: FAILED 상태로 고정 답변 문구와 실패 사유를 저장한다")
-    void createFailed_savesWithFailedStatus() {
-        SearchQuery query = SearchQueryFixture.createProcessing();
-        given(ragResponseRepository.save(any(RagResponse.class))).willAnswer(i -> i.getArgument(0));
+    @DisplayName("completeSuccess: PROCESSING row를 SUCCESS로 채운다(dirty checking, save 재호출 없음)")
+    void completeSuccess_fillsProcessingRowWithSuccessStatus() {
+        RagResponse pending = RagResponse.builder().status(ResultStatus.PROCESSING).promptText("조립된 프롬프트").build();
+        OllamaGenerateResult result = new OllamaGenerateResult(
+            "qwen2.5:7b", "연차는 입사 1년 기준 15일 부여됩니다.", 120, 45, 1800
+        );
 
-        ragResponseCommandService.createFailed(query, "조립된 프롬프트", "Ollama 서버 연결 실패");
+        ragResponseCommandService.completeSuccess(pending, result);
 
-        ArgumentCaptor<RagResponse> captor = ArgumentCaptor.forClass(RagResponse.class);
-        then(ragResponseRepository).should(times(1)).save(captor.capture());
+        assertThat(pending.getStatus()).isEqualTo(ResultStatus.SUCCESS);
+        assertThat(pending.getAnswerText()).isEqualTo("연차는 입사 1년 기준 15일 부여됩니다.");
+        assertThat(pending.getLlmModelName()).isEqualTo("qwen2.5:7b");
+        assertThat(pending.getInputTokenCount()).isEqualTo(120);
+        assertThat(pending.getOutputTokenCount()).isEqualTo(45);
+        assertThat(pending.getLatencyMs()).isEqualTo(1800);
+        then(ragResponseRepository).shouldHaveNoInteractions();
+    }
 
-        RagResponse saved = captor.getValue();
-        assertThat(saved.getStatus()).isEqualTo(ResultStatus.FAILED);
-        assertThat(saved.getAnswerText()).isEqualTo("답변 생성에 실패했습니다.");
-        assertThat(saved.getErrorMessage()).isEqualTo("Ollama 서버 연결 실패");
-        assertThat(saved.getLlmProvider()).isEqualTo("Ollama");
+    @Test
+    @DisplayName("completeFailed: PROCESSING row를 FAILED로 채우되 답변에는 fallback 텍스트를 남긴다")
+    void completeFailed_fillsProcessingRowWithFailedStatusAndFallbackText() {
+        RagResponse pending = RagResponse.builder().status(ResultStatus.PROCESSING).promptText("조립된 프롬프트").build();
+
+        ragResponseCommandService.completeFailed(pending, "extractive fallback 텍스트", "Ollama 서버 연결 실패");
+
+        assertThat(pending.getStatus()).isEqualTo(ResultStatus.FAILED);
+        assertThat(pending.getAnswerText()).isEqualTo("extractive fallback 텍스트");
+        assertThat(pending.getErrorMessage()).isEqualTo("Ollama 서버 연결 실패");
+        then(ragResponseRepository).shouldHaveNoInteractions();
     }
 
     @Test

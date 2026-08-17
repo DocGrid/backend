@@ -13,11 +13,15 @@ import com.opensource.docgrid.domain.dashboard.websocket.DashboardSubscriptionAu
 import lombok.RequiredArgsConstructor;
 
 /**
- * RAGOps Dashboard 실시간 push를 위한 STOMP endpoint와 Message Broker 설정.
+ * RAGOps Dashboard 및 RAG 답변 실시간 push를 위한 STOMP endpoint와 Message Broker 설정.
  *
  * <p>인증·인가는 이 설정이 아니라 {@link StompAuthChannelInterceptor}(CONNECT 시점 인증)와
- * {@link DashboardSubscriptionAuthorizationInterceptor}(SUBSCRIBE 시점 인가)가 담당한다.
+ * {@link DashboardSubscriptionAuthorizationInterceptor}(대시보드 SUBSCRIBE 시점 인가)가 담당한다.
  * 이 클래스는 전송 계층 구성(endpoint·broker·origin)과 두 Interceptor의 등록 순서만 책임진다.
+ *
+ * <p>{@code /queue}는 RAG 답변 개인 알림({@code convertAndSendToUser})에 쓰인다. 대시보드처럼
+ * 별도 구독 인가 Interceptor가 없는 이유는 {@code RagWebSocketController} 문서 참고 — 사용자별
+ * 격리가 Spring의 user destination 메커니즘 자체로 이미 보장된다.
  */
 @EnableWebSocketMessageBroker
 @Configuration
@@ -36,7 +40,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
-        registry.enableSimpleBroker("/topic");
+        registry.enableSimpleBroker("/topic", "/queue");
     }
 
     @Override

@@ -39,6 +39,7 @@ import com.opensource.docgrid.domain.permission.service.query.PermissionQuerySer
 import com.opensource.docgrid.domain.search.dto.SearchOutcome;
 import com.opensource.docgrid.domain.search.dto.request.SearchRequest;
 import com.opensource.docgrid.domain.search.dto.response.SearchResponse;
+import com.opensource.docgrid.domain.search.enums.ResultStatus;
 import com.opensource.docgrid.domain.search.dto.response.SearchResultItem;
 import com.opensource.docgrid.domain.search.service.SearchFacade;
 import com.opensource.docgrid.global.exception.DocGridException;
@@ -190,7 +191,7 @@ class DocGridMcpToolsTest {
         String longText = "가".repeat(1200);
         SearchResultItem item = new SearchResultItem(1, 10L, 20L, "문서", longText, null, BigDecimal.ONE);
         SearchOutcome outcome = new SearchOutcome(
-                new SearchResponse(1L, List.of(item), null, List.of()), List.of(), List.of());
+                new SearchResponse(1L, List.of(item), ResultStatus.PROCESSING, null, List.of()), List.of(), List.of());
         given(searchFacade.search(eq(USER_ID), any(SearchRequest.class))).willReturn(outcome);
 
         String result = docGridMcpTools.searchDocuments("query", 5);
@@ -207,7 +208,7 @@ class DocGridMcpToolsTest {
         String shortText = "짧은 청크 텍스트";
         SearchResultItem item = new SearchResultItem(1, 10L, 20L, "문서", shortText, null, BigDecimal.ONE);
         SearchOutcome outcome = new SearchOutcome(
-                new SearchResponse(1L, List.of(item), null, List.of()), List.of(), List.of());
+                new SearchResponse(1L, List.of(item), ResultStatus.PROCESSING, null, List.of()), List.of(), List.of());
         given(searchFacade.search(eq(USER_ID), any(SearchRequest.class))).willReturn(outcome);
 
         String result = docGridMcpTools.searchDocuments("query", 5);

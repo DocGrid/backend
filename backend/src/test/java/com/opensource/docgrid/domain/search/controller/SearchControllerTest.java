@@ -21,14 +21,21 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.opensource.docgrid.domain.rag.dto.RagAnswer;
+import com.opensource.docgrid.domain.rag.dto.RagEnqueueOutcome;
 import com.opensource.docgrid.domain.rag.service.RagFacade;
 import com.opensource.docgrid.domain.search.dto.SearchOutcome;
+import com.opensource.docgrid.domain.search.dto.VectorSearchCandidate;
 import com.opensource.docgrid.domain.search.dto.request.SearchRequest;
 import com.opensource.docgrid.domain.search.dto.response.SearchResponse;
 import com.opensource.docgrid.domain.search.service.SearchFacade;
+import com.opensource.docgrid.domain.search.service.query.SearchAnswerQueryService;
+
+import java.math.BigDecimal;
 
 /**
- * 검색 후보가 모두 제거된 경우의 인증 사용자 전달과 NO_CONTEXT 공개 응답 계약을 검증한다.
+ * #218(비동기 Job 큐 전환) 이후 POST /search는 RagFacade.enqueue()를 호출한다 — NO_CONTEXT는
+ * 여전히 즉시 답변을 반환하지만, 검색 후보가 있으면 answer=null·ragStatus=PROCESSING으로 즉시
+ * 응답하고 LLM 호출은 기다리지 않는다.
  */
 @WebMvcTest(SearchController.class)
 @DisplayName("SearchController 테스트")
@@ -42,10 +49,11 @@ class SearchControllerTest {
 
     @MockitoBean private SearchFacade searchFacade;
     @MockitoBean private RagFacade ragFacade;
+    @MockitoBean private SearchAnswerQueryService searchAnswerQueryService;
     @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
 
     @Test
-    @DisplayName("검색 후보가 모두 제거되면 빈 근거 목록과 NO_CONTEXT 답변을 반환한다")
+    @DisplayName("검색 후보가 모두 제거되면 빈 근거 목록과 NO_CONTEXT 답변을 즉시(SUCCESS) 반환한다")
     void search_noQualifiedCandidates_returnsNoContextResponse() throws Exception {
         SearchRequest request = new SearchRequest("넌 뭐야?", 5, null);
         SearchOutcome outcome = new SearchOutcome(
@@ -54,8 +62,8 @@ class SearchControllerTest {
             List.of()
         );
         given(searchFacade.search(USER_ID, request)).willReturn(outcome);
-        given(ragFacade.generate(QUERY_ID, request.queryText(), List.of(), List.of()))
-            .willReturn(RagAnswer.noContext(NO_CONTEXT_ANSWER));
+        given(ragFacade.enqueue(QUERY_ID, request.queryText(), List.of()))
+            .willReturn(RagEnqueueOutcome.done(RagAnswer.noContext(NO_CONTEXT_ANSWER)));
 
         mockMvc.perform(post("/search")
                 .with(csrf())
@@ -72,11 +80,48 @@ class SearchControllerTest {
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.queryId").value(QUERY_ID))
             .andExpect(jsonPath("$.data.results").isEmpty())
+            .andExpect(jsonPath("$.data.ragStatus").value("SUCCESS"))
             .andExpect(jsonPath("$.data.answer").value(NO_CONTEXT_ANSWER))
             .andExpect(jsonPath("$.data.citations").isEmpty());
 
         then(searchFacade).should().search(USER_ID, request);
-        then(ragFacade).should().generate(QUERY_ID, request.queryText(), List.of(), List.of());
+        then(ragFacade).should().enqueue(QUERY_ID, request.queryText(), List.of());
+    }
+
+    @Test
+    @DisplayName("검색 후보가 있으면 LLM 호출을 기다리지 않고 ragStatus=PROCESSING, answer=null로 즉시 응답한다")
+    void search_withCandidates_returnsProcessingWithoutWaitingForLlm() throws Exception {
+        SearchRequest request = new SearchRequest("연차 규정 알려줘", 5, null);
+        VectorSearchCandidate candidate = new VectorSearchCandidate(
+            1L, 10L, 100L, "청크 내용", 12, "인사규정", new BigDecimal("0.9")
+        );
+        SearchOutcome outcome = new SearchOutcome(
+            SearchResponse.of(QUERY_ID, List.of(candidate)),
+            List.of(candidate),
+            List.of()
+        );
+        given(searchFacade.search(USER_ID, request)).willReturn(outcome);
+        given(ragFacade.enqueue(QUERY_ID, request.queryText(), List.of(candidate)))
+            .willReturn(RagEnqueueOutcome.stillPending());
+
+        mockMvc.perform(post("/search")
+                .with(csrf())
+                .with(authentication(authenticationWithUserId(USER_ID)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "queryText": "연차 규정 알려줘",
+                      "topK": 5,
+                      "collectionId": null
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.queryId").value(QUERY_ID))
+            .andExpect(jsonPath("$.data.results").isNotEmpty())
+            .andExpect(jsonPath("$.data.ragStatus").value("PROCESSING"))
+            .andExpect(jsonPath("$.data.answer").doesNotExist());
+
+        then(ragFacade).should().enqueue(QUERY_ID, request.queryText(), List.of(candidate));
     }
 
     private UsernamePasswordAuthenticationToken authenticationWithUserId(Long userId) {

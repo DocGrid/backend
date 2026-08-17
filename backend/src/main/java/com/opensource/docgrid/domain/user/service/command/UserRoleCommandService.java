@@ -5,6 +5,8 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.opensource.docgrid.domain.auth.jwt.RoleAuthorityService;
 import com.opensource.docgrid.domain.user.dto.request.AssignRoleRequest;
@@ -52,7 +54,7 @@ public class UserRoleCommandService {
                 .assignedAt(LocalDateTime.now())
                 .build();
         userRoleRepository.save(userRole);
-        roleAuthorityService.invalidate(targetUserId);
+        invalidateAfterCommit(targetUserId);
 
         List<String> roles = userRoleRepository.findAllWithRoleByUserId(targetUserId).stream()
                 .map(ur -> ur.getRole().getCode())
@@ -70,12 +72,28 @@ public class UserRoleCommandService {
                 .orElseThrow(() -> new DocGridException(ErrorCode.ROLE_NOT_ASSIGNED));
 
         userRoleRepository.delete(userRole);
-        roleAuthorityService.invalidate(targetUserId);
+        invalidateAfterCommit(targetUserId);
 
         List<String> roles = userRoleRepository.findAllWithRoleByUserId(targetUserId).stream()
                 .map(ur -> ur.getRole().getCode())
                 .toList();
 
         return UserRoleResponse.of(targetUser, roles);
+    }
+
+    // DB 커밋 전에 캐시를 지우면, 커밋 직전 시점에 캐시 미스가 난 다른 요청이 아직 커밋 안 된(옛날) role을
+    // 다시 캐시에 채워 넣을 수 있다. 그래서 무효화는 반드시 트랜잭션 커밋 이후로 미룬다.
+    // 트랜잭션 밖에서 호출되는 경우(예: 단위 테스트)는 즉시 무효화한다.
+    private void invalidateAfterCommit(Long userId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    roleAuthorityService.invalidate(userId);
+                }
+            });
+        } else {
+            roleAuthorityService.invalidate(userId);
+        }
     }
 }

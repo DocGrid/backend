@@ -10,6 +10,7 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.opensource.docgrid.domain.user.entity.Department;
@@ -28,6 +29,10 @@ import com.opensource.docgrid.domain.user.enums.UserStatus;
 @DisplayName("UserRepository 테스트")
 class UserRepositoryTest {
 
+    // id 내림차순 정렬을 명시해서, 스키마에 다른 테스트가 남긴 row가 쌓여 있어도
+    // 방금 만든(=가장 큰 id) row가 항상 1페이지 안에 들어오도록 보장한다.
+    private static final Sort NEWEST_FIRST = Sort.by(Sort.Direction.DESC, "id");
+
     @Autowired
     private UserRepository userRepository;
 
@@ -40,11 +45,11 @@ class UserRepositoryTest {
         User user = saveUser("keyword-null-test@example.com", "키워드없음테스트");
 
         assertThatCode(() -> userRepository.findAdminUsers(
-                null, null, null, UserStatus.DELETED, PageRequest.of(0, 20)))
+                null, null, null, UserStatus.DELETED, PageRequest.of(0, 20, NEWEST_FIRST)))
                 .doesNotThrowAnyException();
 
         Page<User> result = userRepository.findAdminUsers(
-                null, null, null, UserStatus.DELETED, PageRequest.of(0, 20));
+                null, null, null, UserStatus.DELETED, PageRequest.of(0, 20, NEWEST_FIRST));
         assertThat(result.getContent()).extracting(User::getId).contains(user.getId());
     }
 
@@ -55,7 +60,7 @@ class UserRepositoryTest {
         saveUser("other-user@example.com", "관련없는유저");
 
         Page<User> result = userRepository.findAdminUsers(
-                "NEEDLE", null, null, UserStatus.DELETED, PageRequest.of(0, 20));
+                "NEEDLE", null, null, UserStatus.DELETED, PageRequest.of(0, 20, NEWEST_FIRST));
 
         assertThat(result.getContent())
                 .extracting(User::getId)

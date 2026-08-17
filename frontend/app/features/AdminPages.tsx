@@ -242,8 +242,10 @@ export function AdminUsersPage({ notify }: { notify: (message: string) => void }
   const [page, setPage] = useState(0);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [result, setResult] = useState<UserRoleResponse | null>(null);
+  const [deptResult, setDeptResult] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [deptBusy, setDeptBusy] = useState(false);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -280,6 +282,21 @@ export function AdminUsersPage({ notify }: { notify: (message: string) => void }
     finally { setBusy(false); }
   }
 
+  async function changeDepartment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setDeptBusy(true); setError("");
+    const form = new FormData(event.currentTarget);
+    const userId = Number(selectedUserId);
+    try {
+      const response = await apiRequest<AdminUser>(`/admin/users/${userId}/department`, { method: "PATCH", body: { departmentId: Number(form.get("departmentId")) } });
+      setDeptResult(response);
+      notify(`${response.name} 사용자의 부서를 변경했습니다.`);
+      // Refresh department column in the list after the command succeeds.
+      await load();
+    } catch (reason) { setError(errorMessage(reason)); }
+    finally { setDeptBusy(false); }
+  }
+
   function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextKeyword = keywordInput.trim();
@@ -312,6 +329,8 @@ export function AdminUsersPage({ notify }: { notify: (message: string) => void }
       <div className="user-side">
         <form className="panel-card" onSubmit={assign}><div className="panel-heading"><div><h2>역할 부여</h2><p>목록에서 사용자를 선택하거나 ID를 입력하세요.</p></div></div><label className="form-field">사용자 ID<input name="userId" type="number" min="1" value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)} required /></label><label className="form-field">역할<select name="roleCode" defaultValue="DOCUMENT_MANAGER"><option value="USER">USER</option><option value="DOCUMENT_MANAGER">DOCUMENT_MANAGER</option><option value="ADMIN">ADMIN</option></select></label><button className="primary-button full-button action-submit" disabled={!selectedUserId || busy}>{busy ? "부여 중…" : "역할 부여"}</button></form>
         {result ? <div className="panel-card result-card"><h2>부여 결과</h2><dl><div><dt>userId</dt><dd>{result.userId}</dd></div><div><dt>이름</dt><dd>{result.name}</dd></div><div><dt>이메일</dt><dd>{result.email}</dd></div><div><dt>역할</dt><dd className="role-chips">{result.roles.map((role) => <StatusPill value={role} key={role} />)}</dd></div></dl></div> : null}
+        <form className="panel-card" onSubmit={changeDepartment}><div className="panel-heading"><div><h2>부서 변경</h2><p>왼쪽 목록에서 선택한 사용자 ID의 소속 부서를 변경하세요.</p></div></div><label className="form-field">사용자 ID<input name="userId" type="number" min="1" value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)} required /></label><label className="form-field">부서<select name="departmentId" required>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></label><button className="primary-button full-button action-submit" disabled={!selectedUserId || deptBusy}>{deptBusy ? "변경 중…" : "부서 변경"}</button></form>
+        {deptResult ? <div className="panel-card result-card"><h2>변경 결과</h2><dl><div><dt>userId</dt><dd>{deptResult.userId}</dd></div><div><dt>이름</dt><dd>{deptResult.name}</dd></div><div><dt>부서</dt><dd>{deptResult.departmentName ?? "미지정"}</dd></div></dl></div> : null}
       </div>
     </div>
   </section>;

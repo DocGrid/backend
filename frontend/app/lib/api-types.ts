@@ -150,9 +150,12 @@ export type Citation = {
   quotedText: string;
 };
 
+export type RagStatus = "PROCESSING" | "SUCCESS" | "FAILED";
+
 export type SearchResponse = {
   queryId: number;
   results: SearchResult[];
+  ragStatus: RagStatus;
   answer: string | null;
   citations: Citation[];
 };

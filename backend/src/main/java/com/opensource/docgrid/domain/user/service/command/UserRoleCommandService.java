@@ -6,6 +6,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.opensource.docgrid.domain.auth.jwt.RoleAuthorityService;
 import com.opensource.docgrid.domain.user.dto.request.AssignRoleRequest;
 import com.opensource.docgrid.domain.user.dto.response.UserRoleResponse;
 import com.opensource.docgrid.domain.user.entity.Role;
@@ -27,6 +28,7 @@ public class UserRoleCommandService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final UserRoleRepository userRoleRepository;
+    private final RoleAuthorityService roleAuthorityService;
 
     // 관리자가 다른 사용자에게 역할을 부여
     public UserRoleResponse assignRole(Long targetUserId, Long adminUserId, AssignRoleRequest request) {
@@ -50,6 +52,25 @@ public class UserRoleCommandService {
                 .assignedAt(LocalDateTime.now())
                 .build();
         userRoleRepository.save(userRole);
+        roleAuthorityService.invalidate(targetUserId);
+
+        List<String> roles = userRoleRepository.findAllWithRoleByUserId(targetUserId).stream()
+                .map(ur -> ur.getRole().getCode())
+                .toList();
+
+        return UserRoleResponse.of(targetUser, roles);
+    }
+
+    // 관리자가 다른 사용자에게 부여된 역할을 회수
+    public UserRoleResponse revokeRole(Long targetUserId, String roleCode) {
+        User targetUser = userRepository.findById(targetUserId)
+                .orElseThrow(() -> new DocGridException(ErrorCode.USER_NOT_FOUND));
+
+        UserRole userRole = userRoleRepository.findByUserIdAndRoleCode(targetUserId, roleCode)
+                .orElseThrow(() -> new DocGridException(ErrorCode.ROLE_NOT_ASSIGNED));
+
+        userRoleRepository.delete(userRole);
+        roleAuthorityService.invalidate(targetUserId);
 
         List<String> roles = userRoleRepository.findAllWithRoleByUserId(targetUserId).stream()
                 .map(ur -> ur.getRole().getCode())

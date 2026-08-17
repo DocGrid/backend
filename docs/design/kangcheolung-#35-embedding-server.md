@@ -317,3 +317,39 @@ docker compose up -d embedding-server
 # Uvicorn 시작 로그는 서버 프로세스만 뜬 것 — 모델 로딩 전까지 /health가 503 반환
 # GET /health 응답이 200이 될 때까지 대기 후 사용
 ```
+
+---
+
+## 이후 변경 이력 (원 설계 이후 팀 작업으로 확장·전환된 부분)
+
+위 내용은 #35 시점의 설계·구현 기록으로 그대로 보존한다. 이후 팀 작업으로 아래가 추가·전환되었으며, **원 설계의 핵심 계약 — BAAI/bge-m3 모델, 1024차원 dense vector, `/embed` API, `/health`의 "떠 있음 vs 쓸 수 있음" 구분, HuggingFace 볼륨 캐시 — 은 현재까지 그대로 유지되고 있다.**
+
+### 임베딩 서버 API 확장 — `/embed/batch` (팀원, 문서 인덱싱 파이프라인)
+
+문서 인덱싱 파이프라인(A담당) 구축 과정에서 여러 청크를 한 번에 임베딩하는 `POST /embed/batch`가 추가되었다. 검색은 기존 `/embed`(단건), 문서 인덱싱은 `/embed/batch`(배치)로 용도가 나뉜다. 응답에 `model`명과 요청 순서를 보존한 `embeddings[{index, vector}]`를 포함한다.
+
+### 부하·메모리 보호 계층 (#213, #216 — 김기민)
+
+- **#213**: 실제 PDF 3건 실측 벤치마크로 문서 배치 기본값을 `batch-size=4`로 결정, 문서 배치 전용 read timeout 30s 신설 (검색 5s는 원 설계대로 유지)
+- **#216**: 서버에 Admission Controller 추가 — 모델 `encode` 동시 실행 1개 + 대기 1건 제한, 초과 요청은 `429 Too Many Requests` + `Retry-After` 헤더로 즉시 거절 (`EMBEDDING_PROVIDER_OVERLOADED`). docker-compose에 `EMBEDDING_PROVIDER_MAX_CONCURRENCY`, `EMBEDDING_PROVIDER_MAX_QUEUE_SIZE`, `EMBEDDING_PROVIDER_QUEUE_WAIT_TIMEOUT_SECONDS` 환경변수 추가
+
+상세는 `gimin-#213-real-pdf-embedding-safety.md`, `gimin-#216-embedding-provider-load-protection.md` 참조.
+
+### OpenSQL 커스텀 이미지 → 표준 이미지 + 호환성 검증으로 전환 (#97, #124 — 김기민)
+
+§2의 OpenSQL 14.6 + pgvector 커스텀 이미지는 대회 지정 환경이 OpenSQL 17.8로 상향되면서 전략이 바뀌었다.
+
+- **#97**: 로컬 개발 DB를 표준 이미지 `pgvector/pgvector:0.8.1-pg17`로 전환, `docker/opensql/` 제거
+- **#124**: 공식 OpenSQL 17.8 환경(Rocky Linux 9.7) 대응은 커스텀 이미지 대신 호환성 검증 테스트·Runbook 방식으로 이관
+
+§2의 원본 코드는 git 이력에 보존되어 있다: `git show 3e500e4:docker/opensql/Dockerfile`, `git show f4a6cd5:docker/opensql/init-and-start.sh`
+
+### 현재 로컬 실행 방법
+
+```bash
+# PostgreSQL (표준 pgvector 이미지 — #97 이후)
+docker compose up -d postgres
+
+# 임베딩 서버 (기동 절차는 원 설계와 동일)
+docker compose up -d embedding-server
+```

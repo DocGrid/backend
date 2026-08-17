@@ -271,3 +271,34 @@ Python 서버 장애 시 `EMBEDDING_SERVER_UNAVAILABLE(503)`으로 응답하되,
 
 **`search_type = VECTOR` 고정**  
 MVP는 dense vector 검색만 지원. `KEYWORD`, `HYBRID`는 2단계 확장 예정이므로 현재는 상수로 고정.
+
+---
+
+## 이후 변경 이력 (원 설계 이후 팀 작업으로 확장된 부분)
+
+위 내용은 #44 시점의 설계·구현 기록으로 그대로 보존한다. 이후 팀 작업으로 아래가 확장되었으며, **원 설계의 핵심 — 검색 5초 예산, connect/read timeout 분리, 3중 차원 검증, `RestClientException` → `DocGridException` 변환을 통한 503 격리 원칙 — 은 현재 구조에서도 그대로 유지되고 있다.**
+
+### RestClient 용도별 분리 (#213 — 김기민)
+
+§2의 단일 `embeddingRestClient`(5s 하드코딩)가 용도별 2개 빈으로 분리되었다. timeout 값도 하드코딩에서 설정값으로 빠졌다.
+
+| Bean | 용도 | 호출 API | read timeout |
+|---|---|---|---:|
+| `embeddingRestClient` | 검색 단건 (원 설계) | `POST /embed` | 5s (유지) |
+| `documentEmbeddingRestClient` | 문서 인덱싱 배치 | `POST /embed/batch` | 30s (실측 p99 기반) |
+
+검색의 5초 예산을 지키면서 문서 배치의 긴 추론 시간만 별도 허용하는 구조 — 원 설계의 "connect/read 분리" 원칙이 "검색/문서 read 예산 분리"로 한 단계 더 확장된 것.
+
+### HTTP 호출의 `EmbeddingClient` 위임 (팀 작업)
+
+§4에서 `QueryEmbeddingService`가 RestClient를 직접 호출하던 부분이 `domain/embedding/client/EmbeddingClient`로 위임되었다. `QueryEmbeddingService`는 활성 모델 조회 + 차원 검증 흐름을 그대로 유지하고, HTTP 호출과 오류 분류만 client 계층으로 이동했다. `/embed`(검색)와 `/embed/batch`(문서)를 한 client가 담당한다.
+
+### 에러 코드 추가 (#216 — 김기민)
+
+에러 케이스 표에 한 종류가 추가되었다.
+
+| 상황 | 예외 | HTTP |
+|---|---|---|
+| 임베딩 서버 과부하 (동시 실행·대기열 초과) | `EMBEDDING_PROVIDER_OVERLOADED` (SEARCH-003) | 429 |
+
+Python 서버의 Admission Controller가 반환하는 429를 `EmbeddingClient`가 이 코드로 변환한다. 상세는 `gimin-#216-embedding-provider-load-protection.md` 참조.

@@ -2,6 +2,7 @@ package com.opensource.docgrid.domain.user.controller;
 
 import static org.mockito.BDDMockito.given;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -22,16 +23,20 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import com.opensource.docgrid.domain.auth.jwt.JwtProvider;
+import com.opensource.docgrid.domain.auth.jwt.RoleAuthorityService;
 import com.opensource.docgrid.domain.auth.jwt.TokenBlacklistService;
 import com.opensource.docgrid.domain.mcp.service.command.McpAccessTokenCommandService;
 import com.opensource.docgrid.domain.user.dto.request.ChangeDepartmentRequest;
 import com.opensource.docgrid.domain.user.dto.response.AdminUserResponse;
+import com.opensource.docgrid.domain.user.dto.response.UserRoleResponse;
 import com.opensource.docgrid.domain.user.enums.UserStatus;
 import com.opensource.docgrid.domain.user.service.command.UserCommandService;
 import com.opensource.docgrid.domain.user.service.command.UserRoleCommandService;
 import com.opensource.docgrid.domain.user.service.query.AdminUserQueryService;
 import com.opensource.docgrid.global.common.response.PageResponse;
 import com.opensource.docgrid.global.config.SecurityConfig;
+import com.opensource.docgrid.global.exception.DocGridException;
+import com.opensource.docgrid.global.exception.ErrorCode;
 
 /**
  * 관리자 사용자 목록 API의 필터·Pagination·민감 정보 비노출과 ADMIN Security 계약을 검증한다.
@@ -51,6 +56,7 @@ class AdminUserControllerTest {
     @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
     @MockitoBean private JwtProvider jwtProvider;
     @MockitoBean private TokenBlacklistService tokenBlacklistService;
+    @MockitoBean private RoleAuthorityService roleAuthorityService;
     @MockitoBean private McpAccessTokenCommandService mcpAccessTokenCommandService;
     @MockitoBean private CorsConfigurationSource corsConfigurationSource;
 
@@ -154,5 +160,38 @@ class AdminUserControllerTest {
                         .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("COMMON-002"));
+    }
+
+    @Test
+    @DisplayName("ADMIN 사용자가 대상 사용자의 역할을 회수한다")
+    void revokeRole_returnsRemainingRoles() throws Exception {
+        UserRoleResponse response = new UserRoleResponse(10L, "hong@example.com", "홍길동", List.of("USER"));
+        given(userRoleCommandService.revokeRole(10L, "ADMIN")).willReturn(response);
+
+        mockMvc.perform(delete(USERS_URL + "/{userId}/roles/{roleCode}", 10L, "ADMIN")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.userId").value(10))
+                .andExpect(jsonPath("$.data.roles[0]").value("USER"));
+    }
+
+    @Test
+    @DisplayName("ADMIN이 아닌 사용자는 역할을 회수할 수 없다")
+    void revokeRole_returnsForbidden_withoutAdminRole() throws Exception {
+        mockMvc.perform(delete(USERS_URL + "/{userId}/roles/{roleCode}", 10L, "ADMIN")
+                        .with(user("user").roles("USER")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("부여되지 않은 역할을 회수하려 하면 404를 반환한다")
+    void revokeRole_returnsNotFound_whenRoleNotAssigned() throws Exception {
+        given(userRoleCommandService.revokeRole(10L, "ADMIN"))
+                .willThrow(new DocGridException(ErrorCode.ROLE_NOT_ASSIGNED));
+
+        mockMvc.perform(delete(USERS_URL + "/{userId}/roles/{roleCode}", 10L, "ADMIN")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("ROLE-004"));
     }
 }

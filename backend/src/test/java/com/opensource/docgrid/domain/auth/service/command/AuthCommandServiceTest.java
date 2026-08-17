@@ -159,7 +159,7 @@ class AuthCommandServiceTest {
         given(userRepository.findByEmail(AuthFixture.EMAIL)).willReturn(Optional.of(user));
         given(passwordEncoder.matches(AuthFixture.PASSWORD, AuthFixture.PASSWORD_HASH)).willReturn(true);
         given(userRoleRepository.findRoleCodesByUserId(AuthFixture.USER_ID)).willReturn(List.of("USER"));
-        given(jwtProvider.generateToken(AuthFixture.USER_ID, AuthFixture.EMAIL, List.of("USER"))).willReturn("access-token");
+        given(jwtProvider.generateToken(AuthFixture.USER_ID, AuthFixture.EMAIL)).willReturn("access-token");
         given(jwtProvider.getExpirationSeconds()).willReturn(3600L);
 
         LoginResponse result = authCommandService.login(request);

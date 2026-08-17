@@ -24,6 +24,7 @@ import com.opensource.docgrid.domain.worker.enums.WorkerStatus;
 import com.opensource.docgrid.domain.worker.fixture.WorkerNodeFixture;
 import com.opensource.docgrid.domain.worker.service.query.WorkerNodeQueryService;
 import com.opensource.docgrid.domain.auth.jwt.JwtProvider;
+import com.opensource.docgrid.domain.auth.jwt.RoleAuthorityService;
 import com.opensource.docgrid.domain.auth.jwt.TokenBlacklistService;
 import com.opensource.docgrid.domain.mcp.service.command.McpAccessTokenCommandService;
 import com.opensource.docgrid.global.config.SecurityConfig;
@@ -49,6 +50,9 @@ class WorkerAdminControllerTest {
 
     @MockitoBean
     private TokenBlacklistService tokenBlacklistService;
+
+    @MockitoBean
+    private RoleAuthorityService roleAuthorityService;
 
     @MockitoBean
     private McpAccessTokenCommandService mcpAccessTokenCommandService;

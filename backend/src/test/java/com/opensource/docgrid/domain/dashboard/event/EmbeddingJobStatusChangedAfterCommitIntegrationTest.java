@@ -3,7 +3,6 @@ package com.opensource.docgrid.domain.dashboard.event;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.lang.reflect.Type;
-import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -173,6 +172,6 @@ class EmbeddingJobStatusChangedAfterCommitIntegrationTest {
     }
 
     private String adminToken() {
-        return jwtProvider.generateToken(1L, "after-commit-admin@example.com", List.of("ADMIN"));
+        return jwtProvider.generateToken(1L, "after-commit-admin@example.com");
     }
 }

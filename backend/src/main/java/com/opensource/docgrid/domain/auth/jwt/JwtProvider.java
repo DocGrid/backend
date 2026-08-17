@@ -2,7 +2,6 @@ package com.opensource.docgrid.domain.auth.jwt;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
-import java.util.List;
 import java.util.UUID;
 
 import javax.crypto.SecretKey;
@@ -32,14 +31,13 @@ public class JwtProvider {
         this.expirationSeconds = expirationSeconds;
     }
 
-    public String generateToken(Long userId, String email, List<String> roles) {
+    public String generateToken(Long userId, String email) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationSeconds * 1000);
 
         return Jwts.builder()
                 .subject(email)
                 .claim("userId", userId)
-                .claim("roles", roles)
                 .claim("jti", UUID.randomUUID().toString())
                 .issuedAt(now)
                 .expiration(expiry)

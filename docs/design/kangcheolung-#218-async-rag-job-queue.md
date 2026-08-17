@@ -62,7 +62,7 @@ Ollama 호출"이라는 동시성 상한을 자연히 만든다** — 기각한 
 
 ## 3. 설계 — 전체 흐름
 
-```
+```text
 ① 접수(동기, 빠름)
 브라우저 → POST /search
   → SearchFacade.search() : 벡터 검색 (그대로, 안 바뀜)
@@ -215,7 +215,7 @@ public static VectorSearchCandidate from(SearchResult result) {
 
 증상: 상태가 영원히 `PROCESSING`으로 남아 Worker가 같은 queryId를 1.7초 간격으로 무한 재처리
 (Ollama를 계속 다시 호출하면서 CPU/GPU를 낭비). 실제 운영 로그:
-```
+```text
 [RAG] done queryId=188 responseId=99 latencyMs=704
 [RAG] done queryId=188 responseId=99 latencyMs=2414
 [RAG] done queryId=188 responseId=99 latencyMs=728
@@ -354,7 +354,7 @@ void processNext_persistsStatusChangeAcrossDetachedEntityBoundary() {
 ```
 
 **결과 — 실제 터미널 출력 그대로**:
-```
+```console
 $ ./gradlew test -Dgroups=integration \
     --tests "com.opensource.docgrid.domain.rag.integration.RagJobWorkerIntegrationTest" --rerun
 
@@ -396,7 +396,7 @@ await().atMost(Duration.ofSeconds(150)).untilAsserted(() -> {
 ```
 
 **결과 — 실제 터미널 출력 그대로**:
-```
+```console
 $ ./gradlew test -Dgroups=integration \
     --tests "com.opensource.docgrid.domain.rag.integration.RagJobWorkerConcurrentQueueIntegrationTest" --rerun
 
@@ -447,7 +447,7 @@ JUnit 리포트:
 `RagJobWorkerTest`(단위, Worker의 예외 처리·push 로직)를 신규 추가했다. 프론트 `SearchPage.tsx`
 관련 기존 테스트(`search-sources.test.ts`)도 `ragStatus` 필드 추가에 맞춰 갱신했다.
 
-```
+```console
 $ ./gradlew test        # 전체 백엔드 (통합 테스트 제외)
 BUILD SUCCESSFUL
 

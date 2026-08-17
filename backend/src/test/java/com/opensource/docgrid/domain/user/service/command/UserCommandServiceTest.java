@@ -32,6 +32,9 @@ import com.opensource.docgrid.domain.user.repository.UserRoleRepository;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
+/**
+ * 관리자의 사용자 부서 변경 명령(UserCommandService.changeDepartment)을 검증한다.
+ */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("UserCommandService 단위 테스트")
 class UserCommandServiceTest {
@@ -93,8 +96,8 @@ class UserCommandServiceTest {
     }
 
     @Test
-    @DisplayName("예외 케이스: 부서가 없거나 비활성 상태면 DEPARTMENT_NOT_FOUND 예외가 발생한다")
-    void changeDepartment_throws_whenDepartmentNotFoundOrInactive() {
+    @DisplayName("예외 케이스: 부서가 없으면 DEPARTMENT_NOT_FOUND 예외가 발생한다")
+    void changeDepartment_throws_whenDepartmentNotFound() {
         Department department = AuthFixture.createDepartment();
         User targetUser = AuthFixture.createUser(department);
 
@@ -103,6 +106,26 @@ class UserCommandServiceTest {
 
         assertThatThrownBy(() -> userCommandService.changeDepartment(
                 AuthFixture.USER_ID, new ChangeDepartmentRequest(999L)))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DEPARTMENT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("예외 케이스: 부서가 비활성 상태면 DEPARTMENT_NOT_FOUND 예외가 발생한다")
+    void changeDepartment_throws_whenDepartmentIsInactive() {
+        Department inactiveDepartment = Department.builder()
+                .name("폐지된부서")
+                .code("CLOSED")
+                .status(CommonStatus.INACTIVE)
+                .build();
+        ReflectionTestUtils.setField(inactiveDepartment, "id", 30L);
+        User targetUser = AuthFixture.createUser(AuthFixture.createDepartment());
+
+        given(userRepository.findById(AuthFixture.USER_ID)).willReturn(Optional.of(targetUser));
+        given(departmentRepository.findById(30L)).willReturn(Optional.of(inactiveDepartment));
+
+        assertThatThrownBy(() -> userCommandService.changeDepartment(
+                AuthFixture.USER_ID, new ChangeDepartmentRequest(30L)))
                 .isInstanceOf(DocGridException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DEPARTMENT_NOT_FOUND);
     }

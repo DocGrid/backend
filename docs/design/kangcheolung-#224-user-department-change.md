@@ -10,7 +10,7 @@ QA 시나리오 1(회원가입/로그인 플로우) 진행 중 발견: 회원가
 
 역할(role) 부여가 이미 관리자 전용(`POST /admin/users/{userId}/roles`)이고, `department`는 부서 기반 권한 검색(live predicate)의 기준값이라 사용자 본인이 셀프로 바꾸면 권한 상승 위험이 있다. 그래서 동일한 관리자 전용 패턴으로 부서 변경 API를 추가했다.
 
-```
+```text
 관리자 → PATCH /admin/users/{userId}/department (JWT, ADMIN role) → AdminUserController → UserCommandService
 ```
 
@@ -36,7 +36,7 @@ QA 시나리오 1(회원가입/로그인 플로우) 진행 중 발견: 회원가
 
 ### PATCH /admin/users/{userId}/department — 사용자 부서 변경
 
-```
+```http
 Authorization: Bearer {JWT, ADMIN role}
 Content-Type: application/json
 

@@ -333,6 +333,78 @@ const showRawResults = result !== null && result.results.length > 0
 7절 참고), (b) 로딩 중 원본 결과 미리보기 자체를 포기하고 답변까지 다 기다렸다가 한 번에
 보여주는 방식으로 되돌려야 한다 — 아직 결정 안 함.
 
+### 4-11. PR 리뷰(CodeRabbit)로 발견한 버그 2건
+
+#### 1) 예상 못한 예외가 나면 job이 영원히 PROCESSING에 남는 문제
+
+`RagJobWorker`는 `processJob()` 내부의 Ollama 관련 실패(`DocGridException`)는 이미
+extractive fallback으로 처리하지만, 그 밖의 예상 못한 예외(버그 등)는 로그만 남기고 그냥
+넘어갔다 — 이 경우 job의 상태가 바뀌지 않은 채 남아, 4-5에서 고친 detached entity 버그와
+증상이 같아진다(Worker가 같은 job을 계속 다시 집어 무한 재시도).
+
+고침 — `RagFacade`에 `markUnexpectedFailure()`를 추가해, 예상 못한 예외를 잡으면 반드시
+FAILED로 확정한다:
+```java
+public void markUnexpectedFailure(Long jobId, String errorMessage) {
+    ragResponseRepository.findById(jobId)
+        .ifPresent(job -> ragResponseCommandService.completeFailed(job, UNEXPECTED_FAILURE_ANSWER_TEXT, errorMessage));
+}
+```
+
+#### 2) 여러 Worker가 같은 job을 동시에 집을 수 있는 경합
+
+설계는 "Worker 인스턴스 1개"를 전제하지만(2-2 참고), `findFirstByStatusOrderByCreatedAtAsc()`
+(조회)와 `processJob()`의 저장(쓰기) 사이에는 락이 없다 — 그 사이에 다른 트랜잭션이 같은 job을
+먼저 처리해버리면 경합이 생긴다. 이론적 우려로 끝나지 않고, 실제로 통합 테스트를 여러 개
+동시에 돌렸을 때(Spring 테스트가 컨텍스트를 여러 개 띄우면서 각자 `@Scheduled` Worker가 뜸,
+혹은 테스트 자신의 정리 로직이 아직 처리 중인 row를 지우면서 겹쳤을 가능성) 실제로 재현됐다:
+```console
+org.hibernate.StaleObjectStateException: Row was updated or deleted by another transaction
+    (or unsaved-value mapping was incorrect): [com.opensource.docgrid.domain.rag.entity.RagResponse#33]
+```
+
+이때 위 1)번에서 만든 `markUnexpectedFailure()`를 그대로 태우면, **이미 다른 트랜잭션이 올바르게
+처리한 결과를 뒤늦게 FAILED로 덮어써버리는 2차 사고**가 난다. 그래서 `OptimisticLockingFailureException`
+(Spring이 이런 종류의 예외를 감싸는 타입)만 따로 잡아 조용히 넘어가도록 분기했다:
+```java
+try {
+    ragFacade.processJob(job.getId());
+} catch (OptimisticLockingFailureException e) {
+    log.warn("[RAG-WORKER] job이 이미 다른 트랜잭션에서 처리된 것으로 보임(경합) queryId={}", queryId);
+    return;  // markUnexpectedFailure를 호출하지 않는다 — 정상 처리된 결과를 오답으로 바꾸면 안 되므로.
+} catch (Exception e) {
+    ...
+}
+```
+이 방어는 **경합 자체(같은 job을 두 Worker가 동시에 집는 것)를 막지 않는다** — Ollama 중복
+호출 같은 낭비는 여전히 생길 수 있다. 막는 건 그로 인한 데이터 오염(정상 결과를 실패로 덮어씀)
+뿐이다. 지금 배포는 인스턴스가 1개뿐이라 평소엔 이 경합 자체가 발생하지 않고, 나중에 배포
+방식이 바뀌는 경우에만 의미가 생기는 안전장치다 — 비용이 예외 하나 추가하는 수준으로 작아서
+지금 넣어뒀다. 완전히 막으려면(`SELECT ... FOR UPDATE SKIP LOCKED` 등 원자적 claim) 더 큰
+작업이 필요해 7절 범위 밖으로 남겼다.
+
+#### 3) 프론트 — 새 검색이 이전 검색의 뒤늦은 응답에 덮어써지는 경쟁 조건
+
+`refreshAnswer()`가 `setResult(current => ...)` 안에서 `current.queryId`를 읽어 GET 요청을
+보내는 구조였는데, 그 요청이 응답으로 돌아올 때까지 사용자가 **다른 검색을 새로 시작**하면,
+뒤늦게 도착한 옛 queryId의 응답이 무조건 `setResult()`로 덮어써서 방금 시작한 새 검색 결과를
+지워버릴 수 있었다.
+
+고침 — `activeQueryIdRef`로 "지금 화면이 보여줘야 할 queryId"를 별도로 추적하고, 응답이
+돌아온 시점에 그 값과 비교해 낡은 응답이면 버린다:
+```tsx
+const refreshAnswer = useCallback(() => {
+  const queryId = activeQueryIdRef.current;
+  if (queryId === null) return;
+  apiRequest<SearchResponse>(`/search/${queryId}`).then((response) => {
+    if (activeQueryIdRef.current !== queryId) return;  // 그 사이 다른 검색으로 넘어감 — 버림
+    setResult(response);
+  });
+}, []);
+```
+`search()`는 새 검색을 시작하는 즉시 `activeQueryIdRef.current = null`로 초기화해, POST 응답이
+오기 전까지는 어떤 낡은 refresh 응답도 적용되지 않게 막는다.
+
 ## 5. 검증
 
 ### 5-1. `RagJobWorkerIntegrationTest` — detached entity 버그 재현·검증

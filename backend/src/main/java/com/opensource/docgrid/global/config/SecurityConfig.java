@@ -14,6 +14,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 
 import com.opensource.docgrid.domain.auth.jwt.JwtAuthenticationFilter;
 import com.opensource.docgrid.domain.auth.jwt.JwtProvider;
+import com.opensource.docgrid.domain.auth.jwt.RoleAuthorityService;
 import com.opensource.docgrid.domain.auth.jwt.TokenBlacklistService;
 import com.opensource.docgrid.domain.mcp.security.McpApiKeyAuthFilter;
 import com.opensource.docgrid.domain.mcp.service.command.McpAccessTokenCommandService;
@@ -28,6 +29,7 @@ public class SecurityConfig {
     private final CorsConfigurationSource corsConfigurationSource;
     private final JwtProvider jwtProvider;
     private final TokenBlacklistService tokenBlacklistService;
+    private final RoleAuthorityService roleAuthorityService;
     private final McpAccessTokenCommandService mcpAccessTokenCommandService;
 
     @Bean
@@ -57,7 +59,7 @@ public class SecurityConfig {
              *   - JwtAuthenticationFilter  → 웹 로그인(JWT), /mcp/tokens 등 일반 API 담당
              *   - McpApiKeyAuthFilter      → Claude Desktop API 키, /mcp 경로만 담당
              */
-            .addFilterBefore(new JwtAuthenticationFilter(jwtProvider, tokenBlacklistService), UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(new JwtAuthenticationFilter(jwtProvider, tokenBlacklistService, roleAuthorityService), UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(new McpApiKeyAuthFilter(mcpAccessTokenCommandService), UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

@@ -23,9 +23,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtProvider jwtProvider;
     private final TokenBlacklistService tokenBlacklistService;
+    private final RoleAuthorityService roleAuthorityService;
 
     @Override
-    @SuppressWarnings("unchecked")
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
@@ -36,7 +36,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (claims != null && !isBlacklisted(claims.get("jti", String.class))) {
                 Long userId = claims.get("userId", Long.class);
                 String email = claims.getSubject();
-                List<String> roles = (List<String>) claims.get("roles");
+                List<String> roles = roleAuthorityService.getRoles(userId);
 
                 List<SimpleGrantedAuthority> authorities = roles.stream()
                         .map(role -> new SimpleGrantedAuthority("ROLE_" + role))

@@ -101,6 +101,10 @@ public class User extends BaseEntity {
         this.lastLoginAt = loginAt;
     }
 
+    public void changeDepartment(Department department) {
+        this.department = department;
+    }
+
     public void markDeleted(LocalDateTime deletedAt) {
         this.status = UserStatus.DELETED;
         this.deletedAt = deletedAt;

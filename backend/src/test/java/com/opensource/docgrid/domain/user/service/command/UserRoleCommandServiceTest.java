@@ -30,6 +30,9 @@ import com.opensource.docgrid.domain.user.repository.UserRoleRepository;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
+/**
+ * 관리자의 역할 부여·회수 명령(assignRole/revokeRole)과 role 캐시 무효화 계약을 검증한다.
+ */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("UserRoleCommandService 단위 테스트")
 class UserRoleCommandServiceTest {

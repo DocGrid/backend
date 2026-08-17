@@ -34,12 +34,16 @@ public class RoleAuthorityService {
     private final UserRoleRepository userRoleRepository;
 
     public List<String> getRoles(Long userId) {
+        // 1. 먼저 Redis 캐시를 확인한다 — 대부분의 요청은 여기서 끝나 DB 부하를 줄인다.
         String cached = readCache(userId);
         if (cached != null) {
             return cached.isBlank() ? List.of() : Arrays.asList(cached.split(","));
         }
 
+        // 2. 캐시 미스면 DB에서 최신 role을 조회한다(source of truth).
         List<String> roles = userRoleRepository.findRoleCodesByUserId(userId);
+
+        // 3. 다음 요청부터는 캐시로 처리되도록 짧은 TTL로 저장해둔다.
         writeCache(userId, roles);
         return roles;
     }

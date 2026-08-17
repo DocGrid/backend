@@ -17,6 +17,9 @@ import org.springframework.data.redis.core.ValueOperations;
 
 import com.opensource.docgrid.domain.user.repository.UserRoleRepository;
 
+/**
+ * 인가 판단용 role을 Redis 캐시와 DB 폴백으로 조회하는 계약(캐시 히트/미스, 무효화, Redis 장애 대응)을 검증한다.
+ */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("RoleAuthorityService 단위 테스트")
 class RoleAuthorityServiceTest {

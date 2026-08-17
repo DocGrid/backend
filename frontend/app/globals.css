@@ -314,6 +314,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .role-chip-revoke { display: inline-flex; align-items: center; gap: 2px; }
 .role-chip-revoke button { border: none; background: none; color: #9b9ca8; cursor: pointer; font-size: 10px; line-height: 1; padding: 0 2px; }
 .role-chip-revoke button:hover { color: #e05252; }
+.role-chip-revoke button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .role-chip-revoke button:disabled { color: #cfd0d8; cursor: not-allowed; }
 .permission-checks { margin: 20px 0; }
 .field-label { display: block; margin-bottom: 8px; color: #8a8b99; font-size: 8px; }

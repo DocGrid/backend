@@ -153,7 +153,7 @@ List<String> roles = roleAuthorityService.getRoles(userId);
 
 ### DELETE /admin/users/{userId}/roles/{roleCode} — 역할 회수
 
-```
+```text
 Authorization: Bearer {JWT, ADMIN role}
 ```
 

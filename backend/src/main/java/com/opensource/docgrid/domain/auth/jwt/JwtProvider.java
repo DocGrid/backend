@@ -35,6 +35,7 @@ public class JwtProvider {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationSeconds * 1000);
 
+        // role은 RoleAuthorityService가 매 요청 DB(+Redis 캐시)에서 조회하므로 토큰에 담지 않는다.
         return Jwts.builder()
                 .subject(email)
                 .claim("userId", userId)

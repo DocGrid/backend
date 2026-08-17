@@ -98,7 +98,7 @@ public class AuthCommandService {
 
         List<String> roles = userRoleRepository.findRoleCodesByUserId(user.getId());
 
-        String token = jwtProvider.generateToken(user.getId(), user.getEmail(), roles);
+        String token = jwtProvider.generateToken(user.getId(), user.getEmail());
 
         return LoginResponse.of(token, jwtProvider.getExpirationSeconds(), user.getId(), user.getEmail(), roles);
     }

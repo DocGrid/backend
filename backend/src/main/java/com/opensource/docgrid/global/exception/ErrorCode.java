@@ -38,6 +38,7 @@ public enum ErrorCode {
     ROLE_NOT_FOUND(HttpStatus.BAD_REQUEST, "ROLE-001", "존재하지 않는 역할입니다."),
     PERMISSION_DENIED(HttpStatus.FORBIDDEN, "ROLE-002", "접근 권한이 없습니다."),
     ROLE_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "ROLE-003", "이미 부여된 역할입니다."),
+    ROLE_NOT_ASSIGNED(HttpStatus.NOT_FOUND, "ROLE-004", "부여되지 않은 역할입니다."),
 
     // COLLECTION
     COLLECTION_NOT_FOUND(HttpStatus.NOT_FOUND, "COLLECTION-001", "컬렉션을 찾을 수 없습니다."),

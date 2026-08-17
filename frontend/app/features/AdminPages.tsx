@@ -246,6 +246,7 @@ export function AdminUsersPage({ notify }: { notify: (message: string) => void }
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [deptBusy, setDeptBusy] = useState(false);
+  const [revokingKey, setRevokingKey] = useState("");
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -280,6 +281,19 @@ export function AdminUsersPage({ notify }: { notify: (message: string) => void }
       await load();
     } catch (reason) { setError(errorMessage(reason)); }
     finally { setBusy(false); }
+  }
+
+  async function revokeRole(userId: number, roleCode: string) {
+    if (!window.confirm(`이 사용자의 ${roleCode} 역할을 회수할까요?`)) return;
+    const key = `${userId}:${roleCode}`;
+    setRevokingKey(key); setError("");
+    try {
+      const response = await apiRequest<UserRoleResponse>(`/admin/users/${userId}/roles/${roleCode}`, { method: "DELETE" });
+      notify(`${response.name} 사용자의 ${roleCode} 역할을 회수했습니다.`);
+      // Refresh role chips in the list after the command succeeds.
+      await load();
+    } catch (reason) { setError(errorMessage(reason)); }
+    finally { setRevokingKey(""); }
   }
 
   async function changeDepartment(event: FormEvent<HTMLFormElement>) {
@@ -322,7 +336,7 @@ export function AdminUsersPage({ notify }: { notify: (message: string) => void }
         {loading ? <LoadingState label="사용자 목록을 불러오는 중입니다." /> : null}
         {!loading && data && !data.content.length ? <EmptyState symbol="◎" title="조건에 맞는 사용자가 없습니다" description="검색어나 필터를 바꾸어 다시 조회해 보세요." /> : null}
         {!loading && data?.content.length ? <>
-          <div className="mini-table users-table"><div className="table-labels"><span>사용자</span><span>부서</span><span>역할</span><span>상태</span><span /></div>{data.content.map((user) => <div key={user.userId}><span><strong>{user.name}</strong><small>#{user.userId} · {user.email}<br />가입 {formatDate(user.createdAt, false)}</small></span><span>{user.departmentName ?? "미지정"}</span><span className="role-chips">{user.roles.map((role) => <StatusPill value={role} key={role} />)}</span><StatusPill value={user.status} /><button onClick={() => setSelectedUserId(String(user.userId))}>역할 관리</button></div>)}</div>
+          <div className="mini-table users-table"><div className="table-labels"><span>사용자</span><span>부서</span><span>역할</span><span>상태</span><span /></div>{data.content.map((user) => <div key={user.userId}><span><strong>{user.name}</strong><small>#{user.userId} · {user.email}<br />가입 {formatDate(user.createdAt, false)}</small></span><span>{user.departmentName ?? "미지정"}</span><span className="role-chips">{user.roles.map((role) => <span key={role} className="role-chip-revoke"><StatusPill value={role} /><button type="button" title={`${role} 역할 회수`} disabled={revokingKey === `${user.userId}:${role}`} onClick={() => void revokeRole(user.userId, role)}>×</button></span>)}</span><StatusPill value={user.status} /><button onClick={() => setSelectedUserId(String(user.userId))}>역할 관리</button></div>)}</div>
           <div className="pagination"><span>{data.totalElements}명 · {data.size}명씩</span><div><button disabled={data.first} onClick={() => setPage((current) => Math.max(0, current - 1))}>이전</button><button className="active">{data.page + 1}</button><button disabled={data.last} onClick={() => setPage((current) => current + 1)}>다음</button></div></div>
         </> : null}
       </div>

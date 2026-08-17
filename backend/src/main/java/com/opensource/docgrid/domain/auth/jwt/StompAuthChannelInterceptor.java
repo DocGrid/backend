@@ -51,9 +51,9 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtProvider jwtProvider;
+    private final RoleAuthorityService roleAuthorityService;
 
     @Override
-    @SuppressWarnings("unchecked")
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
@@ -68,7 +68,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
 
             String email = claims.getSubject();
             Long userId = claims.get("userId", Long.class);
-            List<String> roles = (List<String>) claims.get("roles");
+            List<String> roles = roleAuthorityService.getRoles(userId);
             List<SimpleGrantedAuthority> authorities = roles.stream()
                 .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
                 .toList();

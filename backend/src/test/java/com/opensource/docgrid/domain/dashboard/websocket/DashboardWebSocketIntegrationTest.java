@@ -3,7 +3,6 @@ package com.opensource.docgrid.domain.dashboard.websocket;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.lang.reflect.Type;
-import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -245,11 +244,11 @@ class DashboardWebSocketIntegrationTest {
     }
 
     private String adminToken() {
-        return jwtProvider.generateToken(1L, "dashboard-admin@example.com", List.of("ADMIN"));
+        return jwtProvider.generateToken(1L, "dashboard-admin@example.com");
     }
 
     private String userToken() {
-        return jwtProvider.generateToken(2L, "dashboard-user@example.com", List.of("USER"));
+        return jwtProvider.generateToken(2L, "dashboard-user@example.com");
     }
 
     private DashboardSummaryResponse sampleSummary() {

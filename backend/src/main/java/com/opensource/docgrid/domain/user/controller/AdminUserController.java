@@ -2,6 +2,7 @@ package com.opensource.docgrid.domain.user.controller;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -69,6 +70,18 @@ public class AdminUserController {
             @Parameter(hidden = true) @CurrentUser Long adminUserId,
             @RequestBody @Valid AssignRoleRequest request) {
         return ResponseUtils.ok(userRoleCommandService.assignRole(userId, adminUserId, request));
+    }
+
+    @Operation(
+            summary = "역할 회수",
+            description = "특정 사용자에게 부여된 역할을 회수합니다. ADMIN 권한이 필요합니다. "
+                    + "부여되지 않은 역할이면 404를 반환합니다. 재로그인 없이 다음 요청부터 즉시 반영됩니다."
+    )
+    @DeleteMapping("/{userId}/roles/{roleCode}")
+    public ResponseEntity<ApiResponse<UserRoleResponse>> revokeRole(
+            @PathVariable Long userId,
+            @PathVariable String roleCode) {
+        return ResponseUtils.ok(userRoleCommandService.revokeRole(userId, roleCode));
     }
 
     @Operation(

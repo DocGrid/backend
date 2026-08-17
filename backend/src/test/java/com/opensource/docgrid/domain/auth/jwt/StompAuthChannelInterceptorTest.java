@@ -31,13 +31,14 @@ import io.jsonwebtoken.Claims;
 class StompAuthChannelInterceptorTest {
 
     @Mock private JwtProvider jwtProvider;
+    @Mock private RoleAuthorityService roleAuthorityService;
     @Mock private MessageChannel channel;
 
     private StompAuthChannelInterceptor interceptor;
 
     @BeforeEach
     void setUp() {
-        interceptor = new StompAuthChannelInterceptor(jwtProvider);
+        interceptor = new StompAuthChannelInterceptor(jwtProvider, roleAuthorityService);
     }
 
     @Test
@@ -47,8 +48,8 @@ class StompAuthChannelInterceptorTest {
         Claims claims = mock(Claims.class);
         given(claims.getSubject()).willReturn("admin@example.com");
         given(claims.get("userId", Long.class)).willReturn(1L);
-        given(claims.get("roles")).willReturn(List.of("ADMIN"));
         given(jwtProvider.getClaimsIfValid("valid-token")).willReturn(claims);
+        given(roleAuthorityService.getRoles(1L)).willReturn(List.of("ADMIN"));
 
         Message<byte[]> connectMessage = connectMessage("Bearer valid-token");
 

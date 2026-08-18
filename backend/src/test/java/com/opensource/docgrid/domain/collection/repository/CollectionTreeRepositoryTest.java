@@ -15,7 +15,6 @@ import org.springframework.test.context.ActiveProfiles;
 
 import com.opensource.docgrid.domain.collection.entity.CollectionDocument;
 import com.opensource.docgrid.domain.collection.entity.DocumentCollection;
-import com.opensource.docgrid.domain.collection.enums.CollectionStatus;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.enums.DocumentSourceType;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
@@ -41,8 +40,8 @@ import jakarta.persistence.EntityManager;
 
 /**
  * 컬렉션 트리(부모-자식) 재귀 쿼리와 직계 자식 조회를 3단 트리(root→child→grandchild)로 검증한다.
- * findReadableCollectionIds의 owner/PUBLIC 노출, keyword 필터, 부모 컬렉션으로부터의 DEPARTMENT 권한
- * 상속도 함께 검증한다.
+ * findReadableCollections의 owner/PUBLIC 노출, keyword 필터, 페이지네이션/totalCount, 부모 컬렉션으로부터의
+ * ROLE·DEPARTMENT 권한 상속과, findReadableChildren의 권한 필터·다단계 상속도 함께 검증한다.
  * 이동/수정 API가 없어 순환 참조가 API상 불가능하므로 순환 참조 케이스는 검증하지 않는다.
  */
 @DataJpaTest
@@ -121,25 +120,81 @@ class CollectionTreeRepositoryTest {
     }
 
     @Test
-    @DisplayName("findAllByParentCollectionIdAndStatus는 직계 자식만 반환하고 손자는 포함하지 않는다")
-    void findAllByParentCollectionIdAndStatus_returnsDirectChildrenOnly() {
+    @DisplayName("findReadableChildren는 직계 자식만 반환하고 손자는 포함하지 않는다")
+    void findReadableChildren_returnsDirectChildrenOnly() {
         User owner = saveOwner();
         DocumentCollection root = saveCollection(owner, null);
         DocumentCollection child = saveCollection(owner, root);
         DocumentCollection grandchild = saveCollection(owner, child);
         flushAndClear();
 
-        List<DocumentCollection> children = collectionRepository.findAllByParentCollectionIdAndStatus(
-                root.getId(), CollectionStatus.ACTIVE
-        );
+        List<DocumentCollection> children = collectionRepository.findReadableChildren(root.getId(), owner.getId());
 
         assertThat(children).extracting(DocumentCollection::getId).containsExactly(child.getId());
         assertThat(children).extracting(DocumentCollection::getId).doesNotContain(grandchild.getId());
     }
 
     @Test
-    @DisplayName("findReadableCollectionIds는 owner의 PRIVATE 컬렉션은 owner에게만, PUBLIC 컬렉션은 누구에게나 보여준다")
-    void findReadableCollectionIds_ownerAndPublic() {
+    @DisplayName("findReadableChildren는 읽기 권한 없는 자식은 제외한다")
+    void findReadableChildren_excludesChild_whenNoPermission() {
+        User owner = saveOwner();
+        User stranger = saveOwner();
+        DocumentCollection root = saveCollection(owner, null);
+        saveCollection(owner, root); // PRIVATE 자식, stranger는 권한 없음
+        flushAndClear();
+
+        List<DocumentCollection> forStranger = collectionRepository.findReadableChildren(root.getId(), stranger.getId());
+        List<DocumentCollection> forOwner = collectionRepository.findReadableChildren(root.getId(), owner.getId());
+
+        assertThat(forStranger).isEmpty();
+        assertThat(forOwner).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("findReadableChildren는 조부모(2단계 위)에 부여된 ROLE 권한도 상속해서 자식을 보여준다")
+    void findReadableChildren_inheritsRolePermissionFromGrandparent() {
+        Role role = roleRepository.save(
+            Role.builder().name("자식조회 테스트 역할").code("CH-ROLE-" + UUID.randomUUID()).build()
+        );
+        User owner = saveOwner();
+        User roleMember = userRepository.save(
+            User.builder()
+                .email("children-role-" + UUID.randomUUID() + "@test.com")
+                .passwordHash("hash")
+                .name("자식조회 테스트 역할 보유자")
+                .status(UserStatus.ACTIVE)
+                .build()
+        );
+        userRoleRepository.save(
+            UserRole.builder().user(roleMember).role(role).assignedAt(LocalDateTime.now()).build()
+        );
+        DocumentCollection grandparent = saveCollection(owner, null);
+        DocumentCollection parent = saveCollection(owner, grandparent);
+        DocumentCollection child = saveCollection(owner, parent);
+        collectionPermissionRepository.save(
+            CollectionPermission.builder()
+                .collection(grandparent)
+                .targetType(PermissionTargetType.ROLE)
+                .role(role)
+                .permissionType(PermissionType.READ)
+                .canRead(true)
+                .canWrite(false)
+                .canAdmin(false)
+                .grantedBy(owner)
+                .grantedAt(LocalDateTime.now())
+                .build()
+        );
+        flushAndClear();
+
+        // parent 자체는 grandparent로부터 상속받아 읽을 수 있고, parent의 자식(child)도 같은 체인으로 상속받는다.
+        List<DocumentCollection> childrenOfParent = collectionRepository.findReadableChildren(parent.getId(), roleMember.getId());
+
+        assertThat(childrenOfParent).extracting(DocumentCollection::getId).containsExactly(child.getId());
+    }
+
+    @Test
+    @DisplayName("findReadableCollections는 owner의 PRIVATE 컬렉션은 owner에게만, PUBLIC 컬렉션은 누구에게나 보여준다")
+    void findReadableCollections_ownerAndPublic() {
         User owner = saveOwner();
         User stranger = saveOwner();
         DocumentCollection privateCollection = saveCollection(owner, null);
@@ -152,8 +207,8 @@ class CollectionTreeRepositoryTest {
         );
         flushAndClear();
 
-        List<Long> ownerReadable = collectionRepository.findReadableCollectionIds(owner.getId(), null);
-        List<Long> strangerReadable = collectionRepository.findReadableCollectionIds(stranger.getId(), null);
+        List<Long> ownerReadable = readableIds(owner.getId(), null);
+        List<Long> strangerReadable = readableIds(stranger.getId(), null);
 
         assertThat(ownerReadable).contains(privateCollection.getId(), publicCollection.getId());
         assertThat(strangerReadable).contains(publicCollection.getId());
@@ -161,8 +216,8 @@ class CollectionTreeRepositoryTest {
     }
 
     @Test
-    @DisplayName("findReadableCollectionIds는 keyword가 있으면 이름·설명에 부분일치하는 컬렉션만 반환한다")
-    void findReadableCollectionIds_filtersByKeyword() {
+    @DisplayName("findReadableCollections는 keyword가 있으면 이름·설명에 부분일치하는 컬렉션만 반환한다")
+    void findReadableCollections_filtersByKeyword() {
         User owner = saveOwner();
         DocumentCollection matching = collectionRepository.save(
             DocumentCollection.builder().owner(owner).name("개발 문서").description("백엔드 관련").visibility(VisibilityType.PRIVATE).build()
@@ -172,15 +227,37 @@ class CollectionTreeRepositoryTest {
         );
         flushAndClear();
 
-        List<Long> result = collectionRepository.findReadableCollectionIds(owner.getId(), "개발");
+        List<Long> result = readableIds(owner.getId(), "개발");
 
         assertThat(result).contains(matching.getId());
         assertThat(result).doesNotContain(nonMatching.getId());
     }
 
     @Test
-    @DisplayName("findReadableCollectionIds는 부모 컬렉션에 부여된 DEPARTMENT 권한을 자식 컬렉션까지 상속해서 보여준다")
-    void findReadableCollectionIds_inheritsDepartmentPermissionFromParent() {
+    @DisplayName("findReadableCollections는 limit/offset으로 페이지를 나누고, 모든 행에 동일한 totalCount를 함께 반환한다")
+    void findReadableCollections_paginatesAndReturnsTotalCountOnEveryRow() {
+        User owner = saveOwner();
+        for (int i = 0; i < 3; i++) {
+            saveCollection(owner, null);
+        }
+        flushAndClear();
+
+        List<CollectionRow> firstPage = collectionRepository.findReadableCollections(owner.getId(), null, 2, 0L);
+        List<CollectionRow> secondPage = collectionRepository.findReadableCollections(owner.getId(), null, 2, 2L);
+
+        assertThat(firstPage).hasSize(2);
+        assertThat(secondPage).hasSize(1);
+        assertThat(firstPage).allSatisfy(row -> assertThat(row.getTotalCount()).isEqualTo(3));
+        assertThat(secondPage.get(0).getTotalCount()).isEqualTo(3);
+        // 두 페이지에 중복 없이 전부 다른 컬렉션이 나뉘어 담겨야 한다.
+        List<Long> firstPageIds = firstPage.stream().map(CollectionRow::getCollectionId).toList();
+        List<Long> secondPageIds = secondPage.stream().map(CollectionRow::getCollectionId).toList();
+        assertThat(firstPageIds).doesNotContainAnyElementsOf(secondPageIds);
+    }
+
+    @Test
+    @DisplayName("findReadableCollections는 부모 컬렉션에 부여된 DEPARTMENT 권한을 자식 컬렉션까지 상속해서 보여준다")
+    void findReadableCollections_inheritsDepartmentPermissionFromParent() {
         Department department = departmentRepository.save(
             Department.builder().name("컬렉션목록 테스트 부서").code("CL-DEPT-" + UUID.randomUUID()).status(CommonStatus.ACTIVE).build()
         );
@@ -211,14 +288,14 @@ class CollectionTreeRepositoryTest {
         );
         flushAndClear();
 
-        List<Long> readable = collectionRepository.findReadableCollectionIds(deptMember.getId(), null);
+        List<Long> readable = readableIds(deptMember.getId(), null);
 
         assertThat(readable).contains(parent.getId(), child.getId());
     }
 
     @Test
-    @DisplayName("findReadableCollectionIds는 부모 컬렉션에 부여된 ROLE 권한을 자식 컬렉션까지 상속해서 보여준다")
-    void findReadableCollectionIds_inheritsRolePermissionFromParent() {
+    @DisplayName("findReadableCollections는 부모 컬렉션에 부여된 ROLE 권한을 자식 컬렉션까지 상속해서 보여준다")
+    void findReadableCollections_inheritsRolePermissionFromParent() {
         Role role = roleRepository.save(
             Role.builder().name("컬렉션목록 테스트 역할").code("CL-ROLE-" + UUID.randomUUID()).build()
         );
@@ -251,9 +328,18 @@ class CollectionTreeRepositoryTest {
         );
         flushAndClear();
 
-        List<Long> readable = collectionRepository.findReadableCollectionIds(roleMember.getId(), null);
+        List<Long> readable = readableIds(roleMember.getId(), null);
 
         assertThat(readable).contains(parent.getId(), child.getId());
+    }
+
+    // findReadableCollections는 limit/offset을 받는 페이지 조회라, ID만으로 assertThat(...).contains 하던
+    // 기존 테스트들이 그대로 동작하도록 넉넉한 limit(100)으로 감싸는 헬퍼.
+    private List<Long> readableIds(Long userId, String keyword) {
+        return collectionRepository.findReadableCollections(userId, keyword, 100, 0L)
+                .stream()
+                .map(CollectionRow::getCollectionId)
+                .toList();
     }
 
     private User saveOwner() {

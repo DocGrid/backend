@@ -25,6 +25,8 @@ function DocGridRouter({ initialRoute }: { initialRoute: string }) {
   const { user, loading } = useAuth();
   const [upload, setUpload] = useState<UploadState>({ open: false });
   const [toast, setToast] = useState("");
+  // 업로드는 Modal에서 끝나므로, 접수 성공을 목록·상세 화면이 다시 읽을 신호로 전달한다.
+  const [refreshKey, setRefreshKey] = useState(0);
   const publicRoute = route === "/login" || route === "/signup";
 
   useEffect(() => {
@@ -37,10 +39,10 @@ function DocGridRouter({ initialRoute }: { initialRoute: string }) {
   const page = useMemo(() => {
     if (!user) return null;
     if (route === "/search") return <SearchPage />;
-    if (route === "/documents") return <DocumentsPage onUpload={() => setUpload({ open: true })} />;
+    if (route === "/documents") return <DocumentsPage onUpload={() => setUpload({ open: true })} refreshKey={refreshKey} />;
     if (route.startsWith("/documents/")) {
       const id = numericTail(route);
-      return id ? <DocumentDetailPage documentId={id} onVersionUpload={() => setUpload({ open: true, documentId: id })} notify={notify} /> : <NotFound />;
+      return id ? <DocumentDetailPage documentId={id} onVersionUpload={() => setUpload({ open: true, documentId: id })} notify={notify} refreshKey={refreshKey} /> : <NotFound />;
     }
     if (route === "/collections") return <CollectionsPage notify={notify} />;
     if (route.startsWith("/collections/")) {
@@ -60,14 +62,14 @@ function DocGridRouter({ initialRoute }: { initialRoute: string }) {
     if (route === "/admin/workers") return <WorkersPage />;
     if (route === "/admin/users") return <AdminUsersPage notify={notify} />;
     return <NotFound />;
-  }, [notify, route, user]);
+  }, [notify, refreshKey, route, user]);
 
   if (publicRoute) return <AuthPage mode={route === "/signup" ? "signup" : "login"} />;
   if (loading || !user) return <AppLoading />;
 
   return <>
     <AppShell route={route} onUpload={() => setUpload({ open: true })}>{page}</AppShell>
-    {upload.open ? <UploadModal documentId={upload.documentId} onClose={() => setUpload({ open: false })} onSuccess={notify} /> : null}
+    {upload.open ? <UploadModal documentId={upload.documentId} onClose={() => setUpload({ open: false })} onSuccess={(message) => { notify(message); setRefreshKey((current) => current + 1); }} /> : null}
     {toast ? <Toast message={toast} onDone={() => setToast("")} /> : null}
   </>;
 }

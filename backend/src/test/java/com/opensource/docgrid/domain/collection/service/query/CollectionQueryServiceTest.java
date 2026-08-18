@@ -120,11 +120,34 @@ class CollectionQueryServiceTest {
                 org.mockito.ArgumentMatchers.eq(20),
                 org.mockito.ArgumentMatchers.eq(0L)))
                 .willReturn(List.of());
+        given(collectionRepository.countReadableCollections(CollectionFixture.USER_ID, null))
+                .willReturn(0L);
 
         PageResponse<CollectionResponse> result = collectionQueryService.getCollections(CollectionFixture.USER_ID, null, 0, 20);
 
         assertThat(result.content()).isEmpty();
         assertThat(result.totalElements()).isZero();
+    }
+
+    @Test
+    @DisplayName("요청한 페이지가 마지막 페이지를 넘어가 0건이 반환돼도, 별도 count 쿼리로 실제 전체 개수를 정확히 반영한다")
+    void getCollections_returnsAccurateTotalElements_whenPageBeyondLastPage() {
+        // COUNT(*) OVER()는 반환된 행에만 얹혀 계산되므로, offset이 범위를 넘어 0건이 반환되면
+        // findReadableCollections만으로는 전체 개수(실제로는 3건)를 전혀 알 수 없다 — 이걸 그대로
+        // totalElements=0으로 응답하면 "정말 0건"과 "빈 페이지"를 구분 못 하는 버그가 된다.
+        given(collectionRepository.findReadableCollections(
+                org.mockito.ArgumentMatchers.eq(CollectionFixture.USER_ID),
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq(20),
+                org.mockito.ArgumentMatchers.eq(100L)))
+                .willReturn(List.of());
+        given(collectionRepository.countReadableCollections(CollectionFixture.USER_ID, null))
+                .willReturn(3L);
+
+        PageResponse<CollectionResponse> result = collectionQueryService.getCollections(CollectionFixture.USER_ID, null, 5, 20);
+
+        assertThat(result.content()).isEmpty();
+        assertThat(result.totalElements()).isEqualTo(3);
     }
 
     @Test
@@ -146,6 +169,10 @@ class CollectionQueryServiceTest {
 
         assertThat(result.content()).containsExactly(expected);
         assertThat(result.totalElements()).isEqualTo(3);
+        // 정상 경로(행이 반환됨)에서는 별도 count 쿼리를 부르지 않는다 — 이게 이 설계의 핵심
+        // 최적화(콘텐츠+count를 한 쿼리로 합침)이므로, 불필요하게 두 번째 쿼리가 나가지 않는지도 검증한다.
+        then(collectionRepository).should(never()).countReadableCollections(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test

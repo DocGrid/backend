@@ -4,6 +4,7 @@ import java.util.EnumSet;
 import java.util.List;
 
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -18,6 +19,7 @@ import com.opensource.docgrid.domain.collection.entity.DocumentCollection;
 import com.opensource.docgrid.domain.collection.enums.CollectionStatus;
 import com.opensource.docgrid.domain.collection.repository.CollectionDocumentRepository;
 import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
+import com.opensource.docgrid.domain.collection.repository.CollectionRow;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
 import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
@@ -64,23 +66,33 @@ public class CollectionQueryService {
     /**
      * 사용자가 읽을 수 있는 컬렉션 목록 페이지 조회 (owner + PUBLIC + 권한부여 + 부모 상속, ACTIVE만).
      * keyword가 있으면 이름·설명 부분일치로도 필터링한다.
+     *
+     * <p>"전체를 찾은 뒤 페이지를 자르는" 2단계 조회 대신, 페이지 내용과 전체 개수를 한 번의
+     * 쿼리로 함께 얻는다(COUNT(*) OVER()) — 콘텐츠 쿼리와 count 쿼리를 따로 두면 권한 판단이
+     * 두 번 계산되는 걸 피하기 위함이다.
      */
     public PageResponse<CollectionResponse> getCollections(Long userId, String keyword, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, COLLECTION_SORT);
-        List<Long> readableIds = collectionRepository.findReadableCollectionIds(userId, keyword);
-        if (readableIds.isEmpty()) {
-            return PageResponse.from(Page.empty(pageable), List.of());
-        }
 
-        Page<DocumentCollection> collections = collectionRepository.findAllByIdIn(readableIds, pageable);
-        List<CollectionResponse> content = collections.getContent().stream()
+        // 컬렉션 목록과 전체 개수를 한 번에 조회 (CollectionRow 프로젝션)
+        List<CollectionRow> rows = collectionRepository.findReadableCollections(
+                userId, keyword, pageable.getPageSize(), pageable.getOffset());
+
+        long totalElements = rows.isEmpty() ? 0 : rows.get(0).getTotalCount();
+
+        List<CollectionResponse> content = rows.stream()
                 .map(collectionConverter::toResponse)
                 .toList();
-        return PageResponse.from(collections, content);
+        Page<CollectionResponse> resultPage = new PageImpl<>(content, pageable, totalElements);
+        return PageResponse.from(resultPage, content);
     }
 
-    // 직계 자식 컬렉션 목록 조회 — 부모 읽기 권한 확인 후, 자식 각각의 읽기 권한도 확인
-    // (자식 owner/visibility가 부모와 다를 수 있으므로 부모 권한만으로 자식을 노출하면 안 됨)
+    /**
+     * 직계 자식 컬렉션 목록 조회 — 부모 읽기 권한 확인 후, 권한 조건이 반영된 자식만 조회한다.
+     * 자식별 읽기 권한 필터는 findReadableChildren 쿼리 안에서 함께 처리되므로, 자식 개수만큼
+     * canReadCollection을 반복 호출하지 않는다(부모 상속 여부는 자식 전체가 공유하는 값이라
+     * 쿼리 안에서 한 번만 계산됨).
+     */
     public List<CollectionResponse> getChildren(Long userId, Long collectionId) {
         DocumentCollection parent = collectionRepository.findById(collectionId)
                 .filter(c -> c.getStatus() != CollectionStatus.DELETED)
@@ -89,9 +101,8 @@ public class CollectionQueryService {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 
-        return collectionRepository.findAllByParentCollectionIdAndStatus(collectionId, CollectionStatus.ACTIVE)
+        return collectionRepository.findReadableChildren(collectionId, userId)
                 .stream()
-                .filter(child -> permissionQueryService.canReadCollection(userId, child))
                 .map(collectionConverter::toResponse)
                 .toList();
     }

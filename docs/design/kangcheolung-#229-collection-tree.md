@@ -374,7 +374,9 @@ document/collection/permission/search/user 도메인 전체 통과(354개 중 35
 
 ## 남은 이슈 / TODO (백로그, 이번 스코프 아님)
 
-- **컬렉션 상속용 재귀 CTE(`collection_ancestors`)가 매 호출마다 컬렉션 테이블 전체를 스캔한다** — `findAncestorIdsInclusive(collectionId)`처럼 `WHERE id = :collectionId`로 범위를 좁힌 쿼리는 문제없지만, `findReadableDocumentIds`/`findReadableDocumentIdsInCollection`/`findReadableCollectionIds` 안의 closure는 범위 제한이 없다. 검색·문서목록·컬렉션목록처럼 호출 빈도가 높은 화면에 다 걸려있어서, 컬렉션 수가 많아지면 병목 후보 1순위다. 지금 규모(수십~수백 개 추정)에선 무해.
+- **컬렉션 상속용 재귀 CTE(`collection_ancestors`)가 매 호출마다 컬렉션 테이블 전체를 스캔한다** — `findAncestorIdsInclusive(collectionId)`처럼 `WHERE id = :collectionId`로 범위를 좁힌 쿼리는 문제없지만, `findReadableDocumentIds`/`findReadableDocumentIdsInCollection`/`findReadableCollections`(구 `findReadableCollectionIds`) 안의 closure는 범위 제한이 없다. 검색·문서목록·컬렉션목록처럼 호출 빈도가 높은 화면에 다 걸려있어서, 컬렉션 수가 많아지면 병목 후보 1순위다. 지금 규모(수십~수백 개 추정)에선 무해. (2026-08-19: 아래 두 항목은 `#240`으로 해결됐지만, 이 CTE 전체 스캔 자체는 여전히 남아있는 별개 이슈 — `docs/design/kangcheolung-#240-collection-list-pagination.md`의 "남은 이슈" 참고)
+- ~~`GET /collections`가 전체 ID를 먼저 찾고 그중 일부를 재조회하는 2단계 구조~~ → `#240`에서 `findReadableCollections`(COUNT(*) OVER()로 콘텐츠+총개수 한 쿼리)로 해결
+- ~~`GET /collections/{id}/children`이 자식마다 `canReadCollection`을 반복 호출(N+1)~~ → `#240`에서 `findReadableChildren`(권한 조건을 SQL로 이관)로 해결
 - `DOCUMENT_MANAGER` role 관련 작업은 이번에도 스코프 제외 (별도 논의 필요).
 - 프론트 트리 탐색 UI는 "클릭해서 한 단계씩 열람"만 구현 — 여러 단계를 한 번에 펼쳐 보여주는 UI는 안 만듦(파인더 방식 그대로).
 

@@ -322,7 +322,7 @@ BUILD SUCCESSFUL
 수동 QA(시나리오 4) 중 `parentCollectionId`가 스키마에만 있고 실제로 死코드라는 게 재발견되어, 이슈 #229에서 실제 트리 기능으로 완성했다. 상세 설계는 신규 문서 `docs/design/kangcheolung-#229-collection-tree.md` 참고. 이 문서와 직접 관련된 변경만 요약:
 
 - `createCollection()`에 부모 컬렉션 **쓰기권한 체크**(`canWriteCollection(parent)`) 추가 — 예전엔 부모 존재 여부만 확인해서, 남의 컬렉션 밑에도 마음대로 자식을 매달 수 있는 버그였다.
-- `CollectionRepository`에 `findAllByParentCollectionIdAndStatus`(직계 자식 조회) 신규.
+- ~~`CollectionRepository`에 `findAllByParentCollectionIdAndStatus`(직계 자식 조회) 신규.~~ → **(2026-08-19, 이슈 #240) 삭제되고 `findReadableChildren`로 교체됨**: 조건 없이 전체 자식을 가져온 뒤 자바에서 자식마다 권한을 반복 확인하던(N+1) 방식을, 권한 조건을 SQL `WHERE`절에 넣어 쿼리 1번으로 끝내는 방식으로 바꿨다. 상세는 `docs/design/kangcheolung-#240-collection-list-pagination.md` 참고.
 - `CollectionQueryService`에 `getChildren()` 신규, `GET /collections/{id}/children` 엔드포인트 추가.
 - 순환 참조 방지 로직은 만들지 않았다 — 컬렉션 이동/수정 API가 없어 생성 시점에만 부모를 지정할 수 있고, 존재하지 않는 컬렉션은 자기 자신의 조상이 될 수 없으므로 현재 API 구조상 순환 참조가 원천적으로 불가능하기 때문(검토 완료).
 

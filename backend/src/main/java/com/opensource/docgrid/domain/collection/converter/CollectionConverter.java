@@ -7,7 +7,10 @@ import com.opensource.docgrid.domain.collection.dto.response.CollectionDocumentR
 import com.opensource.docgrid.domain.collection.dto.response.CollectionResponse;
 import com.opensource.docgrid.domain.collection.entity.CollectionDocument;
 import com.opensource.docgrid.domain.collection.entity.DocumentCollection;
+import com.opensource.docgrid.domain.collection.enums.CollectionStatus;
+import com.opensource.docgrid.domain.collection.repository.CollectionRow;
 import com.opensource.docgrid.domain.document.converter.DocumentSummaryConverter;
+import com.opensource.docgrid.domain.document.enums.VisibilityType;
 
 import lombok.RequiredArgsConstructor;
 
@@ -35,6 +38,20 @@ public class CollectionConverter {
                 collection.getVisibility(),
                 collection.getStatus(),
                 collection.getCreatedAt()
+        );
+    }
+
+    // findReadableCollections 네이티브 쿼리 프로젝션 결과를 그대로 변환 (owner 엔티티를 거치지 않음)
+    public CollectionResponse toResponse(CollectionRow row) {
+        return new CollectionResponse(
+                row.getCollectionId(),
+                row.getName(),
+                row.getDescription(),
+                row.getOwnerUserId(),
+                row.getParentCollectionId(),
+                VisibilityType.valueOf(row.getVisibility()),
+                CollectionStatus.valueOf(row.getStatus()),
+                row.getCreatedAt()
         );
     }
 

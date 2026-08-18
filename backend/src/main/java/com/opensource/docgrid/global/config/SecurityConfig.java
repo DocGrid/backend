@@ -18,6 +18,8 @@ import com.opensource.docgrid.domain.auth.jwt.RoleAuthorityService;
 import com.opensource.docgrid.domain.auth.jwt.TokenBlacklistService;
 import com.opensource.docgrid.domain.mcp.security.McpApiKeyAuthFilter;
 import com.opensource.docgrid.domain.mcp.service.command.McpAccessTokenCommandService;
+import com.opensource.docgrid.global.exception.RestAccessDeniedHandler;
+import com.opensource.docgrid.global.exception.RestAuthenticationEntryPoint;
 
 import lombok.RequiredArgsConstructor;
 
@@ -31,6 +33,8 @@ public class SecurityConfig {
     private final TokenBlacklistService tokenBlacklistService;
     private final RoleAuthorityService roleAuthorityService;
     private final McpAccessTokenCommandService mcpAccessTokenCommandService;
+    private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
+    private final RestAccessDeniedHandler restAccessDeniedHandler;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -51,6 +55,11 @@ public class SecurityConfig {
                 .requestMatchers("/ws/**").permitAll()
                 .requestMatchers("/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
+            )
+            // 인증 실패와 권한 부족을 상태 코드로 구분하고, 본문 없는 기본 응답 대신 공통 ErrorResponse를 준다.
+            .exceptionHandling(handling -> handling
+                .authenticationEntryPoint(restAuthenticationEntryPoint)
+                .accessDeniedHandler(restAccessDeniedHandler)
             )
             /*
              * UsernamePasswordAuthenticationFilter는 위치 기준점(앵커)일 뿐이며,

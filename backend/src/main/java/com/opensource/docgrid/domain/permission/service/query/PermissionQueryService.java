@@ -120,6 +120,15 @@ public class PermissionQueryService {
             return true;
         }
 
+        // 6단계: 부모 컬렉션 체인 상속 (ROLE/DEPARTMENT)
+        List<Long> effectiveCollectionIds = collectionRepository.findEffectiveCollectionIdsForDocument(documentId);
+        if (!effectiveCollectionIds.isEmpty()
+                && (collectionPermissionRepository.existsRoleReadPermissionForCollections(userId, effectiveCollectionIds)
+                        || collectionPermissionRepository.existsDeptReadPermissionForCollections(userId, effectiveCollectionIds))) {
+            log.info("[PERM] canRead inherited=true doc={} user={} elapsed={}ms", documentId, userId, ms(start));
+            return true;
+        }
+
         double step5Ms = (System.nanoTime() - t5) / 1_000_000.0;
         log.info("[PERM] canRead denied doc={} user={} step5={}ms elapsed={}ms",
                 documentId, userId, step5Ms, ms(start));
@@ -164,6 +173,15 @@ public class PermissionQueryService {
             return true;
         }
 
+        // 5단계: 부모 컬렉션 체인 상속 (ROLE/DEPARTMENT)
+        List<Long> effectiveCollectionIds = collectionRepository.findEffectiveCollectionIdsForDocument(documentId);
+        if (!effectiveCollectionIds.isEmpty()
+                && (collectionPermissionRepository.existsRoleWritePermissionForCollections(userId, effectiveCollectionIds)
+                        || collectionPermissionRepository.existsDeptWritePermissionForCollections(userId, effectiveCollectionIds))) {
+            log.info("[PERM] canWrite inherited=true doc={} user={} elapsed={}ms", documentId, userId, ms(start));
+            return true;
+        }
+
         double step4Ms = (System.nanoTime() - t4) / 1_000_000.0;
         log.info("[PERM] canWrite denied doc={} user={} step4={}ms elapsed={}ms",
                 documentId, userId, step4Ms, ms(start));
@@ -205,6 +223,15 @@ public class PermissionQueryService {
                 || collectionPermissionRepository.existsDeptAdminPermissionForDocument(userId, documentId)) {
             log.info("[PERM] canAdmin dept=true doc={} user={} step3={}ms elapsed={}ms",
                     documentId, userId, step3Ms, ms(start));
+            return true;
+        }
+
+        // 5단계: 부모 컬렉션 체인 상속 (ROLE/DEPARTMENT)
+        List<Long> effectiveCollectionIds = collectionRepository.findEffectiveCollectionIdsForDocument(documentId);
+        if (!effectiveCollectionIds.isEmpty()
+                && (collectionPermissionRepository.existsRoleAdminPermissionForCollections(userId, effectiveCollectionIds)
+                        || collectionPermissionRepository.existsDeptAdminPermissionForCollections(userId, effectiveCollectionIds))) {
+            log.info("[PERM] canAdmin inherited=true doc={} user={} elapsed={}ms", documentId, userId, ms(start));
             return true;
         }
 
@@ -275,6 +302,26 @@ public class PermissionQueryService {
             if (deptAdmin) canAdmin = true;
         }
 
+        // 6단계: 부모 컬렉션 체인 상속 (ROLE/DEPARTMENT) — 기존 ROLE/DEPARTMENT 출처 값을 그대로 재사용한다
+        List<Long> effectiveCollectionIds = collectionRepository.findEffectiveCollectionIdsForDocument(documentId);
+        if (!effectiveCollectionIds.isEmpty()) {
+            boolean inheritedRoleRead  = collectionPermissionRepository.existsRoleReadPermissionForCollections(userId, effectiveCollectionIds);
+            boolean inheritedRoleWrite = collectionPermissionRepository.existsRoleWritePermissionForCollections(userId, effectiveCollectionIds);
+            boolean inheritedRoleAdmin = collectionPermissionRepository.existsRoleAdminPermissionForCollections(userId, effectiveCollectionIds);
+            boolean inheritedDeptRead  = collectionPermissionRepository.existsDeptReadPermissionForCollections(userId, effectiveCollectionIds);
+            boolean inheritedDeptWrite = collectionPermissionRepository.existsDeptWritePermissionForCollections(userId, effectiveCollectionIds);
+            boolean inheritedDeptAdmin = collectionPermissionRepository.existsDeptAdminPermissionForCollections(userId, effectiveCollectionIds);
+            if ((inheritedRoleRead || inheritedRoleWrite || inheritedRoleAdmin) && !sources.contains(PermissionSourceType.ROLE)) {
+                sources.add(PermissionSourceType.ROLE);
+            }
+            if ((inheritedDeptRead || inheritedDeptWrite || inheritedDeptAdmin) && !sources.contains(PermissionSourceType.DEPARTMENT)) {
+                sources.add(PermissionSourceType.DEPARTMENT);
+            }
+            if (inheritedRoleRead || inheritedDeptRead) canRead = true;
+            if (inheritedRoleWrite || inheritedDeptWrite) canWrite = true;
+            if (inheritedRoleAdmin || inheritedDeptAdmin) canAdmin = true;
+        }
+
         log.info("[PERM] checkDoc doc={} user={} canRead={} canWrite={} canAdmin={} sources={} elapsed={}ms",
                 documentId, userId, canRead, canWrite, canAdmin, sources, ms(start));
         return new DocumentPermissionSummaryResponse(documentId, canRead, canWrite, canAdmin, sources);
@@ -293,7 +340,12 @@ public class PermissionQueryService {
         Long collectionId = collection.getId();
         if (collectionPermissionRepository.existsUserReadPermission(userId, collectionId)) return true;
         if (collectionPermissionRepository.existsRoleReadPermissionForCollection(userId, collectionId)) return true;
-        return collectionPermissionRepository.existsDeptReadPermissionForCollection(userId, collectionId);
+        if (collectionPermissionRepository.existsDeptReadPermissionForCollection(userId, collectionId)) return true;
+
+        // 부모 컬렉션 체인 상속 (ROLE/DEPARTMENT)
+        List<Long> ancestorIds = collectionRepository.findAncestorIdsInclusive(collectionId);
+        if (collectionPermissionRepository.existsRoleReadPermissionForCollections(userId, ancestorIds)) return true;
+        return collectionPermissionRepository.existsDeptReadPermissionForCollections(userId, ancestorIds);
     }
 
     // 컬렉션 쓰기 권한 판단 (소유자, USER/ROLE/DEPT 직접 권한)
@@ -307,7 +359,12 @@ public class PermissionQueryService {
         Long collectionId = collection.getId();
         if (collectionPermissionRepository.existsUserWritePermission(userId, collectionId)) return true;
         if (collectionPermissionRepository.existsRoleWritePermissionForCollection(userId, collectionId)) return true;
-        return collectionPermissionRepository.existsDeptWritePermissionForCollection(userId, collectionId);
+        if (collectionPermissionRepository.existsDeptWritePermissionForCollection(userId, collectionId)) return true;
+
+        // 부모 컬렉션 체인 상속 (ROLE/DEPARTMENT)
+        List<Long> ancestorIds = collectionRepository.findAncestorIdsInclusive(collectionId);
+        if (collectionPermissionRepository.existsRoleWritePermissionForCollections(userId, ancestorIds)) return true;
+        return collectionPermissionRepository.existsDeptWritePermissionForCollections(userId, ancestorIds);
     }
 
     // 컬렉션 관리 권한 판단 (소유자, USER/ROLE/DEPT 직접 권한)
@@ -321,7 +378,12 @@ public class PermissionQueryService {
         Long collectionId = collection.getId();
         if (collectionPermissionRepository.existsUserAdminPermission(userId, collectionId)) return true;
         if (collectionPermissionRepository.existsRoleAdminPermissionForCollection(userId, collectionId)) return true;
-        return collectionPermissionRepository.existsDeptAdminPermissionForCollection(userId, collectionId);
+        if (collectionPermissionRepository.existsDeptAdminPermissionForCollection(userId, collectionId)) return true;
+
+        // 부모 컬렉션 체인 상속 (ROLE/DEPARTMENT)
+        List<Long> ancestorIds = collectionRepository.findAncestorIdsInclusive(collectionId);
+        if (collectionPermissionRepository.existsRoleAdminPermissionForCollections(userId, ancestorIds)) return true;
+        return collectionPermissionRepository.existsDeptAdminPermissionForCollections(userId, ancestorIds);
     }
 
     // collectionId로 조회하되, status가 DELETED인 컬렉션은 필터링해서 제외한다 (없는 것으로 취급).

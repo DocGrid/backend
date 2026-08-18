@@ -10,6 +10,18 @@ import { groupSearchSources } from "../lib/search-sources";
 import { useRagAnswerSocket } from "../lib/useRagAnswerSocket";
 import { ErrorState, StatusPill } from "../components/ui";
 
+// 검색 범위 드롭다운에 읽기 가능한 컬렉션 전체를 보여주기 위해 100건씩 모든 페이지를 이어붙인다.
+async function loadAllCollections(): Promise<Collection[]> {
+  const all: Collection[] = [];
+  let page = 0;
+  for (;;) {
+    const result = await apiRequest<PageResponse<Collection>>(`/collections?page=${page}&size=100`);
+    all.push(...result.content);
+    if (result.last) return all;
+    page += 1;
+  }
+}
+
 const suggestions = ["배포 실패 시 롤백 절차", "법인카드 사용 기준", "보안 사고 보고 순서"];
 const SEARCH_TIMEOUT_MS = 29_000;
 // WebSocket push가 유실돼도(연결 끊김 등) 답변이 영원히 "생성 중"으로 멈춰 보이지 않도록 하는 안전망.
@@ -29,7 +41,7 @@ export function SearchPage() {
   const activeQueryIdRef = useRef<number | null>(null);
 
   useEffect(() => {
-    apiRequest<PageResponse<Collection>>("/collections?page=0&size=100").then((page) => setCollections(page.content)).catch(() => setCollections([]));
+    void loadAllCollections().then(setCollections).catch(() => setCollections([]));
   }, []);
 
   // AI 답변이 아직 생성 중일 때만 true — WebSocket과 폴백 폴링을 이때만 연다.

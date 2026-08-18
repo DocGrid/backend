@@ -130,7 +130,9 @@ class CollectionCommandServiceTest {
         collectionCommandService.createCollection(CollectionFixture.USER_ID, request);
 
         then(collectionRepository).should().findById(CollectionFixture.COLLECTION_ID);
-        then(collectionRepository).should().save(any(DocumentCollection.class));
+        ArgumentCaptor<DocumentCollection> captor = ArgumentCaptor.forClass(DocumentCollection.class);
+        then(collectionRepository).should().save(captor.capture());
+        assertThat(captor.getValue().getParentCollection()).isSameAs(parent);
     }
 
     @Test
@@ -278,8 +280,8 @@ class CollectionCommandServiceTest {
     void deleteCollection_cascades_to_descendants() {
         User owner = CollectionFixture.createOwner();
         DocumentCollection root = CollectionFixture.createCollection(owner);
-        DocumentCollection child = CollectionFixture.createCollection(owner);
         Long childId = 2L;
+        DocumentCollection child = CollectionFixture.createChildCollection(owner, root, childId);
         List<Long> targetIds = List.of(CollectionFixture.COLLECTION_ID, childId);
         CollectionDocument childMapping = CollectionDocument.builder()
                 .collection(child).document(CollectionFixture.createDocument(owner)).addedBy(owner)

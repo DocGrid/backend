@@ -73,6 +73,10 @@ public class CollectionPermissionCommandService {
         } else if (request.targetType() == PermissionTargetType.ROLE) {
             targetRole = roleRepository.findById(request.roleId())
                     .orElseThrow(() -> new DocGridException(ErrorCode.ROLE_NOT_FOUND));
+            // 모든 사용자가 기본으로 가진 USER role을 대상으로 지정하면 사실상 전체 공개가 되므로 차단한다.
+            if ("USER".equals(targetRole.getCode())) {
+                throw new DocGridException(ErrorCode.ROLE_NOT_GRANTABLE);
+            }
         } else {
             targetDepartment = departmentRepository.findById(request.departmentId())
                     .orElseThrow(() -> new DocGridException(ErrorCode.DEPARTMENT_NOT_FOUND));

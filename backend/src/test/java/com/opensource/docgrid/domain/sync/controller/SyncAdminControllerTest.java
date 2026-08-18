@@ -36,12 +36,14 @@ import com.opensource.docgrid.domain.sync.enums.SyncReconciliationMode;
 import com.opensource.docgrid.domain.sync.service.command.SyncAdminCommandService;
 import com.opensource.docgrid.domain.sync.service.query.SyncAdminQueryService;
 import com.opensource.docgrid.global.config.SecurityConfig;
+import com.opensource.docgrid.global.exception.RestAccessDeniedHandler;
+import com.opensource.docgrid.global.exception.RestAuthenticationEntryPoint;
 
 /**
  * Sync 관리자 조회·수동 Reconciliation API의 응답, Validation과 ADMIN 권한 경계를 검증한다.
  */
 @WebMvcTest(SyncAdminController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, RestAuthenticationEntryPoint.class, RestAccessDeniedHandler.class})
 @DisplayName("SyncAdminController 테스트")
 class SyncAdminControllerTest {
 
@@ -81,7 +83,7 @@ class SyncAdminControllerTest {
         mockMvc.perform(get("/admin/sync/summary").with(user("user").roles("USER")))
             .andExpect(status().isForbidden());
         mockMvc.perform(get("/admin/sync/summary"))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isUnauthorized());
     }
 
     @Test

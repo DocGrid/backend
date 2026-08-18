@@ -35,6 +35,8 @@ import com.opensource.docgrid.domain.user.service.command.UserRoleCommandService
 import com.opensource.docgrid.domain.user.service.query.AdminUserQueryService;
 import com.opensource.docgrid.global.common.response.PageResponse;
 import com.opensource.docgrid.global.config.SecurityConfig;
+import com.opensource.docgrid.global.exception.RestAccessDeniedHandler;
+import com.opensource.docgrid.global.exception.RestAuthenticationEntryPoint;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
@@ -42,7 +44,7 @@ import com.opensource.docgrid.global.exception.ErrorCode;
  * 관리자 사용자 목록 API의 필터·Pagination·민감 정보 비노출과 ADMIN Security 계약을 검증한다.
  */
 @WebMvcTest(AdminUserController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, RestAuthenticationEntryPoint.class, RestAccessDeniedHandler.class})
 @DisplayName("AdminUserController 테스트")
 class AdminUserControllerTest {
 
@@ -97,7 +99,7 @@ class AdminUserControllerTest {
     void getUsers_returnsForbidden_withoutAdminRole() throws Exception {
         mockMvc.perform(get(USERS_URL).with(user("user").roles("USER")))
                 .andExpect(status().isForbidden());
-        mockMvc.perform(get(USERS_URL)).andExpect(status().isForbidden());
+        mockMvc.perform(get(USERS_URL)).andExpect(status().isUnauthorized());
     }
 
     @Test

@@ -55,6 +55,8 @@ import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobManua
 import com.opensource.docgrid.domain.embedding.service.query.IndexingJobAdminQueryService;
 import com.opensource.docgrid.domain.worker.enums.AttemptStatus;
 import com.opensource.docgrid.global.config.SecurityConfig;
+import com.opensource.docgrid.global.exception.RestAccessDeniedHandler;
+import com.opensource.docgrid.global.exception.RestAuthenticationEntryPoint;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
@@ -66,7 +68,7 @@ import com.opensource.docgrid.global.exception.ErrorCode;
  * 실제 Service 실행 없이 Controller 경계에서 확인한다.
  */
 @WebMvcTest(IndexingJobAdminController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, RestAuthenticationEntryPoint.class, RestAccessDeniedHandler.class})
 @DisplayName("IndexingJobAdminController 테스트")
 class IndexingJobAdminControllerTest {
 
@@ -200,7 +202,7 @@ class IndexingJobAdminControllerTest {
     @DisplayName("미인증 사용자는 403으로 Job Claim이 거부된다")
     void claim_returnsForbidden_when_userIsNotAuthenticated() throws Exception {
         mockMvc.perform(post(CLAIM_URL).param("workerId", WORKER_ID.toString()))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -275,7 +277,7 @@ class IndexingJobAdminControllerTest {
         mockMvc.perform(post(RENEW_LEASE_URL)
                 .contentType("application/json")
                 .content(VALID_RENEW_LEASE_BODY))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -362,7 +364,7 @@ class IndexingJobAdminControllerTest {
         mockMvc.perform(post(ATTEMPT_URL)
                 .contentType("application/json")
                 .content(VALID_ATTEMPT_BODY))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -445,7 +447,7 @@ class IndexingJobAdminControllerTest {
         mockMvc.perform(post(CHUNKS_URL)
                 .contentType("application/json")
                 .content(VALID_ATTEMPT_BODY))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -534,7 +536,7 @@ class IndexingJobAdminControllerTest {
         mockMvc.perform(post(EMBEDDINGS_URL)
                 .contentType("application/json")
                 .content(VALID_ATTEMPT_BODY))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -611,7 +613,7 @@ class IndexingJobAdminControllerTest {
         mockMvc.perform(post(COMPLETE_URL)
                 .contentType("application/json")
                 .content(VALID_ATTEMPT_BODY))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -687,7 +689,7 @@ class IndexingJobAdminControllerTest {
         mockMvc.perform(post(FAIL_URL)
                 .contentType("application/json")
                 .content(VALID_FAILURE_BODY))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -745,7 +747,7 @@ class IndexingJobAdminControllerTest {
             .andExpect(status().isForbidden());
 
         mockMvc.perform(post(RETRY_URL))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isUnauthorized());
     }
 
     private static Stream<Arguments> manualRetryBusinessErrors() {

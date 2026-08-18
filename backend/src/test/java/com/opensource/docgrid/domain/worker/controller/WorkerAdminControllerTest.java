@@ -28,9 +28,11 @@ import com.opensource.docgrid.domain.auth.jwt.RoleAuthorityService;
 import com.opensource.docgrid.domain.auth.jwt.TokenBlacklistService;
 import com.opensource.docgrid.domain.mcp.service.command.McpAccessTokenCommandService;
 import com.opensource.docgrid.global.config.SecurityConfig;
+import com.opensource.docgrid.global.exception.RestAccessDeniedHandler;
+import com.opensource.docgrid.global.exception.RestAuthenticationEntryPoint;
 
 @WebMvcTest(WorkerAdminController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, RestAuthenticationEntryPoint.class, RestAccessDeniedHandler.class})
 @DisplayName("WorkerAdminController 테스트")
 class WorkerAdminControllerTest {
 
@@ -96,6 +98,6 @@ class WorkerAdminControllerTest {
     @DisplayName("인증되지 않은 사용자는 403으로 Worker 목록 조회가 거부된다")
     void getWorkers_returnsForbidden_when_userIsNotAuthenticated() throws Exception {
         mockMvc.perform(get(WORKERS_URL))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isUnauthorized());
     }
 }

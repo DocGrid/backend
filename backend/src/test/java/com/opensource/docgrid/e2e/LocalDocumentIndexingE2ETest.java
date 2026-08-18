@@ -141,8 +141,8 @@ class LocalDocumentIndexingE2ETest {
         assertIndexedInvariants(pdfUpload, true);
         assertIndexedInvariants(docxUpload, false);
 
-        // 5. 실제 단건 Query Embedding과 pgvector 코사인 검색에서 관련 PDF가 먼저 반환된다.
-        assertSemanticSearchRanksPdfFirst(pdfUpload, docxUpload);
+        // 5. 실제 단건 Query Embedding과 pgvector 코사인 검색이 질의별로 관련 문서만 반환한다.
+        assertSemanticSearchAppliesRelevanceGuardrail(pdfUpload, docxUpload);
 
         // 6. 같은 ADMIN JWT로 실제 관리자 조회와 OpenAPI 노출·민감정보 제거 계약을 검증한다.
         assertAdminHttpContracts(accessToken, pdfUpload);
@@ -240,37 +240,49 @@ class LocalDocumentIndexingE2ETest {
         );
     }
 
-    private void assertSemanticSearchRanksPdfFirst(
+    /**
+     * 질의와 관련된 문서만 검색되고, 관련 없는 문서는 최소 유사도에서 제외되는지 확인한다.
+     *
+     * <p>두 질의를 함께 검증한다. 한 질의만 보면 문서가 빠진 이유가 관련성 판정 때문인지
+     * 인덱싱 누락 때문인지 구분할 수 없기 때문이다.
+     */
+    private void assertSemanticSearchAppliesRelevanceGuardrail(
         UploadedDocument pdfUpload,
         UploadedDocument docxUpload
     ) {
-        float[] queryVector = embeddingClient.embed(
-            "How does pgvector HNSW improve cosine similarity search for embeddings?"
+        Long modelId = queryLong(
+            "SELECT id FROM embedding_models WHERE is_active = TRUE AND is_searchable = TRUE"
         );
+        List<Long> permittedIds = List.of(pdfUpload.documentId(), docxUpload.documentId());
+
+        // 1. pgvector 질의에는 관련 PDF만 남고 무관한 제빵 DOCX는 최소 유사도에서 제외된다.
+        List<VectorSearchCandidate> vectorQueryHits = searchByQuery(
+            "How does pgvector HNSW improve cosine similarity search for embeddings?",
+            modelId,
+            permittedIds
+        );
+        assertThat(vectorQueryHits).isNotEmpty();
+        assertThat(vectorQueryHits.get(0).documentId()).isEqualTo(pdfUpload.documentId());
+        assertThat(vectorQueryHits)
+            .allMatch(candidate -> candidate.documentId().equals(pdfUpload.documentId()));
+
+        // 2. 같은 DOCX도 관련 질의에는 검색된다. 1의 제외가 인덱싱 누락이 아니라 관련성 판정임을 확인한다.
+        List<VectorSearchCandidate> bakingQueryHits = searchByQuery(
+            "How is bread dough fermented with yeast before baking?",
+            modelId,
+            permittedIds
+        );
+        assertThat(bakingQueryHits).isNotEmpty();
+        assertThat(bakingQueryHits.get(0).documentId()).isEqualTo(docxUpload.documentId());
+    }
+
+    private List<VectorSearchCandidate> searchByQuery(String query, Long modelId, List<Long> permittedIds) {
+        float[] queryVector = embeddingClient.embed(query);
         assertThat(queryVector).hasSize(1024);
         for (float value : queryVector) {
             assertThat(Float.isFinite(value)).isTrue();
         }
-        Long modelId = queryLong(
-            "SELECT id FROM embedding_models WHERE is_active = TRUE AND is_searchable = TRUE"
-        );
-
-        List<VectorSearchCandidate> candidates = vectorSearchQueryService.search(
-            queryVector,
-            modelId,
-            List.of(pdfUpload.documentId(), docxUpload.documentId()),
-            10
-        );
-        assertThat(candidates).isNotEmpty();
-        assertThat(candidates.get(0).documentId()).isEqualTo(pdfUpload.documentId());
-        assertThat(candidates).anyMatch(candidate -> candidate.documentId().equals(docxUpload.documentId()));
-        assertThat(candidates.get(0).similarityScore()).isGreaterThan(
-            candidates.stream()
-                .filter(candidate -> candidate.documentId().equals(docxUpload.documentId()))
-                .findFirst()
-                .orElseThrow()
-                .similarityScore()
-        );
+        return vectorSearchQueryService.search(queryVector, modelId, permittedIds, 10);
     }
 
     private void assertAdminHttpContracts(String accessToken, UploadedDocument upload) {

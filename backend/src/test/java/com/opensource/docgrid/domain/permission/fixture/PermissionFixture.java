@@ -20,17 +20,29 @@ public class PermissionFixture {
 
     public static final Long PERMISSION_ID = 30L;
     public static final Long ROLE_ID = 2L;
+    public static final Long USER_ROLE_ID = 1L;
     public static final Long DEPARTMENT_ID = 3L;
 
     private PermissionFixture() {
     }
 
+    // 권한 부여 대상으로 쓸 수 있는 role (ADMIN) — USER role은 전원이 보유해 권한 부여 대상이 될 수 없다.
     public static Role createRole() {
+        Role role = Role.builder()
+                .code("ADMIN")
+                .name("관리자")
+                .build();
+        ReflectionTestUtils.setField(role, "id", ROLE_ID);
+        return role;
+    }
+
+    // 권한 부여 거부 케이스 검증용 — 모든 사용자가 기본으로 가진 USER role
+    public static Role createUserRole() {
         Role role = Role.builder()
                 .code("USER")
                 .name("일반 사용자")
                 .build();
-        ReflectionTestUtils.setField(role, "id", ROLE_ID);
+        ReflectionTestUtils.setField(role, "id", USER_ROLE_ID);
         return role;
     }
 

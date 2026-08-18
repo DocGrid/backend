@@ -22,8 +22,15 @@ import com.opensource.docgrid.domain.document.enums.DocumentSourceType;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
 import com.opensource.docgrid.domain.document.enums.DocumentType;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
+import com.opensource.docgrid.domain.permission.entity.CollectionPermission;
+import com.opensource.docgrid.domain.permission.enums.PermissionTargetType;
+import com.opensource.docgrid.domain.permission.enums.PermissionType;
+import com.opensource.docgrid.domain.permission.repository.CollectionPermissionRepository;
+import com.opensource.docgrid.domain.user.entity.Department;
 import com.opensource.docgrid.domain.user.entity.User;
+import com.opensource.docgrid.domain.user.enums.CommonStatus;
 import com.opensource.docgrid.domain.user.enums.UserStatus;
+import com.opensource.docgrid.domain.user.repository.DepartmentRepository;
 import com.opensource.docgrid.domain.user.repository.UserRepository;
 
 import jakarta.persistence.EntityManager;
@@ -43,7 +50,9 @@ class DocumentReadableIdsRepositoryTest {
     @Autowired private DocumentRepository documentRepository;
     @Autowired private CollectionRepository collectionRepository;
     @Autowired private CollectionDocumentRepository collectionDocumentRepository;
+    @Autowired private CollectionPermissionRepository collectionPermissionRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private DepartmentRepository departmentRepository;
     @Autowired private EntityManager entityManager;
 
     // seed 데이터에 PUBLIC·INDEXED 문서가 있어 모든 사용자에게 조회되므로, 이 테스트가 만든 문서만 검증한다.
@@ -94,7 +103,7 @@ class DocumentReadableIdsRepositoryTest {
         User owner = saveOwner();
         Document indexed = saveDocument(owner, DocumentStatus.INDEXED);
         Document indexing = saveDocument(owner, DocumentStatus.INDEXING);
-        DocumentCollection collection = saveCollection(owner);
+        DocumentCollection collection = saveCollection(owner, null);
         addToCollection(collection, indexed, owner);
         addToCollection(collection, indexing, owner);
         flushAndClear();
@@ -108,6 +117,85 @@ class DocumentReadableIdsRepositoryTest {
 
         assertThat(indexedOnly).containsExactly(indexed.getId());
         assertThat(withIndexing).containsExactlyInAnyOrder(indexed.getId(), indexing.getId());
+    }
+
+    @Test
+    @DisplayName("부모 컬렉션에 DEPARTMENT 권한이 있으면 자식 컬렉션의 문서도 목록과 컬렉션 조회에서 함께 조회된다 (상속)")
+    void findReadableDocumentIds_includesDocumentInChildCollection_whenParentHasDepartmentPermission() {
+        Department department = saveDepartment();
+        User owner = saveOwner();
+        User deptMember = saveUserInDepartment(department);
+        Document document = saveDocument(owner, DocumentStatus.INDEXED);
+
+        DocumentCollection parent = saveCollection(owner, null);
+        DocumentCollection child = saveCollection(owner, parent);
+        addToCollection(child, document, owner);
+        grantDepartmentReadPermission(parent, department, owner);
+        flushAndClear();
+
+        List<Long> readableIds = documentRepository.findReadableDocumentIds(deptMember.getId(), INDEXED_ONLY);
+        List<Long> readableIdsInChildCollection = documentRepository.findReadableDocumentIdsInCollection(
+                deptMember.getId(), child.getId(), INDEXED_ONLY
+        );
+
+        assertThat(readableIds).contains(document.getId());
+        assertThat(readableIdsInChildCollection).containsExactly(document.getId());
+    }
+
+    @Test
+    @DisplayName("컬렉션에 직접 부여된 권한만 있으면(부모 없음) 기존과 동일하게 조회된다 (회귀)")
+    void findReadableDocumentIds_includesDocument_whenDirectDepartmentPermission_noParent() {
+        Department department = saveDepartment();
+        User owner = saveOwner();
+        User deptMember = saveUserInDepartment(department);
+        Document document = saveDocument(owner, DocumentStatus.INDEXED);
+
+        DocumentCollection collection = saveCollection(owner, null);
+        addToCollection(collection, document, owner);
+        grantDepartmentReadPermission(collection, department, owner);
+        flushAndClear();
+
+        List<Long> readableIds = documentRepository.findReadableDocumentIds(deptMember.getId(), INDEXED_ONLY);
+
+        assertThat(readableIds).contains(document.getId());
+    }
+
+    private Department saveDepartment() {
+        return departmentRepository.save(
+            Department.builder()
+                .name("읽기 가능 문서 테스트 부서")
+                .code("RID-DEPT-" + UUID.randomUUID())
+                .status(CommonStatus.ACTIVE)
+                .build()
+        );
+    }
+
+    private User saveUserInDepartment(Department department) {
+        return userRepository.save(
+            User.builder()
+                .department(department)
+                .email("readable-ids-dept-" + UUID.randomUUID() + "@test.com")
+                .passwordHash("hash")
+                .name("읽기 가능 문서 테스트 부서원")
+                .status(UserStatus.ACTIVE)
+                .build()
+        );
+    }
+
+    private void grantDepartmentReadPermission(DocumentCollection collection, Department department, User grantedBy) {
+        collectionPermissionRepository.save(
+            CollectionPermission.builder()
+                .collection(collection)
+                .targetType(PermissionTargetType.DEPARTMENT)
+                .department(department)
+                .permissionType(PermissionType.READ)
+                .canRead(true)
+                .canWrite(false)
+                .canAdmin(false)
+                .grantedBy(grantedBy)
+                .grantedAt(LocalDateTime.now())
+                .build()
+        );
     }
 
     private User saveOwner() {
@@ -134,10 +222,11 @@ class DocumentReadableIdsRepositoryTest {
         );
     }
 
-    private DocumentCollection saveCollection(User owner) {
+    private DocumentCollection saveCollection(User owner, DocumentCollection parent) {
         return collectionRepository.save(
             DocumentCollection.builder()
                 .owner(owner)
+                .parentCollection(parent)
                 .name("읽기 가능 문서 테스트 컬렉션")
                 .visibility(VisibilityType.PRIVATE)
                 .build()

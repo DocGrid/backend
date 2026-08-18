@@ -111,6 +111,98 @@ class CollectionQueryServiceTest {
     }
 
     @Test
+    @DisplayName("읽을 수 있는 컬렉션이 없으면 빈 페이지를 반환한다")
+    void getCollections_returnsEmptyPage_whenNoReadableCollection() {
+        given(collectionRepository.findReadableCollectionIds(CollectionFixture.USER_ID, null)).willReturn(List.of());
+
+        PageResponse<CollectionResponse> result = collectionQueryService.getCollections(CollectionFixture.USER_ID, null, 0, 20);
+
+        assertThat(result.content()).isEmpty();
+        assertThat(result.totalElements()).isZero();
+        then(collectionRepository).should(never()).findAllByIdIn(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("읽을 수 있는 컬렉션 ID로 페이지를 조회해서 응답으로 변환한다")
+    void getCollections_returnsPagedResponses() {
+        DocumentCollection collection = CollectionFixture.createCollection();
+        CollectionResponse expected = CollectionFixture.createCollectionResponse();
+        List<Long> readableIds = List.of(collection.getId());
+        given(collectionRepository.findReadableCollectionIds(CollectionFixture.USER_ID, null)).willReturn(readableIds);
+        given(collectionRepository.findAllByIdIn(org.mockito.ArgumentMatchers.eq(readableIds), org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .willReturn(new PageImpl<>(List.of(collection), PageRequest.of(0, 20), 1));
+        given(collectionConverter.toResponse(collection)).willReturn(expected);
+
+        PageResponse<CollectionResponse> result = collectionQueryService.getCollections(CollectionFixture.USER_ID, null, 0, 20);
+
+        assertThat(result.content()).containsExactly(expected);
+        assertThat(result.totalElements()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("keyword를 그대로 repository에 전달한다")
+    void getCollections_passesKeywordToRepository() {
+        given(collectionRepository.findReadableCollectionIds(CollectionFixture.USER_ID, "개발")).willReturn(List.of());
+
+        collectionQueryService.getCollections(CollectionFixture.USER_ID, "개발", 0, 20);
+
+        then(collectionRepository).should().findReadableCollectionIds(CollectionFixture.USER_ID, "개발");
+    }
+
+    @Test
+    @DisplayName("부모 읽기 권한이 있으면 자식 컬렉션 목록을 반환한다")
+    void getChildren_returnsResponses_when_parentIsReadable() {
+        DocumentCollection parent = CollectionFixture.createCollection();
+        DocumentCollection child = CollectionFixture.createChildCollection(parent.getOwner(), parent, 2L);
+        CollectionResponse expected = CollectionFixture.createCollectionResponse();
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(parent));
+        given(permissionQueryService.canReadCollection(CollectionFixture.USER_ID, parent)).willReturn(true);
+        given(collectionRepository.findAllByParentCollectionIdAndStatus(CollectionFixture.COLLECTION_ID, CollectionStatus.ACTIVE))
+                .willReturn(List.of(child));
+        given(permissionQueryService.canReadCollection(CollectionFixture.USER_ID, child)).willReturn(true);
+        given(collectionConverter.toResponse(child)).willReturn(expected);
+
+        List<CollectionResponse> result = collectionQueryService.getChildren(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).containsExactly(expected);
+    }
+
+    @Test
+    @DisplayName("부모 읽기 권한이 없으면 PERMISSION_DENIED 예외가 발생한다")
+    void getChildren_throws_when_parentReadIsDenied() {
+        DocumentCollection parent = CollectionFixture.createCollection();
+        Long otherUserId = 99L;
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(parent));
+        given(permissionQueryService.canReadCollection(otherUserId, parent)).willReturn(false);
+
+        assertThatThrownBy(() -> collectionQueryService.getChildren(otherUserId, CollectionFixture.COLLECTION_ID))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PERMISSION_DENIED);
+        then(collectionRepository).should(never()).findAllByParentCollectionIdAndStatus(
+                org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("부모는 읽을 수 있어도 자식은 개별 읽기 권한이 없으면 목록에서 제외된다")
+    void getChildren_excludesChild_when_childReadIsDenied() {
+        DocumentCollection parent = CollectionFixture.createCollection();
+        DocumentCollection readableChild = CollectionFixture.createChildCollection(parent.getOwner(), parent, 2L);
+        DocumentCollection deniedChild = CollectionFixture.createChildCollection(parent.getOwner(), parent, 3L);
+        CollectionResponse expected = CollectionFixture.createCollectionResponse();
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(parent));
+        given(permissionQueryService.canReadCollection(CollectionFixture.USER_ID, parent)).willReturn(true);
+        given(collectionRepository.findAllByParentCollectionIdAndStatus(CollectionFixture.COLLECTION_ID, CollectionStatus.ACTIVE))
+                .willReturn(List.of(readableChild, deniedChild));
+        given(permissionQueryService.canReadCollection(CollectionFixture.USER_ID, readableChild)).willReturn(true);
+        given(permissionQueryService.canReadCollection(CollectionFixture.USER_ID, deniedChild)).willReturn(false);
+        given(collectionConverter.toResponse(readableChild)).willReturn(expected);
+
+        List<CollectionResponse> result = collectionQueryService.getChildren(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).containsExactly(expected);
+    }
+
+    @Test
     @DisplayName("컬렉션 문서 목록은 읽기 가능한 문서만 최신 추가순으로 페이지 반환한다")
     void getCollectionDocuments_returnsOnlyReadableDocuments() {
         DocumentCollection collection = CollectionFixture.createCollection();

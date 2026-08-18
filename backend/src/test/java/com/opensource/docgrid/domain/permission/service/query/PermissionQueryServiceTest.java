@@ -132,6 +132,27 @@ class PermissionQueryServiceTest {
     }
 
     @Test
+    @DisplayName("부모 컬렉션에만 ROLE/DEPARTMENT 권한이 있어도 canReadDocument가 true다 (상속)")
+    void canReadDocument_inheritedFromParentCollection_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        List<Long> effectiveCollectionIds = List.of(1L, 2L);
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(cacheRepository.existsValidReadCache(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsRoleReadPermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(collectionPermissionRepository.existsRoleReadPermissionForDocument(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsDeptReadPermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(collectionPermissionRepository.existsDeptReadPermissionForDocument(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(collectionRepository.findEffectiveCollectionIdsForDocument(CollectionFixture.DOCUMENT_ID)).willReturn(effectiveCollectionIds);
+        given(collectionPermissionRepository.existsDeptReadPermissionForCollections(otherUserId, effectiveCollectionIds)).willReturn(true);
+
+        boolean result = service.canReadDocument(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
     @DisplayName("모든 단계를 통과하지 못하면 canReadDocument가 false다")
     void canReadDocument_noPermission_returnsFalse() {
         User owner = CollectionFixture.createOwner();
@@ -223,6 +244,27 @@ class PermissionQueryServiceTest {
     }
 
     @Test
+    @DisplayName("부모 컬렉션에만 ROLE/DEPARTMENT 권한이 있어도 canWriteDocument가 true다 (상속)")
+    void canWriteDocument_inheritedFromParentCollection_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        List<Long> effectiveCollectionIds = List.of(1L, 2L);
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(cacheRepository.existsValidWriteCache(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsRoleWritePermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(collectionPermissionRepository.existsRoleWritePermissionForDocument(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsDeptWritePermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(collectionPermissionRepository.existsDeptWritePermissionForDocument(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(collectionRepository.findEffectiveCollectionIdsForDocument(CollectionFixture.DOCUMENT_ID)).willReturn(effectiveCollectionIds);
+        given(collectionPermissionRepository.existsDeptWritePermissionForCollections(otherUserId, effectiveCollectionIds)).willReturn(true);
+
+        boolean result = service.canWriteDocument(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
     @DisplayName("모든 단계를 통과하지 못하면 canWriteDocument가 false다")
     void canWriteDocument_noPermission_returnsFalse() {
         User owner = CollectionFixture.createOwner();
@@ -297,6 +339,27 @@ class PermissionQueryServiceTest {
         given(documentPermissionRepository.existsRoleAdminPermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
         given(collectionPermissionRepository.existsRoleAdminPermissionForDocument(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
         given(documentPermissionRepository.existsDeptAdminPermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+
+        boolean result = service.canAdminDocument(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    @DisplayName("부모 컬렉션에만 ROLE/DEPARTMENT 권한이 있어도 canAdminDocument가 true다 (상속)")
+    void canAdminDocument_inheritedFromParentCollection_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        List<Long> effectiveCollectionIds = List.of(1L, 2L);
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(cacheRepository.existsValidAdminCache(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsRoleAdminPermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(collectionPermissionRepository.existsRoleAdminPermissionForDocument(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(documentPermissionRepository.existsDeptAdminPermission(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(collectionPermissionRepository.existsDeptAdminPermissionForDocument(otherUserId, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(collectionRepository.findEffectiveCollectionIdsForDocument(CollectionFixture.DOCUMENT_ID)).willReturn(effectiveCollectionIds);
+        given(collectionPermissionRepository.existsDeptAdminPermissionForCollections(otherUserId, effectiveCollectionIds)).willReturn(true);
 
         boolean result = service.canAdminDocument(otherUserId, CollectionFixture.DOCUMENT_ID);
 
@@ -396,6 +459,29 @@ class PermissionQueryServiceTest {
                 .willReturn(false);
         given(collectionPermissionRepository.existsDeptReadPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
                 .willReturn(true);
+
+        boolean result = service.canReadCollection(otherUserId, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    @DisplayName("조상 컬렉션에만 DEPARTMENT 권한이 있어도 canReadCollection이 true다 (상속)")
+    void canReadCollection_inheritedFromAncestor_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Long otherUserId = 99L;
+        List<Long> ancestorIds = List.of(CollectionFixture.COLLECTION_ID, 1L);
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
+                .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
+        given(collectionPermissionRepository.existsUserReadPermission(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsRoleReadPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsDeptReadPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionRepository.findAncestorIdsInclusive(CollectionFixture.COLLECTION_ID)).willReturn(ancestorIds);
+        given(collectionPermissionRepository.existsRoleReadPermissionForCollections(otherUserId, ancestorIds)).willReturn(false);
+        given(collectionPermissionRepository.existsDeptReadPermissionForCollections(otherUserId, ancestorIds)).willReturn(true);
 
         boolean result = service.canReadCollection(otherUserId, CollectionFixture.COLLECTION_ID);
 
@@ -523,6 +609,29 @@ class PermissionQueryServiceTest {
     }
 
     @Test
+    @DisplayName("조상 컬렉션에만 DEPARTMENT 권한이 있어도 canWriteCollection이 true다 (상속)")
+    void canWriteCollection_inheritedFromAncestor_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Long otherUserId = 99L;
+        List<Long> ancestorIds = List.of(CollectionFixture.COLLECTION_ID, 1L);
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
+                .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
+        given(collectionPermissionRepository.existsUserWritePermission(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsRoleWritePermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsDeptWritePermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionRepository.findAncestorIdsInclusive(CollectionFixture.COLLECTION_ID)).willReturn(ancestorIds);
+        given(collectionPermissionRepository.existsRoleWritePermissionForCollections(otherUserId, ancestorIds)).willReturn(false);
+        given(collectionPermissionRepository.existsDeptWritePermissionForCollections(otherUserId, ancestorIds)).willReturn(true);
+
+        boolean result = service.canWriteCollection(otherUserId, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
     @DisplayName("권한이 없으면 canWriteCollection이 false다")
     void canWriteCollection_noPermission_returnsFalse() {
         User owner = CollectionFixture.createOwner();
@@ -627,6 +736,24 @@ class PermissionQueryServiceTest {
                 service.checkDocumentPermission(otherUserId, CollectionFixture.DOCUMENT_ID);
 
         assertThat(result.canWrite()).isTrue();
+        assertThat(result.sources()).containsExactly(PermissionSourceType.DEPARTMENT);
+    }
+
+    @Test
+    @DisplayName("부모 컬렉션에만 DEPARTMENT 권한이 있어도 canRead가 true이고 sources에 DEPARTMENT가 포함된다 (상속)")
+    void checkDocumentPermission_inheritedFromParentCollection_returnsReadTrueWithDeptSource() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        Long otherUserId = 99L;
+        List<Long> effectiveCollectionIds = List.of(1L, 2L);
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(collectionRepository.findEffectiveCollectionIdsForDocument(CollectionFixture.DOCUMENT_ID)).willReturn(effectiveCollectionIds);
+        given(collectionPermissionRepository.existsDeptReadPermissionForCollections(otherUserId, effectiveCollectionIds)).willReturn(true);
+
+        DocumentPermissionSummaryResponse result =
+                service.checkDocumentPermission(otherUserId, CollectionFixture.DOCUMENT_ID);
+
+        assertThat(result.canRead()).isTrue();
         assertThat(result.sources()).containsExactly(PermissionSourceType.DEPARTMENT);
     }
 
@@ -737,6 +864,29 @@ class PermissionQueryServiceTest {
                 .willReturn(false);
         given(collectionPermissionRepository.existsDeptAdminPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
                 .willReturn(true);
+
+        boolean result = service.canAdminCollection(otherUserId, CollectionFixture.COLLECTION_ID);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    @DisplayName("조상 컬렉션에만 DEPARTMENT 권한이 있어도 canAdminCollection이 true다 (상속)")
+    void canAdminCollection_inheritedFromAncestor_returnsTrue() {
+        User owner = CollectionFixture.createOwner();
+        Long otherUserId = 99L;
+        List<Long> ancestorIds = List.of(CollectionFixture.COLLECTION_ID, 1L);
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID))
+                .willReturn(Optional.of(CollectionFixture.createCollection(owner)));
+        given(collectionPermissionRepository.existsUserAdminPermission(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsRoleAdminPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionPermissionRepository.existsDeptAdminPermissionForCollection(otherUserId, CollectionFixture.COLLECTION_ID))
+                .willReturn(false);
+        given(collectionRepository.findAncestorIdsInclusive(CollectionFixture.COLLECTION_ID)).willReturn(ancestorIds);
+        given(collectionPermissionRepository.existsRoleAdminPermissionForCollections(otherUserId, ancestorIds)).willReturn(false);
+        given(collectionPermissionRepository.existsDeptAdminPermissionForCollections(otherUserId, ancestorIds)).willReturn(true);
 
         boolean result = service.canAdminCollection(otherUserId, CollectionFixture.COLLECTION_ID);
 

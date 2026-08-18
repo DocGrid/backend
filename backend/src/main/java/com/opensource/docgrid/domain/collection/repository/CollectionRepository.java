@@ -84,6 +84,59 @@ public interface CollectionRepository extends JpaRepository<DocumentCollection, 
             @Param("offset") long offset);
 
     /**
+     * findReadableCollections()가 요청한 offset이 실제 결과 범위를 넘어가 0건을 반환했을 때만
+     * 호출한다 — COUNT(*) OVER()는 반환된 행에만 얹혀 계산되므로, 행이 0개면 전체 개수 자체를
+     * 알 수 없다(빈 페이지인지, 정말 0건인지 구분이 안 됨). readable CTE는 findReadableCollections
+     * 와 동일한 조건을 그대로 유지해야 두 쿼리의 판정 결과가 어긋나지 않는다.
+     */
+    @Query(value = """
+            WITH RECURSIVE collection_ancestors AS (
+                SELECT id AS collection_id, id AS ancestor_id FROM collections
+                UNION ALL
+                SELECT ca.collection_id, c.parent_collection_id AS ancestor_id
+                FROM collection_ancestors ca
+                JOIN collections c ON c.id = ca.ancestor_id
+                WHERE c.parent_collection_id IS NOT NULL
+            ),
+            readable AS (
+                SELECT c.id FROM collections c
+                WHERE c.owner_user_id = :userId AND c.status = 'ACTIVE'
+                  AND (:keyword IS NULL OR c.name ILIKE CONCAT('%', :keyword, '%') OR c.description ILIKE CONCAT('%', :keyword, '%'))
+                UNION
+                SELECT c.id FROM collections c
+                WHERE c.visibility = 'PUBLIC' AND c.status = 'ACTIVE'
+                  AND (:keyword IS NULL OR c.name ILIKE CONCAT('%', :keyword, '%') OR c.description ILIKE CONCAT('%', :keyword, '%'))
+                UNION
+                SELECT c.id FROM collections c
+                  JOIN collection_permissions cp ON cp.collection_id = c.id
+                WHERE cp.target_type = 'USER' AND cp.user_id = :userId AND cp.can_read = true
+                  AND (cp.expires_at IS NULL OR cp.expires_at > NOW())
+                  AND c.status = 'ACTIVE'
+                  AND (:keyword IS NULL OR c.name ILIKE CONCAT('%', :keyword, '%') OR c.description ILIKE CONCAT('%', :keyword, '%'))
+                UNION
+                SELECT c.id FROM collections c
+                  JOIN collection_ancestors ca ON ca.collection_id = c.id
+                  JOIN collection_permissions cp ON cp.collection_id = ca.ancestor_id
+                  JOIN user_roles ur ON ur.role_id = cp.role_id
+                WHERE cp.target_type = 'ROLE' AND ur.user_id = :userId AND cp.can_read = true
+                  AND (cp.expires_at IS NULL OR cp.expires_at > NOW())
+                  AND c.status = 'ACTIVE'
+                  AND (:keyword IS NULL OR c.name ILIKE CONCAT('%', :keyword, '%') OR c.description ILIKE CONCAT('%', :keyword, '%'))
+                UNION
+                SELECT c.id FROM collections c
+                  JOIN collection_ancestors ca ON ca.collection_id = c.id
+                  JOIN collection_permissions cp ON cp.collection_id = ca.ancestor_id
+                  JOIN users u ON u.department_id = cp.department_id
+                WHERE cp.target_type = 'DEPARTMENT' AND u.id = :userId AND cp.can_read = true
+                  AND (cp.expires_at IS NULL OR cp.expires_at > NOW())
+                  AND c.status = 'ACTIVE'
+                  AND (:keyword IS NULL OR c.name ILIKE CONCAT('%', :keyword, '%') OR c.description ILIKE CONCAT('%', :keyword, '%'))
+            )
+            SELECT COUNT(*) FROM readable
+            """, nativeQuery = true)
+    long countReadableCollections(@Param("userId") Long userId, @Param("keyword") String keyword);
+
+    /**
      * 직계 자식 중 사용자가 읽을 수 있는 것만 조회 (GET /collections/{id}/children).
      * 부모(및 그 위 조상들)로부터 상속받는 ROLE/DEPARTMENT 권한은 모든 자식이 공유하는 값이라
      * parent_ancestors 서브쿼리로 한 번만 계산한다 — 자식마다 다시 계산하지 않는다.

@@ -72,14 +72,21 @@ public class CollectionQueryService {
      * 두 번 계산되는 걸 피하기 위함이다.
      */
     public PageResponse<CollectionResponse> getCollections(Long userId, String keyword, int page, int size) {
+        // 1. 페이지 요청 파라미터 정리
         Pageable pageable = PageRequest.of(page, size, COLLECTION_SORT);
 
-        // 컬렉션 목록과 전체 개수를 한 번에 조회 (CollectionRow 프로젝션)
+        // 2. 컬렉션 목록과 전체 개수를 한 번에 조회 (CollectionRow 프로젝션, COUNT(*) OVER())
         List<CollectionRow> rows = collectionRepository.findReadableCollections(
                 userId, keyword, pageable.getPageSize(), pageable.getOffset());
 
-        long totalElements = rows.isEmpty() ? 0 : rows.get(0).getTotalCount();
+        // 3. 전체 개수 추출 — 요청한 offset이 실제 결과 범위를 넘어가 0건이 반환되면
+        // COUNT(*) OVER()가 아무 행에도 안 얹혀서 전체 개수를 알 수 없다. 이때만 별도로
+        // count 쿼리를 한 번 더 불러 "빈 페이지"와 "정말 0건"을 구분한다.
+        long totalElements = rows.isEmpty()
+                ? collectionRepository.countReadableCollections(userId, keyword)
+                : rows.get(0).getTotalCount();
 
+        // 4. DTO 변환 및 페이지 응답 조립
         List<CollectionResponse> content = rows.stream()
                 .map(collectionConverter::toResponse)
                 .toList();

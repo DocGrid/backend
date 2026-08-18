@@ -3,7 +3,7 @@
 // vinext production navigation uses full requests because its client router does not complete these catch-all route transitions.
 /* eslint-disable @next/next/no-html-link-for-pages */
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest, errorMessage, toQuery } from "../lib/api";
 import type { Collection, CollectionDocument, DocumentSummary, PageResponse } from "../lib/api-types";
 import { EmptyState, ErrorState, LoadingState, PageHeading, StatusPill, formatDate } from "../components/ui";
@@ -18,13 +18,23 @@ export function CollectionsPage({ notify }: { notify: (message: string) => void 
   const [modalOpen, setModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // 검색어/페이지를 빠르게 바꾸면 먼저 보낸 요청이 나중에 도착해 최신 화면을 덮어쓸 수 있어, 가장 최근 호출의 결과만 반영한다.
+  const loadSeqRef = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setError("");
-    try { setCollections(await apiRequest<PageResponse<Collection>>(`/collections${toQuery({ keyword, page, size: 20 })}`)); }
-    catch (reason) { setError(errorMessage(reason)); }
-    finally { setLoading(false); }
+    try {
+      const result = await apiRequest<PageResponse<Collection>>(`/collections${toQuery({ keyword, page, size: 20 })}`);
+      if (seq !== loadSeqRef.current) return;
+      setCollections(result);
+    } catch (reason) {
+      if (seq !== loadSeqRef.current) return;
+      setError(errorMessage(reason));
+    } finally {
+      if (seq === loadSeqRef.current) setLoading(false);
+    }
   }, [keyword, page]);
 
   function search(event: FormEvent<HTMLFormElement>) {
@@ -86,8 +96,11 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // collectionId/page가 빠르게 바뀌면 먼저 보낸 요청이 나중에 도착해 최신 화면을 덮어쓸 수 있어, 가장 최근 호출의 결과만 반영한다.
+  const loadSeqRef = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setError("");
     try {
@@ -98,12 +111,17 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
         apiRequest<PageResponse<DocumentSummary>>("/api/documents?page=0&size=100"),
         apiRequest<PageResponse<CollectionDocument>>(`/collections/${collectionId}/documents?page=${page}&size=20`),
       ]);
+      if (seq !== loadSeqRef.current) return;
       setCollection(detail);
       setChildren(childList);
       setAvailableDocuments(documentPage.content);
       setCollectionDocuments(memberPage);
-    } catch (reason) { setError(errorMessage(reason)); }
-    finally { setLoading(false); }
+    } catch (reason) {
+      if (seq !== loadSeqRef.current) return;
+      setError(errorMessage(reason));
+    } finally {
+      if (seq === loadSeqRef.current) setLoading(false);
+    }
   }, [collectionId, page]);
 
   useEffect(() => {
@@ -127,9 +145,9 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
   }
 
   async function removeCollection() {
-    const warning = children.length
-      ? "이 컬렉션을 삭제할까요? 하위 컬렉션과 그 안의 문서도 전부 함께 삭제됩니다. 복구 API는 제공되지 않습니다."
-      : "이 컬렉션을 삭제할까요? 복구 API는 제공되지 않습니다.";
+    // children은 현재 사용자가 읽을 수 있는 직계 자식만 담고 있어 실제 하위 컬렉션 존재 여부의 기준이 될 수 없다
+    // (읽기 권한이 없는 후손도 삭제 시엔 함께 cascade 삭제되므로 항상 경고한다).
+    const warning = "이 컬렉션을 삭제할까요? 하위 컬렉션과 그 안의 문서도 전부 함께 삭제됩니다. 복구 API는 제공되지 않습니다.";
     if (!window.confirm(warning)) return;
     setBusy(true);
     try {

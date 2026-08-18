@@ -36,7 +36,7 @@ DEPT 권한  → 매 요청마다 live 조회 (JOIN 여러 번)
 
 이 이슈의 핵심 파일이며, 6개의 권한 판정 그룹(`canReadDocument`/`canWriteDocument`/`canAdminDocument`/`canReadCollection`/`canWriteCollection`/`canAdminCollection`, `canReadCollection`은 이후 리팩토링에서 추가됨 — 아래 참고)을 제공한다. 컬렉션 대상 3종은 각각 ID로 조회하는 버전과, 이미 조회된 `DocumentCollection` 엔티티를 받는 버전 2개씩 오버로드로 제공해서 — 문서 3종(오버로드 없음) + 컬렉션 3종(오버로드 2개씩)으로 공개 메서드 시그니처는 총 9개다. 호출부가 이미 엔티티를 들고 있으면 중복 조회 없이 엔티티 버전을 바로 쓸 수 있다.
 
-#### `canReadDocument` (5단계)
+#### `canReadDocument` (5단계 → **2026-08-18부터 6단계**, 아래 참고)
 
 ```java
 public boolean canReadDocument(Long userId, Long documentId) {
@@ -72,9 +72,21 @@ public boolean canReadDocument(Long userId, Long documentId) {
 
 **4/5단계가 매번 OR로 문서 직접 권한과 컬렉션 경유 권한을 같이 조회하는 이유**: 기본 권한은 컬렉션 단위(`#16`)로 부여되므로, "이 문서가 속한 컬렉션에 ROLE 권한이 있는지"도 확인해야 한다. `collectionPermissionRepository.existsRoleReadPermissionForDocument()`가 `CollectionPermission JOIN CollectionDocument`로 이걸 처리한다(아래 리포지토리 절 참고).
 
-#### `canWriteDocument` / `canAdminDocument` (각 4단계)
+**(2026-08-18 추가, 이슈 #229) 6단계: 부모 컬렉션 체인 상속**. 5단계까지 통과 못 하면, 이 문서가 속한 컬렉션(들)의 **조상 컬렉션**에 ROLE/DEPARTMENT 권한이 있는지까지 확인한다:
+```java
+// 6단계: 부모 컬렉션 체인 상속 (ROLE/DEPARTMENT)
+List<Long> effectiveCollectionIds = collectionRepository.findEffectiveCollectionIdsForDocument(documentId);
+if (!effectiveCollectionIds.isEmpty()
+        && (collectionPermissionRepository.existsRoleReadPermissionForCollections(userId, effectiveCollectionIds)
+                || collectionPermissionRepository.existsDeptReadPermissionForCollections(userId, effectiveCollectionIds))) {
+    return true;
+}
+```
+`findEffectiveCollectionIdsForDocument()`는 `WITH RECURSIVE`로 "이 문서가 속한 컬렉션 전체(N:M) + 그 각각의 조상 전체"를 한 번에 구하는 native 쿼리다. 상세 설계는 `docs/design/kangcheolung-#229-collection-tree.md` 참고. `canWriteDocument`/`canAdminDocument`/`checkDocumentPermission`(`#24`)에도 동일하게 6단계가 추가됐다 — 기존 5단계 로직은 한 줄도 안 건드리고 끝에 새 블록만 이어붙이는 방식으로 넣었다(기존 `PermissionQueryServiceTest` 무변경 통과 확인됨).
 
-`canReadDocument`와 거의 같은 구조이지만 **PUBLIC 단계가 없다** — PUBLIC은 읽기만 허용하는 개념이라 쓰기/관리 권한 판단에는 끼어들 자리가 없다. 그래서 1단계(소유자) → 2단계(USER 캐시) → 3단계(ROLE) → 4단계(DEPT), 총 4단계다.
+#### `canWriteDocument` / `canAdminDocument` (각 4단계 → **2026-08-18부터 5단계**)
+
+`canReadDocument`와 거의 같은 구조이지만 **PUBLIC 단계가 없다** — PUBLIC은 읽기만 허용하는 개념이라 쓰기/관리 권한 판단에는 끼어들 자리가 없다. 그래서 1단계(소유자) → 2단계(USER 캐시) → 3단계(ROLE) → 4단계(DEPT), 총 4단계였다. 여기에도 위와 동일한 "5단계: 부모 컬렉션 체인 상속"이 이슈 #229에서 추가됐다(`existsRoleWrite/AdminPermissionForCollections`, `existsDeptWrite/AdminPermissionForCollections` 사용).
 
 #### `canReadCollection` / `canWriteCollection` / `canAdminCollection`
 
@@ -90,7 +102,12 @@ public boolean canWriteCollection(Long userId, DocumentCollection collection) {
     Long collectionId = collection.getId();
     if (collectionPermissionRepository.existsUserWritePermission(userId, collectionId)) return true;
     if (collectionPermissionRepository.existsRoleWritePermissionForCollection(userId, collectionId)) return true;
-    return collectionPermissionRepository.existsDeptWritePermissionForCollection(userId, collectionId);
+    if (collectionPermissionRepository.existsDeptWritePermissionForCollection(userId, collectionId)) return true;
+
+    // (2026-08-18 추가, 이슈 #229) 부모 컬렉션 체인 상속 — 조상 ID 전체를 대상으로 재검사
+    List<Long> ancestorIds = collectionRepository.findAncestorIdsInclusive(collectionId);
+    if (collectionPermissionRepository.existsRoleWritePermissionForCollections(userId, ancestorIds)) return true;
+    return collectionPermissionRepository.existsDeptWritePermissionForCollections(userId, ancestorIds);
 }
 
 private DocumentCollection getActiveCollection(Long collectionId) {
@@ -101,7 +118,7 @@ private DocumentCollection getActiveCollection(Long collectionId) {
 ```
 `canReadCollection`은 위와 동일한 구조에 **PUBLIC 단계**만 추가된다(`canReadDocument`의 2단계와 동일하게, `collection.getVisibility() == VisibilityType.PUBLIC`이면 소유자/권한 여부와 무관하게 허용). `canAdminCollection`도 같은 뼈대(대상 권한 종류만 다름)다.
 
-컬렉션 판단에는 **캐시가 없다** — `user_document_access_cache`는 문서 단위 캐시라 컬렉션 자체에 대한 캐시 개념이 없다. 그래서 OWNER, (READ의 경우 PUBLIC), USER 직접 권한, ROLE, DEPT를 매번 순서대로 live 조회한다. `#16`의 `addDocument()`/`getCollection()`, `#18`의 `grantPermission()`이 엔티티 버전을 호출해 중복 조회 없이 이 메서드들을 재사용한다.
+컬렉션 판단에는 **캐시가 없다** — `user_document_access_cache`는 문서 단위 캐시라 컬렉션 자체에 대한 캐시 개념이 없다. 그래서 OWNER, (READ의 경우 PUBLIC), USER 직접 권한, ROLE, DEPT, (2026-08-18부터) 부모 컬렉션 상속을 매번 순서대로 live 조회한다. `#16`의 `addDocument()`/`getCollection()`, `#18`의 `grantPermission()`이 엔티티 버전을 호출해 중복 조회 없이 이 메서드들을 재사용한다.
 
 ### `domain/permission/repository/CollectionPermissionRepository.java` — 문서→컬렉션 경유 JOIN 쿼리
 
@@ -120,6 +137,8 @@ private DocumentCollection getActiveCollection(Long collectionId) {
 boolean existsRoleReadPermissionForDocument(@Param("userId") Long userId, @Param("documentId") Long documentId);
 ```
 `CollectionPermission → CollectionDocument → 대상 문서` 경로를 JOIN 하나로 처리한다 — "이 문서가 속한 어떤 컬렉션에, 이 사용자가 속한 역할에 대한 READ 권한이 있는가"를 SQL 레벨에서 한 번에 판단한다. 문서 판단(`*ForDocument` 접미사가 붙은 메서드)과 컬렉션 자체 판단(접미사 없는 `*ForCollection` 메서드) 총 12개의 `existsXxx` 메서드가 이 리포지토리에 있다.
+
+**(2026-08-18 추가, 이슈 #229)** 여기에 `existsRole/DeptRead/Write/AdminPermissionFor**Collections**`(복수형, `List<Long> collectionIds`를 받는 버전) 6개가 더 생겨서 총 18개가 됐다. 단일 ID(`Long`)를 받는 기존 12개는 시그니처를 그대로 유지했고(치환하지 않음), 신규 6개를 "조상 ID 리스트"를 받는 용도로 추가만 했다 — 기존 12개를 치환했다면 이 메서드들을 스텁하는 기존 테스트(`PermissionQueryServiceTest` 등)가 대량으로 깨졌을 것이라, 추가(append) 방식으로 리스크를 낮췄다.
 
 ### `domain/permission/repository/DocumentPermissionRepository.java` — 문서 직접 권한 JOIN
 
@@ -172,7 +191,7 @@ if (cacheRepository.existsValidReadCache(...)) { ... }
 $ ./gradlew test --tests "*PermissionQueryServiceTest*"
 BUILD SUCCESSFUL
 ```
-`PermissionQueryServiceTest` 44개 모두 통과(현재 기준 재검증) — 이 서비스의 권한 판정 그룹 6개(`canReadDocument`, `canWriteDocument`, `canAdminDocument`, `canReadCollection`, `canWriteCollection`, `canAdminCollection`, 오버로드 포함 공개 메서드 시그니처 9개) 각각의 단계별 분기를 검증하는 테스트가 다수 포함되어 있다.
+`PermissionQueryServiceTest` 54개 모두 통과(2026-08-18 기준 재검증, 이슈 #229에서 부모 컬렉션 상속 케이스 7개 추가돼 47→54) — 이 서비스의 권한 판정 그룹 6개(`canReadDocument`, `canWriteDocument`, `canAdminDocument`, `canReadCollection`, `canWriteCollection`, `canAdminCollection`, 오버로드 포함 공개 메서드 시그니처 9개) 각각의 단계별 분기를 검증하는 테스트가 다수 포함되어 있다.
 
 ---
 
@@ -204,6 +223,17 @@ BUILD SUCCESSFUL
 - 나노초 기반 성능 로그가 프로덕션에서도 항상 `log.info()`로 남는다 — 트래픽이 많아지면 로그량 자체가 부담일 수 있어 로그 레벨 조정이나 샘플링이 필요할 수 있다.
 - `canReadDocument`류 메서드들 사이에 문서 조회(`documentRepository.findById`)가 메서드마다 중복된다 — 셋 다 필요하면(예: `checkDocumentPermission`처럼) 문서 조회를 한 번만 하고 넘기는 내부 메서드로 리팩터링할 여지가 있다. **(참고)** 컬렉션 쪽(`canReadCollection`/`canWriteCollection`/`canAdminCollection`)은 이미 "ID 버전 + 엔티티 버전" 오버로드로 이 문제를 해결했다 — 문서 쪽도 같은 패턴을 그대로 적용하면 된다(별도 후속 작업으로 분리, 이번 라운드는 컬렉션만 처리).
 
+## 이후 업데이트 (2026-08-18, 이슈 #229 — 컬렉션 트리)
+
+컬렉션 트리 기능이 추가되면서 6개 권한 판정 그룹 전부에 "부모 컬렉션 체인 상속" 단계가 하나씩 더 생겼다(위 각 절에 인라인으로 반영). 핵심 요약:
+
+- 문서 판단 4종(`canReadDocument`/`canWriteDocument`/`canAdminDocument`/`checkDocumentPermission`)은 `CollectionRepository.findEffectiveCollectionIdsForDocument()`(문서가 속한 컬렉션+그 조상 전체)를 마지막 단계로 추가.
+- 컬렉션 판단 3종(`canReadCollection`/`canWriteCollection`/`canAdminCollection`)은 `CollectionRepository.findAncestorIdsInclusive()`(자기 자신+조상 전체)를 마지막 단계로 추가.
+- 전부 **기존 로직은 안 건드리고 끝에 새 단계만 이어붙이는 방식**으로 넣었다 — 대규모 기존 테스트(`PermissionQueryServiceTest` 817줄, 원래 47개 케이스)를 한 줄도 안 고치고 그대로 통과시키기 위한 선택.
+- 컬렉션 목록(`GET /collections`)도 이번에 owner-only에서 "읽을 수 있는 전체"로 넓어졌는데, 그건 `PermissionQueryService`가 아니라 `CollectionRepository.findReadableCollectionIds()`라는 별도 native 쿼리로 구현했다 — 6개 판정 그룹과는 별개 경로다.
+
+상세 설계는 신규 문서 `docs/design/kangcheolung-#229-collection-tree.md` 참고.
+
 ## 다음 단계
 
-`#24`(문서 권한 확인 API — 이 서비스의 `checkDocumentPermission()`을 노출), `#29`(컬렉션 관리 API)로 이어진다. 이후 RAG 블록의 `AccessibleDocumentQueryService`(권한 pre-filter)와 `SearchFacade`(live check)가 이 서비스의 `canReadDocument()`를 그대로 재사용한다.
+`#24`(문서 권한 확인 API — 이 서비스의 `checkDocumentPermission()`을 노출), `#29`(컬렉션 관리 API)로 이어진다. 이후 RAG 블록의 `AccessibleDocumentQueryService`(권한 pre-filter)와 `SearchFacade`(live check)가 이 서비스의 `canReadDocument()`를 그대로 재사용한다. 이후 `#229`(컬렉션 트리)로 이어진다.

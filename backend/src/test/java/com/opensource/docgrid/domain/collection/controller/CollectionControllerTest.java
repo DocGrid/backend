@@ -19,6 +19,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.opensource.docgrid.domain.collection.dto.response.CollectionDocumentListItemResponse;
+import com.opensource.docgrid.domain.collection.dto.response.CollectionResponse;
+import com.opensource.docgrid.domain.collection.enums.CollectionStatus;
 import com.opensource.docgrid.domain.collection.service.command.CollectionCommandService;
 import com.opensource.docgrid.domain.collection.service.query.CollectionQueryService;
 import com.opensource.docgrid.domain.document.dto.response.DocumentSummaryResponse;
@@ -36,6 +38,8 @@ import com.opensource.docgrid.global.common.response.PageResponse;
 class CollectionControllerTest {
 
     private static final String DOCUMENTS_URL = "/collections/{collectionId}/documents";
+    private static final String CHILDREN_URL = "/collections/{collectionId}/children";
+    private static final String COLLECTIONS_URL = "/collections";
 
     @Autowired private MockMvc mockMvc;
 
@@ -87,6 +91,39 @@ class CollectionControllerTest {
                         .with(authentication(authenticationWithUserId(10L))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("COMMON-002"));
+    }
+
+    @Test
+    @DisplayName("인증된 사용자가 직계 자식 컬렉션 목록을 조회한다")
+    void getChildren_returnsChildCollections() throws Exception {
+        CollectionResponse child = new CollectionResponse(
+                2L, "하위 컬렉션", null, 10L, 1L, VisibilityType.PRIVATE, CollectionStatus.ACTIVE,
+                LocalDateTime.of(2026, 8, 1, 10, 0)
+        );
+        given(collectionQueryService.getChildren(10L, 1L)).willReturn(List.of(child));
+
+        mockMvc.perform(get(CHILDREN_URL, 1L)
+                        .with(authentication(authenticationWithUserId(10L))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].collectionId").value(2))
+                .andExpect(jsonPath("$.data[0].parentCollectionId").value(1));
+    }
+
+    @Test
+    @DisplayName("인증된 사용자가 읽을 수 있는 컬렉션을 페이지 조회한다")
+    void getCollections_returnsReadableCollectionPage() throws Exception {
+        CollectionResponse collection = new CollectionResponse(
+                1L, "인사팀", null, 10L, null, VisibilityType.PRIVATE, CollectionStatus.ACTIVE,
+                LocalDateTime.of(2026, 8, 1, 10, 0)
+        );
+        given(collectionQueryService.getCollections(10L, null, 0, 20))
+                .willReturn(new PageResponse<>(List.of(collection), 0, 20, 1, 1, true, true));
+
+        mockMvc.perform(get(COLLECTIONS_URL)
+                        .with(authentication(authenticationWithUserId(10L))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].collectionId").value(1))
+                .andExpect(jsonPath("$.data.totalElements").value(1));
     }
 
     private UsernamePasswordAuthenticationToken authenticationWithUserId(Long userId) {

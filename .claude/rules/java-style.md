@@ -4,6 +4,21 @@ globs: "**/*.java"
 
 # Java 코드 스타일
 
+## 클래스 문서화
+- 새로 만드는 클래스/인터페이스/record에는 클래스 레벨 Javadoc으로 역할·책임·경계(무엇을 하고, 무엇을 하지 않는지)를 설명
+- 기존 파일에 소급 적용하지 않는다 — 새로 작성하는 파일부터 적용 (2026-08-18 도입, 그 이전 파일은 점진적으로 채워나감)
+
+```java
+/**
+ * 역할 목록 조회 API.
+ *
+ * <p>권한 부여 대상(ROLE) 선택 등에 쓰는 역할 목록을 반환한다.
+ * 실제 조회·변환은 {@link RoleQueryService}에 위임한다.
+ */
+@RestController
+public class RoleController { ... }
+```
+
 ## 레이어 규칙
 - Controller → Service → Repository 단방향
 - Entity를 Controller 계층에 노출 금지 — 반드시 DTO 변환

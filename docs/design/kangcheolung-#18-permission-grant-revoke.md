@@ -172,6 +172,18 @@ private void validateTargetType(GrantPermissionRequest request) {
 ```
 `targetType`에 안 맞는 ID 필드 조합(예: `USER`인데 `roleId`도 같이 옴)을 400으로 걸러낸다 — 위에서 언급한 "DB CHECK 제약 대신 애플리케이션 검증"이 바로 이 메서드다.
 
+**(2026-08-18 추가, 관련 작업)** `validateTargetType()` 통과 후 role을 조회하는 지점에 가드가 하나 더 생겼다:
+```java
+} else if (request.targetType() == PermissionTargetType.ROLE) {
+    targetRole = roleRepository.findById(request.roleId())
+            .orElseThrow(() -> new DocGridException(ErrorCode.ROLE_NOT_FOUND));
+    if ("USER".equals(targetRole.getCode())) {
+        throw new DocGridException(ErrorCode.ROLE_NOT_GRANTABLE);
+    }
+}
+```
+`USER` role은 가입 시 전원에게 자동 부여되는 기본 role이라, 이걸 대상으로 권한을 부여하면 그룹핑 의미 없이 사실상 전체 공개(`visibility=PUBLIC`보다도 넓은 범위 — PUBLIC은 READ만 열지만 이 경로로는 WRITE/ADMIN도 전체에 열림)가 되는 위험한 함정이었다. `ErrorCode.ROLE_NOT_GRANTABLE`(`PERMISSION-004`, 400)로 차단한다. 자세한 배경은 신규 문서 `docs/design/kangcheolung-#229-collection-tree.md` 참고.
+
 ```java
 // 컬렉션 권한(USER)을 부여하면 컬렉션 소속 문서 전체에 캐시를 일괄 갱신한다 (N+1 방지)
 private void updateCacheForCollection(Long collectionId, User targetUser, boolean[] permissions,
@@ -317,6 +329,7 @@ BUILD SUCCESSFUL
 | 대상 사용자/역할/부서 없음 | 404/400 | `USER-001` / `ROLE-001` / `DEPT-001` |
 | `targetType`-ID 필드 조합 오류 | 400 | `PERMISSION-001` |
 | 부여자가 ADMIN 권한 없음 | 403 | `ROLE-002`(`PERMISSION_DENIED`) |
+| (2026-08-18 추가) ROLE 대상이 `USER` role임 | 400 | `PERMISSION-004`(`ROLE_NOT_GRANTABLE`) |
 
 ---
 
@@ -342,6 +355,10 @@ BUILD SUCCESSFUL
 - `AccessSourceType.OWNER`가 정의만 되어 있고 실제로 생성되지 않는다(위 "확인된 불일치" 참고) — enum에서 제거하거나, 실제로 OWNER 캐시를 생성하도록 코드를 맞추거나 둘 중 하나로 정리가 필요하다.
 - ~~`PermissionController`의 컬렉션/문서 권한 부여·회수 4개 엔드포인트 Swagger description이 "소유자(owner)만 가능"이라고 적혀 있던 문제~~ → 코드리뷰로 발견해 실제 인가 규칙(`canAdminCollection()`/`canAdminDocument()`, ADMIN 위임자도 허용)에 맞게 4곳 모두 "ADMIN 권한 보유자(소유자 포함)"로 수정 완료.
 
+## 이후 업데이트 (2026-08-18, 이슈 #229 관련 작업)
+
+이슈 #229(컬렉션 트리) QA 중 발견한 별개의 보안 개선 — 위 `validateTargetType()` 절에 이미 반영. 상세 배경은 `docs/design/kangcheolung-#229-collection-tree.md` 참고.
+
 ## 다음 단계
 
-`#21`(`PermissionQueryService` — 이 이슈에서 만든 권한 데이터를 실제로 판단하는 서비스), `#24`(문서 권한 확인 API), `#29`(컬렉션 관리 API)로 이어진다.
+`#21`(`PermissionQueryService` — 이 이슈에서 만든 권한 데이터를 실제로 판단하는 서비스), `#24`(문서 권한 확인 API), `#29`(컬렉션 관리 API)로 이어진다. 이후 `#229`(컬렉션 트리)로 이어진다.

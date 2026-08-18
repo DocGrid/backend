@@ -66,6 +66,18 @@ public class CollectionFixture {
         return createCollection(createOwner());
     }
 
+    public static DocumentCollection createChildCollection(User owner, DocumentCollection parent, Long childId) {
+        DocumentCollection child = DocumentCollection.builder()
+                .owner(owner)
+                .parentCollection(parent)
+                .name("하위 컬렉션")
+                .visibility(VisibilityType.PRIVATE)
+                .status(CollectionStatus.ACTIVE)
+                .build();
+        ReflectionTestUtils.setField(child, "id", childId);
+        return child;
+    }
+
     public static Document createDocument(User owner) {
         Document document = Document.builder()
                 .owner(owner)

@@ -5,10 +5,22 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest, errorMessage } from "../lib/api";
-import type { Collection, SearchResponse } from "../lib/api-types";
+import type { Collection, PageResponse, SearchResponse } from "../lib/api-types";
 import { groupSearchSources } from "../lib/search-sources";
 import { useRagAnswerSocket } from "../lib/useRagAnswerSocket";
 import { ErrorState, StatusPill } from "../components/ui";
+
+// 검색 범위 드롭다운에 읽기 가능한 컬렉션 전체를 보여주기 위해 100건씩 모든 페이지를 이어붙인다.
+async function loadAllCollections(): Promise<Collection[]> {
+  const all: Collection[] = [];
+  let page = 0;
+  for (;;) {
+    const result = await apiRequest<PageResponse<Collection>>(`/collections?page=${page}&size=100`);
+    all.push(...result.content);
+    if (result.last) return all;
+    page += 1;
+  }
+}
 
 const suggestions = ["배포 실패 시 롤백 절차", "법인카드 사용 기준", "보안 사고 보고 순서"];
 const SEARCH_TIMEOUT_MS = 29_000;
@@ -29,7 +41,7 @@ export function SearchPage() {
   const activeQueryIdRef = useRef<number | null>(null);
 
   useEffect(() => {
-    apiRequest<Collection[]>("/collections").then(setCollections).catch(() => setCollections([]));
+    void loadAllCollections().then(setCollections).catch(() => setCollections([]));
   }, []);
 
   // AI 답변이 아직 생성 중일 때만 true — WebSocket과 폴백 폴링을 이때만 연다.

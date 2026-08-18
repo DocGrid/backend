@@ -17,7 +17,7 @@ canReadDocument()  → 읽기 권한 여부만, 첫 true에서 즉시 반환(단
 canWriteDocument() → 쓰기 권한 여부만, 첫 true에서 즉시 반환
 canAdminDocument() → 관리 권한 여부만, 첫 true에서 즉시 반환
 ```
-이 셋을 그냥 세 번 호출하면 될 것 같지만 안 된다 — **단락 평가가 서로 다른 결과를 감춘다.** 예를 들어 캐시(3단계)에서 `canRead=true`가 나와서 `canReadDocument()`가 거기서 멈춰버리면, 그 아래 ROLE 단계(4단계)에 `canWrite=true`가 있어도 그건 절대 확인되지 않는다(단락 평가는 애초에 "이후 단계를 볼 필요 없음"을 전제로 하니까). 그래서 `checkDocumentPermission()`은 **OWNER가 아닌 이상 단락 평가를 하지 않고 5단계를 전부 끝까지 탐색**한다.
+이 셋을 그냥 세 번 호출하면 될 것 같지만 안 된다 — **단락 평가가 서로 다른 결과를 감춘다.** 예를 들어 캐시(3단계)에서 `canRead=true`가 나와서 `canReadDocument()`가 거기서 멈춰버리면, 그 아래 ROLE 단계(4단계)에 `canWrite=true`가 있어도 그건 절대 확인되지 않는다(단락 평가는 애초에 "이후 단계를 볼 필요 없음"을 전제로 하니까). 그래서 `checkDocumentPermission()`은 **OWNER가 아닌 이상 단락 평가를 하지 않고 전체 단계를 끝까지 탐색**한다(작성 당시 5단계 → 2026-08-18 이슈 #229부터 6단계, 아래 "이후 업데이트" 참고).
 
 ```text
 checkDocumentPermission()
@@ -91,6 +91,17 @@ public DocumentPermissionSummaryResponse checkDocumentPermission(Long userId, Lo
 
     // 5단계: DEPARTMENT live — 4단계와 동일 패턴
 
+    // (2026-08-18 추가, 이슈 #229) 6단계: 부모 컬렉션 체인 상속 — ROLE/DEPARTMENT 값을 그대로 재사용(신규 enum 값 안 만듦)
+    List<Long> effectiveCollectionIds = collectionRepository.findEffectiveCollectionIdsForDocument(documentId);
+    if (!effectiveCollectionIds.isEmpty()) {
+        boolean inheritedRoleRead = collectionPermissionRepository.existsRoleReadPermissionForCollections(userId, effectiveCollectionIds);
+        // ... inheritedRoleWrite, inheritedRoleAdmin, inheritedDeptRead/Write/Admin도 동일 패턴
+        if (inheritedRoleRead /* || ...Write || ...Admin */) sources.add(PermissionSourceType.ROLE);
+        // DEPARTMENT도 동일하게 sources.add(PermissionSourceType.DEPARTMENT)
+        if (inheritedRoleRead /* || inheritedDeptRead */) canRead = true;
+        // canWrite/canAdmin도 동일 패턴
+    }
+
     return new DocumentPermissionSummaryResponse(documentId, canRead, canWrite, canAdmin, sources);
 }
 ```
@@ -125,7 +136,7 @@ public ResponseEntity<ApiResponse<DocumentPermissionSummaryResponse>> getMyDocum
 
 ## 로컬 검증 (Swagger 수동 테스트 — 실제 수행 기록)
 
-`docs/test-results/kangcheolung-#21-permission-query-service.md`에 이 API(`GET /permissions/documents/{id}/me`)로 5단계 전체가 실제 시나리오로 확인되어 있다. 발췌:
+`docs/test-results/kangcheolung-#21-permission-query-service.md`에 이 API(`GET /permissions/documents/{id}/me`)로 (당시 기준) 5단계 전체가 실제 시나리오로 확인되어 있다. 발췌:
 
 **OWNER (4.1절)**
 ```json
@@ -184,6 +195,10 @@ BUILD SUCCESSFUL
 
 - `checkDocumentPermission()`이 `canReadDocument()` 등과 별개로 캐시/ROLE/DEPT 쿼리를 다시 전부 실행한다 — 두 메서드가 같은 문서에 대해 동시에 호출될 일은 지금 없지만, 쿼리 로직 자체가 중복되어 있어(`#21`의 TODO와 동일한 지점) 유지보수 시 두 곳을 같이 고쳐야 하는 부담이 있다.
 
+## 이후 업데이트 (2026-08-18, 이슈 #229 — 컬렉션 트리)
+
+`checkDocumentPermission()`에 "6단계: 부모 컬렉션 체인 상속"이 추가됐다(위 코드 블록에 인라인 반영). 새 `PermissionSourceType` 값을 만들지 않고 기존 `ROLE`/`DEPARTMENT`를 그대로 재사용하기로 결정했다 — 장점은 API 응답 스키마가 안 바뀌어 프론트 영향이 없다는 것, 트레이드오프는 "직접 부여된 권한인지 조상 컬렉션에서 상속된 것인지"를 이 API 응답만으로는 구분할 수 없다는 것(감사/디버깅 시 조상 컬렉션까지 직접 추적해야 함). 상세 설계는 신규 문서 `docs/design/kangcheolung-#229-collection-tree.md` 참고.
+
 ## 다음 단계
 
-`#29`(컬렉션 관리 API)로 이어진다. 권한 블록(`#16`~`#29`) 전체가 완료된 뒤 RAG 블록(F-SEARCH, F-RAG)이 `PermissionQueryService.canReadDocument()`를 재사용해서 검색 권한 필터링을 구현한다.
+`#29`(컬렉션 관리 API)로 이어진다. 권한 블록(`#16`~`#29`) 전체가 완료된 뒤 RAG 블록(F-SEARCH, F-RAG)이 `PermissionQueryService.canReadDocument()`를 재사용해서 검색 권한 필터링을 구현한다. 이후 `#229`(컬렉션 트리)로 이어진다.

@@ -94,6 +94,25 @@ class DocumentPermissionCommandServiceTest {
     }
 
     @Test
+    @DisplayName("USER role을 대상으로 지정하면 ROLE_NOT_GRANTABLE 예외가 발생한다")
+    void grantPermission_throws_when_targetRoleIsUserRole() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        GrantPermissionRequest request = new GrantPermissionRequest(
+                PermissionTargetType.ROLE, null, PermissionFixture.USER_ROLE_ID, null, PermissionType.READ, null);
+
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(permissionQueryService.canAdminDocument(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+        given(roleRepository.findById(PermissionFixture.USER_ROLE_ID)).willReturn(Optional.of(PermissionFixture.createUserRole()));
+
+        assertThatThrownBy(() -> service.grantPermission(
+                CollectionFixture.DOCUMENT_ID, CollectionFixture.USER_ID, request))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ROLE_NOT_GRANTABLE);
+        then(documentPermissionRepository).should(never()).save(any(DocumentPermission.class));
+    }
+
+    @Test
     @DisplayName("문서가 없으면 DOCUMENT_NOT_FOUND 예외가 발생한다")
     void grantPermission_throws_when_documentNotFound() {
         given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.empty());

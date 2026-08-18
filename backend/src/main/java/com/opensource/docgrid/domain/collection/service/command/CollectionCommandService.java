@@ -53,7 +53,11 @@ public class CollectionCommandService {
         DocumentCollection parentCollection = null; // 상위 폴더 지정은 선택 사항이라 null로 초기화
         if (request.parentCollectionId() != null) {
             parentCollection = collectionRepository.findById(request.parentCollectionId())
+                    .filter(c -> c.getStatus() != CollectionStatus.DELETED)
                     .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
+            if (!permissionQueryService.canWriteCollection(userId, parentCollection)) {
+                throw new DocGridException(ErrorCode.PERMISSION_DENIED);
+            }
         }
 
         VisibilityType visibility = request.visibility() != null ? request.visibility() : VisibilityType.PRIVATE;
@@ -102,25 +106,34 @@ public class CollectionCommandService {
         return collectionConverter.toDocumentResponse(collectionDocument);
     }
 
-    // 컬렉션 soft delete — 소유자만 가능
+    // 컬렉션 soft delete — 소유자만 가능. 하위 컬렉션 전체와 그 안의 문서 매핑까지 cascade로 함께 삭제한다.
+    // owner 체크는 삭제 대상 최상위(root)에서만 하고 하위 각각은 재확인하지 않는다
+    // (구글드라이브 공유폴더 삭제와 동일한 멘탈모델 — root에 대한 권한으로 하위 전체가 지워짐).
     public void deleteCollection(Long collectionId, Long userId) {
-        DocumentCollection collection = collectionRepository.findById(collectionId)
+        DocumentCollection root = collectionRepository.findById(collectionId)
                 .filter(c -> c.getStatus() != CollectionStatus.DELETED)
                 .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
 
-        if (!collection.getOwner().getId().equals(userId)) {
+        if (!root.getOwner().getId().equals(userId)) {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 
-        // 폴더에 속한 모든 권한 삭제 및 캐시 무효화
-        List<CollectionPermission> permissions = collectionPermissionRepository.findAllByCollectionId(collectionId);
+        List<Long> targetIds = collectionRepository.findDescendantIdsInclusive(collectionId); // 자기 자신 포함
+
+        // 대상 전체(자기 자신+하위)에 속한 권한 삭제 및 캐시 무효화
+        List<CollectionPermission> permissions = collectionPermissionRepository.findAllByCollectionIdIn(targetIds);
         permissions.stream()
                 .filter(p -> p.getTargetType() == PermissionTargetType.USER)
             // 컬렉션 권한이 USER 대상인 경우에만 캐시 무효화
                 .forEach(p -> cacheService.bulkRevokeBySource(AccessSourceType.DIRECT_COLLECTION_PERMISSION, p.getId()));
         collectionPermissionRepository.deleteAll(permissions); // 컬렉션 권한 삭제
 
-        collection.markDeleted(LocalDateTime.now()); // 폴더 상태를 DELETED로 변경
+        // 대상 전체(자기 자신+하위)의 문서 매핑 삭제
+        List<CollectionDocument> mappings = collectionDocumentRepository.findAllByCollectionIdIn(targetIds);
+        collectionDocumentRepository.deleteAll(mappings);
+
+        LocalDateTime now = LocalDateTime.now();
+        collectionRepository.findAllById(targetIds).forEach(c -> c.markDeleted(now)); // 대상 전체 상태를 DELETED로 변경
     }
 
     // 컬렉션에서 문서 제거 — 소유자만 가능

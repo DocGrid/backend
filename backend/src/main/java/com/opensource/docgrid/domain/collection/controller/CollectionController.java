@@ -47,19 +47,25 @@ public class CollectionController {
     private final CollectionQueryService collectionQueryService;
 
     @Operation(
-            summary = "내 컬렉션 목록 조회",
-            description = "현재 로그인한 사용자가 소유한 ACTIVE 상태의 컬렉션 목록을 반환합니다."
+            summary = "컬렉션 목록 조회",
+            description = "현재 로그인한 사용자가 읽을 수 있는 ACTIVE 상태의 컬렉션을 최신 생성순으로 페이지 조회합니다. " +
+                    "소유한 컬렉션, PUBLIC 컬렉션, 직접·역할·부서 단위로 권한을 부여받은 컬렉션(부모 컬렉션 상속 포함)을 모두 포함합니다. " +
+                    "keyword를 입력하면 이름·설명에 포함된 것만 필터링합니다."
     )
     @GetMapping
-    public ResponseEntity<ApiResponse<List<CollectionResponse>>> getMyCollections(
-            @Parameter(hidden = true) @CurrentUser Long userId) {
-        return ResponseUtils.ok(collectionQueryService.getMyCollections(userId));
+    public ResponseEntity<ApiResponse<PageResponse<CollectionResponse>>> getCollections(
+            @Parameter(hidden = true) @CurrentUser Long userId,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        return ResponseUtils.ok(collectionQueryService.getCollections(userId, keyword, page, size));
     }
 
     @Operation(
             summary = "컬렉션 삭제",
             description = "컬렉션을 soft delete합니다. 소유자(owner)만 가능합니다. " +
-                    "소속 권한(collection_permissions)이 모두 삭제되고, USER 대상 권한이 있었다면 캐시도 무효화됩니다."
+                    "하위 컬렉션 전체와 그 안의 문서 매핑까지 함께 삭제됩니다(cascade). " +
+                    "대상 전체의 소속 권한(collection_permissions)이 모두 삭제되고, USER 대상 권한이 있었다면 캐시도 무효화됩니다."
     )
     @DeleteMapping("/{collectionId}")
     public ResponseEntity<ApiResponse<Void>> deleteCollection(
@@ -103,6 +109,18 @@ public class CollectionController {
             @PathVariable Long collectionId,
             @Parameter(hidden = true) @CurrentUser Long userId) {
         return ResponseUtils.ok(collectionQueryService.getCollection(userId, collectionId));
+    }
+
+    @Operation(
+            summary = "직계 자식 컬렉션 목록 조회",
+            description = "이 컬렉션 바로 아래에 있는 하위 컬렉션 목록을 반환합니다. 하위 컬렉션 자체까지만 반환하며, " +
+                    "더 아래 단계를 보려면 반환된 하위 컬렉션 ID로 이 API를 다시 호출해야 합니다."
+    )
+    @GetMapping("/{collectionId}/children")
+    public ResponseEntity<ApiResponse<List<CollectionResponse>>> getChildren(
+            @PathVariable Long collectionId,
+            @Parameter(hidden = true) @CurrentUser Long userId) {
+        return ResponseUtils.ok(collectionQueryService.getChildren(userId, collectionId));
     }
 
     @Operation(

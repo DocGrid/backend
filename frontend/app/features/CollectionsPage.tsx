@@ -3,37 +3,68 @@
 // vinext production navigation uses full requests because its client router does not complete these catch-all route transitions.
 /* eslint-disable @next/next/no-html-link-for-pages */
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
-import { apiRequest, errorMessage } from "../lib/api";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { apiRequest, errorMessage, toQuery } from "../lib/api";
 import type { Collection, CollectionDocument, DocumentSummary, PageResponse } from "../lib/api-types";
 import { EmptyState, ErrorState, LoadingState, PageHeading, StatusPill, formatDate } from "../components/ui";
 
 export function CollectionsPage({ notify }: { notify: (message: string) => void }) {
-  const [collections, setCollections] = useState<Collection[]>([]);
+  const [collections, setCollections] = useState<PageResponse<Collection> | null>(null);
+  const [parentCandidates, setParentCandidates] = useState<Collection[]>([]);
+  const [keywordInput, setKeywordInput] = useState("");
+  const [keyword, setKeyword] = useState("");
+  const [page, setPage] = useState(0);
   const [creating, setCreating] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // 검색어/페이지를 빠르게 바꾸면 먼저 보낸 요청이 나중에 도착해 최신 화면을 덮어쓸 수 있어, 가장 최근 호출의 결과만 반영한다.
+  const loadSeqRef = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setError("");
-    try { setCollections(await apiRequest<Collection[]>("/collections")); }
-    catch (reason) { setError(errorMessage(reason)); }
-    finally { setLoading(false); }
-  }, []);
+    try {
+      const result = await apiRequest<PageResponse<Collection>>(`/collections${toQuery({ keyword, page, size: 20 })}`);
+      if (seq !== loadSeqRef.current) return;
+      setCollections(result);
+    } catch (reason) {
+      if (seq !== loadSeqRef.current) return;
+      setError(errorMessage(reason));
+    } finally {
+      if (seq === loadSeqRef.current) setLoading(false);
+    }
+  }, [keyword, page]);
+
+  function search(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextKeyword = keywordInput.trim();
+    setPage(0);
+    if (nextKeyword === keyword && page === 0) void load();
+    else setKeyword(nextKeyword);
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load]);
 
+  async function openCreateModal() {
+    try {
+      // 상위 폴더 후보는 페이지네이션과 무관하게 넉넉히 한 번에 가져온다.
+      setParentCandidates((await apiRequest<PageResponse<Collection>>("/collections?page=0&size=100")).content);
+    } catch (reason) { setError(errorMessage(reason)); }
+    setModalOpen(true);
+  }
+
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setCreating(true);
     const form = new FormData(event.currentTarget);
+    const parentCollectionId = form.get("parentCollectionId");
     try {
-      await apiRequest<Collection>("/collections", { method: "POST", body: { name: String(form.get("name")), description: String(form.get("description") || ""), parentCollectionId: null, visibility: String(form.get("visibility")) } });
+      await apiRequest<Collection>("/collections", { method: "POST", body: { name: String(form.get("name")), description: String(form.get("description") || ""), parentCollectionId: parentCollectionId ? Number(parentCollectionId) : null, visibility: String(form.get("visibility")) } });
       setModalOpen(false);
       notify("새 컬렉션을 만들었습니다.");
       await load();
@@ -42,17 +73,22 @@ export function CollectionsPage({ notify }: { notify: (message: string) => void 
   }
 
   return <section className="content page-view">
-    <PageHeading kicker="COLLECTIONS" title="컬렉션" description="내가 소유한 활성 컬렉션과 검색 범위를 관리하세요." actions={<button className="primary-button" onClick={() => setModalOpen(true)}>＋ 새 컬렉션</button>} />
+    <PageHeading kicker="COLLECTIONS" title="컬렉션" description="내가 읽을 수 있는 활성 컬렉션과 검색 범위를 관리하세요." actions={<button className="primary-button" onClick={() => void openCreateModal()}>＋ 새 컬렉션</button>} />
+    <form className="toolbar" onSubmit={search}><label className="toolbar-search"><span>⌕</span><input value={keywordInput} onChange={(event) => setKeywordInput(event.target.value)} placeholder="이름 또는 설명 검색" /></label><button className="filter-submit">검색</button></form>
     {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
     {loading ? <LoadingState label="컬렉션을 불러오는 중입니다." /> : null}
-    {!loading && !error && !collections.length ? <EmptyState symbol="▱" title="아직 컬렉션이 없습니다" description="관련 문서를 묶을 첫 컬렉션을 만들어 보세요." /> : null}
-    {!loading && collections.length ? <div className="collection-grid">{collections.map((collection, index) => <a className="collection-card" href={`/collections/${collection.collectionId}`} target="_top" key={collection.collectionId}><div className="collection-top"><span className="folder-shape" style={{ "--folder-color": collectionColor(index) } as React.CSSProperties}>▱</span><StatusPill value={collection.status} /></div><div className="collection-badges"><StatusPill value={collection.visibility} /></div><h2>{collection.name}</h2><p>{collection.description || "설명이 없습니다."}</p><div className="collection-footer"><span>owner #{collection.ownerUserId}</span><strong>{formatDate(collection.createdAt, false)} · 상세 보기 →</strong></div></a>)}</div> : null}
-    {modalOpen ? <div className="modal-layer"><form className="modal compact-modal" onSubmit={create}><div className="modal-header"><div><span className="modal-symbol mint">▱</span><div><h2>새 컬렉션</h2><p>관련 문서를 하나의 검색 범위로 묶습니다.</p></div></div><button type="button" onClick={() => setModalOpen(false)}>×</button></div><label className="form-field">컬렉션 이름<input name="name" placeholder="예: 운영 문서" required /></label><label className="form-field">설명<textarea name="description" rows={3} placeholder="컬렉션을 설명해 주세요." /></label><label className="form-field">공개 범위<select name="visibility" defaultValue="PRIVATE"><option value="PRIVATE">PRIVATE</option><option value="DEPARTMENT">DEPARTMENT</option><option value="PUBLIC">PUBLIC</option></select></label><div className="modal-footer"><button type="button" className="secondary-button" onClick={() => setModalOpen(false)}>취소</button><button className="primary-button" disabled={creating}>{creating ? "생성 중…" : "컬렉션 만들기"}</button></div></form></div> : null}
+    {!loading && !error && !collections?.content.length ? <EmptyState symbol="▱" title={keyword ? "검색 결과가 없습니다" : "아직 컬렉션이 없습니다"} description={keyword ? "다른 검색어로 다시 찾아보세요." : "관련 문서를 묶을 첫 컬렉션을 만들어 보세요."} /> : null}
+    {!loading && collections?.content.length ? <>
+      <div className="collection-grid">{collections.content.map((collection, index) => <a className="collection-card" href={`/collections/${collection.collectionId}`} target="_top" key={collection.collectionId}><div className="collection-top"><span className="folder-shape" style={{ "--folder-color": collectionColor(index) } as React.CSSProperties}>▱</span><StatusPill value={collection.status} /></div><div className="collection-badges"><StatusPill value={collection.visibility} /></div><h2>{collection.name}</h2><p>{collection.description || "설명이 없습니다."}</p><div className="collection-footer"><span>owner #{collection.ownerUserId}</span><strong>{formatDate(collection.createdAt, false)} · 상세 보기 →</strong></div></a>)}</div>
+      <div className="pagination"><span>{collections.totalElements}건 · {collections.size}건씩</span><div><button disabled={collections.first} onClick={() => setPage((current) => Math.max(0, current - 1))}>이전</button><button className="active">{collections.page + 1}</button><button disabled={collections.last} onClick={() => setPage((current) => current + 1)}>다음</button></div></div>
+    </> : null}
+    {modalOpen ? <div className="modal-layer"><form className="modal compact-modal" onSubmit={create}><div className="modal-header"><div><span className="modal-symbol mint">▱</span><div><h2>새 컬렉션</h2><p>관련 문서를 하나의 검색 범위로 묶습니다.</p></div></div><button type="button" onClick={() => setModalOpen(false)}>×</button></div><label className="form-field">컬렉션 이름<input name="name" placeholder="예: 운영 문서" required /></label><label className="form-field">설명<textarea name="description" rows={3} placeholder="컬렉션을 설명해 주세요." /></label><label className="form-field">상위 폴더<select name="parentCollectionId" defaultValue=""><option value="">없음 (최상위 컬렉션)</option>{parentCandidates.map((parent) => <option key={parent.collectionId} value={parent.collectionId}>{parent.name}</option>)}</select></label><label className="form-field">공개 범위<select name="visibility" defaultValue="PRIVATE"><option value="PRIVATE">PRIVATE</option><option value="DEPARTMENT">DEPARTMENT</option><option value="PUBLIC">PUBLIC</option></select></label><div className="modal-footer"><button type="button" className="secondary-button" onClick={() => setModalOpen(false)}>취소</button><button className="primary-button" disabled={creating}>{creating ? "생성 중…" : "컬렉션 만들기"}</button></div></form></div> : null}
   </section>;
 }
 
 export function CollectionDetailPage({ collectionId, notify }: { collectionId: number; notify: (message: string) => void }) {
   const [collection, setCollection] = useState<Collection | null>(null);
+  const [children, setChildren] = useState<Collection[]>([]);
   const [availableDocuments, setAvailableDocuments] = useState<DocumentSummary[]>([]);
   const [collectionDocuments, setCollectionDocuments] = useState<PageResponse<CollectionDocument> | null>(null);
   const [documentId, setDocumentId] = useState("");
@@ -60,22 +96,32 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // collectionId/page가 빠르게 바뀌면 먼저 보낸 요청이 나중에 도착해 최신 화면을 덮어쓸 수 있어, 가장 최근 호출의 결과만 반영한다.
+  const loadSeqRef = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setError("");
     try {
-      // 1. Load collection Metadata, addable documents, and current membership from their authoritative APIs.
-      const [detail, documentPage, memberPage] = await Promise.all([
+      // 1. Load collection Metadata, direct child collections, addable documents, and current membership from their authoritative APIs.
+      const [detail, childList, documentPage, memberPage] = await Promise.all([
         apiRequest<Collection>(`/collections/${collectionId}`),
+        apiRequest<Collection[]>(`/collections/${collectionId}/children`),
         apiRequest<PageResponse<DocumentSummary>>("/api/documents?page=0&size=100"),
         apiRequest<PageResponse<CollectionDocument>>(`/collections/${collectionId}/documents?page=${page}&size=20`),
       ]);
+      if (seq !== loadSeqRef.current) return;
       setCollection(detail);
+      setChildren(childList);
       setAvailableDocuments(documentPage.content);
       setCollectionDocuments(memberPage);
-    } catch (reason) { setError(errorMessage(reason)); }
-    finally { setLoading(false); }
+    } catch (reason) {
+      if (seq !== loadSeqRef.current) return;
+      setError(errorMessage(reason));
+    } finally {
+      if (seq === loadSeqRef.current) setLoading(false);
+    }
   }, [collectionId, page]);
 
   useEffect(() => {
@@ -99,7 +145,10 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
   }
 
   async function removeCollection() {
-    if (!window.confirm("이 컬렉션을 삭제할까요? 복구 API는 제공되지 않습니다.")) return;
+    // children은 현재 사용자가 읽을 수 있는 직계 자식만 담고 있어 실제 하위 컬렉션 존재 여부의 기준이 될 수 없다
+    // (읽기 권한이 없는 후손도 삭제 시엔 함께 cascade 삭제되므로 항상 경고한다).
+    const warning = "이 컬렉션을 삭제할까요? 하위 컬렉션과 그 안의 문서도 전부 함께 삭제됩니다. 복구 API는 제공되지 않습니다.";
+    if (!window.confirm(warning)) return;
     setBusy(true);
     try {
       await apiRequest(`/collections/${collectionId}`, { method: "DELETE" });
@@ -114,6 +163,7 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
     {loading ? <LoadingState /> : null}
     {!loading && collection ? <>
       <div className="collection-summary"><div><span className="folder-shape" style={{ "--folder-color": "#6558e8" } as React.CSSProperties}>▱</span><div><strong>{collection.name}</strong><span>owner #{collection.ownerUserId} · {formatDate(collection.createdAt, false)}</span></div></div><StatusPill value={collection.status} /></div>
+      <div className="panel-card"><div className="panel-heading"><div><h2>하위 컬렉션</h2><p>클릭하면 해당 컬렉션을 엽니다.</p></div></div>{children.length ? <div className="collection-grid">{children.map((child, index) => <a className="collection-card" href={`/collections/${child.collectionId}`} target="_top" key={child.collectionId}><div className="collection-top"><span className="folder-shape" style={{ "--folder-color": collectionColor(index) } as React.CSSProperties}>▱</span><StatusPill value={child.status} /></div><div className="collection-badges"><StatusPill value={child.visibility} /></div><h2>{child.name}</h2><p>{child.description || "설명이 없습니다."}</p></a>)}</div> : <EmptyState symbol="▱" title="하위 컬렉션이 없습니다" description="이 컬렉션 안에 하위 컬렉션을 만들면 여기에 표시됩니다." />}</div>
       <div className="detail-grid collection-action-grid">
         <div className="panel-card"><div className="panel-heading"><div><h2>문서 추가</h2><p>내가 읽을 수 있는 문서 중 하나를 선택합니다.</p></div></div><label className="form-field">문서<select value={documentId} onChange={(event) => setDocumentId(event.target.value)}><option value="">문서를 선택하세요</option>{availableDocuments.map((document) => <option key={document.documentId} value={document.documentId}>#{document.documentId} · {document.title}</option>)}</select></label><button className="primary-button full-button action-submit" disabled={!documentId || busy} onClick={() => void mutate("add")}>컬렉션에 추가</button></div>
         <div className="panel-card"><div className="panel-heading"><div><h2>문서 제거</h2><p>목록의 문서를 선택하거나 ID를 직접 입력하세요.</p></div></div><label className="form-field">documentId<input type="number" min="1" value={documentId} onChange={(event) => setDocumentId(event.target.value)} placeholder="문서 ID" /></label><button className="secondary-button full-button action-submit" disabled={!documentId || busy} onClick={() => void mutate("remove")}>컬렉션에서 제거</button></div>

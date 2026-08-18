@@ -17,6 +17,9 @@ public interface CollectionDocumentRepository extends JpaRepository<CollectionDo
 
     List<CollectionDocument> findAllByCollectionId(Long collectionId);
 
+    // cascade 삭제용 — 대상 컬렉션 ID 목록(자기 자신+후손 전체)에 속한 문서 매핑 전체 조회
+    List<CollectionDocument> findAllByCollectionIdIn(List<Long> collectionIds);
+
     /**
      * 권한 선필터를 통과한 컬렉션 문서를 현재 버전 Metadata와 함께 페이지 조회한다.
      */

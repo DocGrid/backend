@@ -114,7 +114,7 @@ class CollectionCommandServiceTest {
     }
 
     @Test
-    @DisplayName("존재하는 상위 컬렉션 ID를 지정하면 parentCollection이 설정된 컬렉션이 생성된다")
+    @DisplayName("존재하는 상위 컬렉션 ID를 지정하고 쓰기 권한이 있으면 parentCollection이 설정된 컬렉션이 생성된다")
     void createCollection_succeeds_with_parentCollection() {
         User owner = CollectionFixture.createOwner();
         DocumentCollection parent = CollectionFixture.createCollection(owner);
@@ -124,12 +124,15 @@ class CollectionCommandServiceTest {
         );
         given(userRepository.getReferenceById(CollectionFixture.USER_ID)).willReturn(owner);
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(parent));
+        given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, parent)).willReturn(true);
         given(collectionConverter.toResponse(any(DocumentCollection.class))).willReturn(expected);
 
         collectionCommandService.createCollection(CollectionFixture.USER_ID, request);
 
         then(collectionRepository).should().findById(CollectionFixture.COLLECTION_ID);
-        then(collectionRepository).should().save(any(DocumentCollection.class));
+        ArgumentCaptor<DocumentCollection> captor = ArgumentCaptor.forClass(DocumentCollection.class);
+        then(collectionRepository).should().save(captor.capture());
+        assertThat(captor.getValue().getParentCollection()).isSameAs(parent);
     }
 
     @Test
@@ -145,6 +148,23 @@ class CollectionCommandServiceTest {
         assertThatThrownBy(() -> collectionCommandService.createCollection(CollectionFixture.USER_ID, request))
                 .isInstanceOf(DocGridException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.COLLECTION_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("상위 컬렉션에 쓰기 권한이 없으면 PERMISSION_DENIED 예외가 발생한다")
+    void createCollection_throws_when_noWritePermissionOnParent() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection parent = CollectionFixture.createCollection(owner);
+        CreateCollectionRequest request = new CreateCollectionRequest(
+                "하위 컬렉션", null, CollectionFixture.COLLECTION_ID, VisibilityType.PRIVATE
+        );
+        Long otherUserId = 99L;
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(parent));
+        given(permissionQueryService.canWriteCollection(otherUserId, parent)).willReturn(false);
+
+        assertThatThrownBy(() -> collectionCommandService.createCollection(otherUserId, request))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PERMISSION_DENIED);
     }
 
     // ==================== addDocument ====================
@@ -239,15 +259,45 @@ class CollectionCommandServiceTest {
         User owner = CollectionFixture.createOwner();
         DocumentCollection collection = CollectionFixture.createCollection(owner);
         CollectionPermission userPermission = PermissionFixture.createCollectionPermission(collection, owner);
+        List<Long> targetIds = List.of(CollectionFixture.COLLECTION_ID);
 
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
-        given(collectionPermissionRepository.findAllByCollectionId(CollectionFixture.COLLECTION_ID))
+        given(collectionRepository.findDescendantIdsInclusive(CollectionFixture.COLLECTION_ID)).willReturn(targetIds);
+        given(collectionPermissionRepository.findAllByCollectionIdIn(targetIds))
                 .willReturn(List.of(userPermission));
+        given(collectionDocumentRepository.findAllByCollectionIdIn(targetIds)).willReturn(List.of());
+        given(collectionRepository.findAllById(targetIds)).willReturn(List.of(collection));
 
         collectionCommandService.deleteCollection(CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID);
 
         then(cacheService).should().bulkRevokeBySource(any(), any());
-        then(collectionPermissionRepository).should().deleteAll(any());
+        then(collectionPermissionRepository).should().deleteAll(List.of(userPermission));
+        assertThat(collection.getStatus()).isEqualTo(com.opensource.docgrid.domain.collection.enums.CollectionStatus.DELETED);
+    }
+
+    @Test
+    @DisplayName("하위 컬렉션이 있으면 삭제 시 하위 컬렉션과 문서 매핑까지 cascade로 함께 삭제된다")
+    void deleteCollection_cascades_to_descendants() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection root = CollectionFixture.createCollection(owner);
+        Long childId = 2L;
+        DocumentCollection child = CollectionFixture.createChildCollection(owner, root, childId);
+        List<Long> targetIds = List.of(CollectionFixture.COLLECTION_ID, childId);
+        CollectionDocument childMapping = CollectionDocument.builder()
+                .collection(child).document(CollectionFixture.createDocument(owner)).addedBy(owner)
+                .addedAt(java.time.LocalDateTime.now()).build();
+
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(root));
+        given(collectionRepository.findDescendantIdsInclusive(CollectionFixture.COLLECTION_ID)).willReturn(targetIds);
+        given(collectionPermissionRepository.findAllByCollectionIdIn(targetIds)).willReturn(List.of());
+        given(collectionDocumentRepository.findAllByCollectionIdIn(targetIds)).willReturn(List.of(childMapping));
+        given(collectionRepository.findAllById(targetIds)).willReturn(List.of(root, child));
+
+        collectionCommandService.deleteCollection(CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID);
+
+        then(collectionDocumentRepository).should().deleteAll(List.of(childMapping));
+        assertThat(root.getStatus()).isEqualTo(com.opensource.docgrid.domain.collection.enums.CollectionStatus.DELETED);
+        assertThat(child.getStatus()).isEqualTo(com.opensource.docgrid.domain.collection.enums.CollectionStatus.DELETED);
     }
 
     @Test

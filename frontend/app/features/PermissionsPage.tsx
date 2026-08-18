@@ -2,14 +2,17 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ApiError, apiRequest, errorMessage } from "../lib/api";
-import type { Collection, DocumentSummary, PageResponse, PermissionGrant, PermissionSummary } from "../lib/api-types";
+import type { Collection, Department, DocumentSummary, PageResponse, PermissionGrant, PermissionSummary, Role } from "../lib/api-types";
 import { ErrorState, LoadingState, Notice, PageHeading, StatusPill, formatDate } from "../components/ui";
 
 export function PermissionsPage({ notify }: { notify: (message: string) => void }) {
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [resourceType, setResourceType] = useState<"documents" | "collections">("documents");
   const [resourceId, setResourceId] = useState("");
+  const [targetType, setTargetType] = useState<"USER" | "ROLE" | "DEPARTMENT">("USER");
   const [summary, setSummary] = useState<PermissionSummary | null>(null);
   const [directPermissions, setDirectPermissions] = useState<PermissionGrant[]>([]);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
@@ -22,9 +25,11 @@ export function PermissionsPage({ notify }: { notify: (message: string) => void 
     setLoading(true);
     setError("");
     try {
-      const [documentPage, collectionList] = await Promise.all([apiRequest<PageResponse<DocumentSummary>>("/api/documents?page=0&size=100"), apiRequest<Collection[]>("/collections")]);
+      const [documentPage, collectionPage, roleList, departmentList] = await Promise.all([apiRequest<PageResponse<DocumentSummary>>("/api/documents?page=0&size=100"), apiRequest<PageResponse<Collection>>("/collections?page=0&size=100"), apiRequest<Role[]>("/roles"), apiRequest<Department[]>("/departments")]);
       setDocuments(documentPage.content);
-      setCollections(collectionList);
+      setCollections(collectionPage.content);
+      setRoles(roleList.filter((role) => role.code !== "USER"));
+      setDepartments(departmentList);
       if (documentPage.content[0]) setResourceId(String(documentPage.content[0].documentId));
     } catch (reason) { setError(errorMessage(reason)); }
     finally { setLoading(false); }
@@ -121,7 +126,7 @@ export function PermissionsPage({ notify }: { notify: (message: string) => void 
       <div className="resource-selector"><div><span className="modal-symbol">⌘</span><div><strong>대상 리소스</strong><span>관리할 문서 또는 컬렉션을 선택하세요.</span></div></div><div className="resource-controls"><select value={resourceType} onChange={(event) => changeResourceType(event.target.value as "documents" | "collections")}><option value="documents">문서</option><option value="collections">컬렉션</option></select><select value={resourceId} onChange={(event) => { setSummary(null); setResourceId(event.target.value); }}><option value="">대상을 선택하세요</option>{resources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div></div>
       <div className="permission-layout">
         <div className="panel-card permission-summary"><div className="panel-heading"><div><h2>{resourceType === "documents" ? "내 문서 권한" : "컬렉션 권한"}</h2><p>{resourceId ? `resourceId ${resourceId}` : "대상 없음"}</p></div></div>{resourceType === "documents" && summary ? <><div className="permission-checks"><StatusPill value={`READ ${summary.canRead ? "✓" : "✕"}`} /><StatusPill value={`WRITE ${summary.canWrite ? "✓" : "✕"}`} /><StatusPill value={`ADMIN ${summary.canAdmin ? "✓" : "✕"}`} /></div><span className="field-label">권한 경로</span><div className="source-chips">{summary.sources.map((source) => <b key={source}>{source}</b>)}</div></> : <Notice>컬렉션의 현재 사용자 권한 요약은 제공되지 않으며 직접 부여 목록만 확인합니다.</Notice>}</div>
-        <form className="panel-card permission-list" onSubmit={grant}><div className="panel-heading"><div><h2>권한 부여</h2><p>대상 타입에 맞는 실제 ID를 입력하세요.</p></div></div><label className="form-field">대상 타입<select name="targetType" defaultValue="USER"><option value="USER">USER</option><option value="ROLE">ROLE</option><option value="DEPARTMENT">DEPARTMENT</option></select></label><label className="form-field">대상 ID<input name="targetId" type="number" min="1" required /></label><label className="form-field">권한 종류<select name="permissionType" defaultValue="READ"><option value="READ">READ</option><option value="WRITE">WRITE</option><option value="ADMIN">ADMIN</option></select></label><label className="form-field">만료 시각<input name="expiresAt" type="datetime-local" /></label><button className="primary-button full-button action-submit" disabled={!resourceId || busy}>{busy ? "처리 중…" : "권한 부여"}</button></form>
+        <form className="panel-card permission-list" onSubmit={grant}><div className="panel-heading"><div><h2>권한 부여</h2><p>대상 타입을 고르고 대상을 선택하세요.</p></div></div><label className="form-field">대상 타입<select name="targetType" value={targetType} onChange={(event) => setTargetType(event.target.value as "USER" | "ROLE" | "DEPARTMENT")}><option value="USER">USER</option><option value="ROLE">ROLE</option><option value="DEPARTMENT">DEPARTMENT</option></select></label><label className="form-field">대상 {targetType === "USER" ? "사용자 ID" : targetType === "ROLE" ? "역할" : "부서"}{targetType === "USER" ? <input name="targetId" type="number" min="1" required /> : targetType === "ROLE" ? <select name="targetId" required defaultValue=""><option value="" disabled>역할을 선택하세요</option>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select> : <select name="targetId" required defaultValue=""><option value="" disabled>부서를 선택하세요</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select>}</label><label className="form-field">권한 종류<select name="permissionType" defaultValue="READ"><option value="READ">READ</option><option value="WRITE">WRITE</option><option value="ADMIN">ADMIN</option></select></label><label className="form-field">만료 시각<input name="expiresAt" type="datetime-local" /></label><button className="primary-button full-button action-submit" disabled={!resourceId || busy}>{busy ? "처리 중…" : "권한 부여"}</button></form>
       </div>
       <div className="panel-card latest-result"><div className="panel-heading"><div><h2>직접 부여된 권한</h2><p>상속·계산 권한을 제외한 USER·ROLE·DEPARTMENT 권한입니다.</p></div><span>{directPermissions.length}건</span></div>
         {permissionsLoading ? <LoadingState label="직접 권한을 불러오는 중입니다." /> : null}

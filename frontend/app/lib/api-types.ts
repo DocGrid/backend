@@ -27,6 +27,8 @@ export type PageResponse<T> = {
 
 export type Department = { id: number; name: string; code: string };
 
+export type Role = { id: number; name: string; code: string };
+
 export type LoginResponse = {
   accessToken: string;
   tokenType: string;

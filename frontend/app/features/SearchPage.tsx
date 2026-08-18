@@ -5,7 +5,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest, errorMessage } from "../lib/api";
-import type { Collection, SearchResponse } from "../lib/api-types";
+import type { Collection, PageResponse, SearchResponse } from "../lib/api-types";
 import { groupSearchSources } from "../lib/search-sources";
 import { useRagAnswerSocket } from "../lib/useRagAnswerSocket";
 import { ErrorState, StatusPill } from "../components/ui";
@@ -29,7 +29,7 @@ export function SearchPage() {
   const activeQueryIdRef = useRef<number | null>(null);
 
   useEffect(() => {
-    apiRequest<Collection[]>("/collections").then(setCollections).catch(() => setCollections([]));
+    apiRequest<PageResponse<Collection>>("/collections?page=0&size=100").then((page) => setCollections(page.content)).catch(() => setCollections([]));
   }, []);
 
   // AI 답변이 아직 생성 중일 때만 true — WebSocket과 폴백 폴링을 이때만 연다.

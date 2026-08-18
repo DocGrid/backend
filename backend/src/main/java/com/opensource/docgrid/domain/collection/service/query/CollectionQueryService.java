@@ -101,6 +101,7 @@ public class CollectionQueryService {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 
+        // 부모 읽기 권한이 있는 경우에만, 자식 컬렉션 중 읽기 가능한 것들을 조회한다.
         return collectionRepository.findReadableChildren(collectionId, userId)
                 .stream()
                 .map(collectionConverter::toResponse)

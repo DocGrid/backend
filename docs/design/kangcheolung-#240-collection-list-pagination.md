@@ -223,14 +223,20 @@ public List<CollectionResponse> getChildren(Long userId, Long collectionId) {
 
 | | 수정 전 | 수정 후 |
 |---|---|---|
-| GET /collections 쿼리 횟수 | 2번(전체 ID 조회 + IN 재조회) | 1번 |
+| GET /collections 쿼리 횟수 | 2번(전체 ID 조회 + IN 재조회), 빈 페이지 요청 시 최대 3번(count 폴백 포함) | 1번(빈 페이지 요청 시에만 count 폴백 1번 추가) |
 | GET /collections 전송량(N=읽을 수 있는 컬렉션 수) | N에 비례 | 페이지 크기만큼만, N과 무관 |
-| GET /collections/{id}/children 쿼리 횟수(M=자식 수) | 1 + 최대 6M | 1 |
+| GET /collections/{id}/children 중 **자식 조회** 쿼리 횟수(M=자식 수) | M당 최대 6번 반복(총 최대 6M) | 자식 수와 무관하게 1번 |
 | 재귀 CTE(부모 상속 확인) 계산 횟수 | 각 API당 1번 | 동일하게 1번 유지 (콘텐츠+count를 한 쿼리로 합쳐서 유지) |
 
 **재귀 계산 자체(부모 상속 확인 비용)는 이 기능이 존재하는 한 없앨 수 없는 부분이라 그대로
 남는다** — 이번 수정으로 없앤 건 그 위에 얹혀있던 불필요한 낭비(N배로 커지는 전송/메모리/
 두 번째 쿼리, 자식 개수만큼 반복되던 권한 확인)다.
+
+**주의**: `GET /collections/{id}/children` 엔드포인트 전체는 자식 조회 앞에 부모 조회
+(`findById`)와 부모 자신에 대한 `canReadCollection` 권한 확인이 먼저 있어, 이 두 단계는
+이번 수정 대상이 아니라 그대로 남아있다 — 위 표는 그중 **자식 조회 부분**만의 비교다. 즉
+"엔드포인트가 항상 쿼리 1번으로 끝난다"는 뜻이 아니라, "자식 개수(M)에 비례해서 늘어나던
+부분이 사라졌다"는 뜻이다.
 
 ### 검증 방법 — 회귀 테스트가 실제로 회귀를 잡아내는지 직접 확인
 
@@ -247,7 +253,7 @@ return collectionRepository.findReadableChildren(collectionId, userId)
 ```
 
 결과:
-```
+```text
 Expected size: 3 but was: 0
 ```
 `canReadCollection(userId, child)`가 테스트에서 스텁되지 않은 자식에 대해 기본값
@@ -283,6 +289,39 @@ Expected size: 3 but was: 0
 - `findReadableChildren_inheritsRolePermissionFromGrandparent` — 조부모(2단계 위)에 부여된
   ROLE 권한도 상속되는지 (신규, `parent_ancestors`가 직계 부모 1단계만이 아니라 여러 단계를
   타고 올라가는지 검증)
+
+---
+
+## PR 리뷰(CodeRabbit)로 발견한 버그 — 빈 페이지 요청 시 totalElements가 틀리게 나옴
+
+`COUNT(*) OVER()`는 **반환된 행 위에만** 얹혀서 계산된다. 그런데 요청한 offset이 실제 결과
+범위를 넘어가면(예: 읽을 수 있는 컬렉션이 3개뿐인데 `page=5&size=20`으로 요청) `LIMIT/OFFSET`
+자체가 0건을 반환하고, 그러면 `COUNT(*) OVER()`를 얹을 행 자체가 없어서 전체 개수를 전혀 알
+수 없다. 수정 전 코드는 이 경우를 그냥 `totalElements = 0`으로 처리했다:
+
+```java
+// 수정 전 — "빈 페이지"와 "정말 0건"을 구분 못 함
+long totalElements = rows.isEmpty() ? 0 : rows.get(0).getTotalCount();
+```
+
+실제로는 3건이 존재하는데 응답은 "totalElements: 0, totalPages: 0"으로 나가는 버그였다.
+
+**고침**: `rows`가 비어있을 때만 별도의 `countReadableCollections()` 쿼리(콘텐츠 없이
+`readable` CTE의 `COUNT(*)`만 계산, `findReadableCollections`와 동일한 권한 조건 유지)를
+한 번 더 호출한다. 정상 경로(행이 반환되는 대부분의 경우)는 여전히 쿼리 1번으로 끝나고,
+"페이지 번호가 마지막 페이지를 넘어간" 드문 경우에만 쿼리가 1번 추가된다 — 이 설계가
+애초에 피하려던 "콘텐츠/count 쿼리 분리로 인한 재귀 CTE 이중 계산" 문제와는 다르다(그때는
+매 요청마다 항상 2번이었지만, 지금은 예외적인 경우에만 1번 추가되는 구조).
+
+```java
+long totalElements = rows.isEmpty()
+        ? collectionRepository.countReadableCollections(userId, keyword)
+        : rows.get(0).getTotalCount();
+```
+
+`getCollections_returnsAccurateTotalElements_whenPageBeyondLastPage`(신규)로 이 시나리오를
+검증하고, 정상 경로에서는 `countReadableCollections`가 호출되지 않는지도
+`then(collectionRepository).should(never())...`로 같이 확인했다.
 
 ---
 

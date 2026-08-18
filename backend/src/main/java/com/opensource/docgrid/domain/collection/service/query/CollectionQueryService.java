@@ -39,6 +39,10 @@ public class CollectionQueryService {
             Sort.Order.desc("addedAt"),
             Sort.Order.desc("id")
     );
+    private static final Sort COLLECTION_SORT = Sort.by(
+            Sort.Order.desc("createdAt"),
+            Sort.Order.desc("id")
+    );
 
     private final CollectionRepository collectionRepository;
     private final CollectionDocumentRepository collectionDocumentRepository;
@@ -57,10 +61,37 @@ public class CollectionQueryService {
         return collectionConverter.toResponse(collection);
     }
 
-    // 내 컬렉션 목록 조회 (ACTIVE 상태만)
-    public List<CollectionResponse> getMyCollections(Long userId) {
-        return collectionRepository.findAllByOwnerIdAndStatus(userId, CollectionStatus.ACTIVE)
+    /**
+     * 사용자가 읽을 수 있는 컬렉션 목록 페이지 조회 (owner + PUBLIC + 권한부여 + 부모 상속, ACTIVE만).
+     * keyword가 있으면 이름·설명 부분일치로도 필터링한다.
+     */
+    public PageResponse<CollectionResponse> getCollections(Long userId, String keyword, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, COLLECTION_SORT);
+        List<Long> readableIds = collectionRepository.findReadableCollectionIds(userId, keyword);
+        if (readableIds.isEmpty()) {
+            return PageResponse.from(Page.empty(pageable), List.of());
+        }
+
+        Page<DocumentCollection> collections = collectionRepository.findAllByIdIn(readableIds, pageable);
+        List<CollectionResponse> content = collections.getContent().stream()
+                .map(collectionConverter::toResponse)
+                .toList();
+        return PageResponse.from(collections, content);
+    }
+
+    // 직계 자식 컬렉션 목록 조회 — 부모 읽기 권한 확인 후, 자식 각각의 읽기 권한도 확인
+    // (자식 owner/visibility가 부모와 다를 수 있으므로 부모 권한만으로 자식을 노출하면 안 됨)
+    public List<CollectionResponse> getChildren(Long userId, Long collectionId) {
+        DocumentCollection parent = collectionRepository.findById(collectionId)
+                .filter(c -> c.getStatus() != CollectionStatus.DELETED)
+                .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
+        if (!permissionQueryService.canReadCollection(userId, parent)) {
+            throw new DocGridException(ErrorCode.PERMISSION_DENIED);
+        }
+
+        return collectionRepository.findAllByParentCollectionIdAndStatus(collectionId, CollectionStatus.ACTIVE)
                 .stream()
+                .filter(child -> permissionQueryService.canReadCollection(userId, child))
                 .map(collectionConverter::toResponse)
                 .toList();
     }

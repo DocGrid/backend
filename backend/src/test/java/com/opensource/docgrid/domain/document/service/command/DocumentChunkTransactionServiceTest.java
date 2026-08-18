@@ -79,6 +79,7 @@ class DocumentChunkTransactionServiceTest {
 
     private DocumentChunkTransactionService service;
     private EmbeddingJob embeddingJob;
+    private Document document;
     private DocumentVersion documentVersion;
     private EmbeddingJobAttempt attempt;
 
@@ -118,6 +119,30 @@ class DocumentChunkTransactionServiceTest {
         ArgumentCaptor<IndexingEvent> eventCaptor = ArgumentCaptor.forClass(IndexingEvent.class);
         then(indexingEventRepository).should().save(eventCaptor.capture());
         assertThat(eventCaptor.getValue().getEventType()).isEqualTo(IndexingEventType.PARSE_STARTED);
+    }
+
+    @Test
+    @DisplayName("검색 가능한 Version이 없는 문서는 파싱 시작 시 INDEXING으로 전환된다")
+    void prepare_marksDocumentIndexingWhenNotSearchable() {
+        prepareEntities(DocumentType.TXT, DocumentVersionStatus.UPLOADED, DocumentStatus.UPLOADED);
+        givenValidContext();
+
+        service.prepare(JOB_ID, ATTEMPT_ID, WORKER_ID, CLAIM_TOKEN);
+
+        assertThat(document.getStatus()).isEqualTo(DocumentStatus.INDEXING);
+    }
+
+    @Test
+    @DisplayName("이미 INDEXED인 문서의 재인덱싱은 검색 가용성을 위해 INDEXED를 유지한다")
+    void prepare_keepsIndexedDocumentSearchableWhileReindexing() {
+        prepareEntities(DocumentType.TXT, DocumentVersionStatus.UPLOADED, DocumentStatus.INDEXED);
+        givenValidContext();
+
+        service.prepare(JOB_ID, ATTEMPT_ID, WORKER_ID, CLAIM_TOKEN);
+
+        // 검색 경로가 d.status = 'INDEXED'로 필터하므로 여기서 상태가 바뀌면 기존 Version이 검색에서 이탈한다.
+        assertThat(document.getStatus()).isEqualTo(DocumentStatus.INDEXED);
+        assertThat(documentVersion.getStatus()).isEqualTo(DocumentVersionStatus.PARSING);
     }
 
     @Test
@@ -266,6 +291,14 @@ class DocumentChunkTransactionServiceTest {
     }
 
     private void prepareEntities(DocumentType documentType, DocumentVersionStatus versionStatus) {
+        prepareEntities(documentType, versionStatus, DocumentStatus.INDEXING);
+    }
+
+    private void prepareEntities(
+        DocumentType documentType,
+        DocumentVersionStatus versionStatus,
+        DocumentStatus documentStatus
+    ) {
         WorkerNode worker = WorkerNode.builder()
             .workerName("worker")
             .instanceId("instance")
@@ -274,11 +307,11 @@ class DocumentChunkTransactionServiceTest {
             .build();
         ReflectionTestUtils.setField(worker, "id", WORKER_ID);
 
-        Document document = Document.builder()
+        document = Document.builder()
             .title("문서")
             .documentType(documentType)
             .sourceType(DocumentSourceType.UPLOAD)
-            .status(DocumentStatus.INDEXING)
+            .status(documentStatus)
             .visibility(VisibilityType.PRIVATE)
             .build();
         ReflectionTestUtils.setField(document, "id", 3L);

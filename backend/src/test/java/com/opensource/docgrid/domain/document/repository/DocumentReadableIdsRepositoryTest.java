@@ -27,11 +27,15 @@ import com.opensource.docgrid.domain.permission.enums.PermissionTargetType;
 import com.opensource.docgrid.domain.permission.enums.PermissionType;
 import com.opensource.docgrid.domain.permission.repository.CollectionPermissionRepository;
 import com.opensource.docgrid.domain.user.entity.Department;
+import com.opensource.docgrid.domain.user.entity.Role;
 import com.opensource.docgrid.domain.user.entity.User;
+import com.opensource.docgrid.domain.user.entity.UserRole;
 import com.opensource.docgrid.domain.user.enums.CommonStatus;
 import com.opensource.docgrid.domain.user.enums.UserStatus;
 import com.opensource.docgrid.domain.user.repository.DepartmentRepository;
+import com.opensource.docgrid.domain.user.repository.RoleRepository;
 import com.opensource.docgrid.domain.user.repository.UserRepository;
+import com.opensource.docgrid.domain.user.repository.UserRoleRepository;
 
 import jakarta.persistence.EntityManager;
 
@@ -53,6 +57,8 @@ class DocumentReadableIdsRepositoryTest {
     @Autowired private CollectionPermissionRepository collectionPermissionRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private DepartmentRepository departmentRepository;
+    @Autowired private RoleRepository roleRepository;
+    @Autowired private UserRoleRepository userRoleRepository;
     @Autowired private EntityManager entityManager;
 
     // seed 데이터에 PUBLIC·INDEXED 문서가 있어 모든 사용자에게 조회되므로, 이 테스트가 만든 문서만 검증한다.
@@ -160,6 +166,29 @@ class DocumentReadableIdsRepositoryTest {
         assertThat(readableIds).contains(document.getId());
     }
 
+    @Test
+    @DisplayName("부모 컬렉션에 ROLE 권한이 있으면 자식 컬렉션의 문서도 목록과 컬렉션 조회에서 함께 조회된다 (상속)")
+    void findReadableDocumentIds_includesDocumentInChildCollection_whenParentHasRolePermission() {
+        Role role = saveRole();
+        User owner = saveOwner();
+        User roleMember = saveUserWithRole(role);
+        Document document = saveDocument(owner, DocumentStatus.INDEXED);
+
+        DocumentCollection parent = saveCollection(owner, null);
+        DocumentCollection child = saveCollection(owner, parent);
+        addToCollection(child, document, owner);
+        grantRoleReadPermission(parent, role, owner);
+        flushAndClear();
+
+        List<Long> readableIds = documentRepository.findReadableDocumentIds(roleMember.getId(), INDEXED_ONLY);
+        List<Long> readableIdsInChildCollection = documentRepository.findReadableDocumentIdsInCollection(
+                roleMember.getId(), child.getId(), INDEXED_ONLY
+        );
+
+        assertThat(readableIds).contains(document.getId());
+        assertThat(readableIdsInChildCollection).containsExactly(document.getId());
+    }
+
     private Department saveDepartment() {
         return departmentRepository.save(
             Department.builder()
@@ -188,6 +217,50 @@ class DocumentReadableIdsRepositoryTest {
                 .collection(collection)
                 .targetType(PermissionTargetType.DEPARTMENT)
                 .department(department)
+                .permissionType(PermissionType.READ)
+                .canRead(true)
+                .canWrite(false)
+                .canAdmin(false)
+                .grantedBy(grantedBy)
+                .grantedAt(LocalDateTime.now())
+                .build()
+        );
+    }
+
+    private Role saveRole() {
+        return roleRepository.save(
+            Role.builder()
+                .name("읽기 가능 문서 테스트 역할")
+                .code("RID-ROLE-" + UUID.randomUUID())
+                .build()
+        );
+    }
+
+    private User saveUserWithRole(Role role) {
+        User user = userRepository.save(
+            User.builder()
+                .email("readable-ids-role-" + UUID.randomUUID() + "@test.com")
+                .passwordHash("hash")
+                .name("읽기 가능 문서 테스트 역할 보유자")
+                .status(UserStatus.ACTIVE)
+                .build()
+        );
+        userRoleRepository.save(
+            UserRole.builder()
+                .user(user)
+                .role(role)
+                .assignedAt(LocalDateTime.now())
+                .build()
+        );
+        return user;
+    }
+
+    private void grantRoleReadPermission(DocumentCollection collection, Role role, User grantedBy) {
+        collectionPermissionRepository.save(
+            CollectionPermission.builder()
+                .collection(collection)
+                .targetType(PermissionTargetType.ROLE)
+                .role(role)
                 .permissionType(PermissionType.READ)
                 .canRead(true)
                 .canWrite(false)

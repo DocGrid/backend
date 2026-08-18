@@ -27,16 +27,22 @@ import com.opensource.docgrid.domain.permission.enums.PermissionTargetType;
 import com.opensource.docgrid.domain.permission.enums.PermissionType;
 import com.opensource.docgrid.domain.permission.repository.CollectionPermissionRepository;
 import com.opensource.docgrid.domain.user.entity.Department;
+import com.opensource.docgrid.domain.user.entity.Role;
 import com.opensource.docgrid.domain.user.entity.User;
+import com.opensource.docgrid.domain.user.entity.UserRole;
 import com.opensource.docgrid.domain.user.enums.CommonStatus;
 import com.opensource.docgrid.domain.user.enums.UserStatus;
 import com.opensource.docgrid.domain.user.repository.DepartmentRepository;
+import com.opensource.docgrid.domain.user.repository.RoleRepository;
 import com.opensource.docgrid.domain.user.repository.UserRepository;
+import com.opensource.docgrid.domain.user.repository.UserRoleRepository;
 
 import jakarta.persistence.EntityManager;
 
 /**
  * 컬렉션 트리(부모-자식) 재귀 쿼리와 직계 자식 조회를 3단 트리(root→child→grandchild)로 검증한다.
+ * findReadableCollectionIds의 owner/PUBLIC 노출, keyword 필터, 부모 컬렉션으로부터의 DEPARTMENT 권한
+ * 상속도 함께 검증한다.
  * 이동/수정 API가 없어 순환 참조가 API상 불가능하므로 순환 참조 케이스는 검증하지 않는다.
  */
 @DataJpaTest
@@ -51,6 +57,8 @@ class CollectionTreeRepositoryTest {
     @Autowired private DocumentRepository documentRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private DepartmentRepository departmentRepository;
+    @Autowired private RoleRepository roleRepository;
+    @Autowired private UserRoleRepository userRoleRepository;
     @Autowired private EntityManager entityManager;
 
     @Test
@@ -204,6 +212,46 @@ class CollectionTreeRepositoryTest {
         flushAndClear();
 
         List<Long> readable = collectionRepository.findReadableCollectionIds(deptMember.getId(), null);
+
+        assertThat(readable).contains(parent.getId(), child.getId());
+    }
+
+    @Test
+    @DisplayName("findReadableCollectionIds는 부모 컬렉션에 부여된 ROLE 권한을 자식 컬렉션까지 상속해서 보여준다")
+    void findReadableCollectionIds_inheritsRolePermissionFromParent() {
+        Role role = roleRepository.save(
+            Role.builder().name("컬렉션목록 테스트 역할").code("CL-ROLE-" + UUID.randomUUID()).build()
+        );
+        User owner = saveOwner();
+        User roleMember = userRepository.save(
+            User.builder()
+                .email("collection-tree-role-" + UUID.randomUUID() + "@test.com")
+                .passwordHash("hash")
+                .name("컬렉션목록 테스트 역할 보유자")
+                .status(UserStatus.ACTIVE)
+                .build()
+        );
+        userRoleRepository.save(
+            UserRole.builder().user(roleMember).role(role).assignedAt(LocalDateTime.now()).build()
+        );
+        DocumentCollection parent = saveCollection(owner, null);
+        DocumentCollection child = saveCollection(owner, parent);
+        collectionPermissionRepository.save(
+            CollectionPermission.builder()
+                .collection(parent)
+                .targetType(PermissionTargetType.ROLE)
+                .role(role)
+                .permissionType(PermissionType.READ)
+                .canRead(true)
+                .canWrite(false)
+                .canAdmin(false)
+                .grantedBy(owner)
+                .grantedAt(LocalDateTime.now())
+                .build()
+        );
+        flushAndClear();
+
+        List<Long> readable = collectionRepository.findReadableCollectionIds(roleMember.getId(), null);
 
         assertThat(readable).contains(parent.getId(), child.getId());
     }

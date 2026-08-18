@@ -3,14 +3,15 @@
 // vinext production navigation uses full requests because its client router does not complete catch-all route transitions.
 /* eslint-disable @next/next/no-html-link-for-pages */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest, downloadBackendFile, errorMessage, previewBackendFile, toQuery } from "../lib/api";
 import type { DocumentContent, DocumentDetail, DocumentStatus, DocumentSummary, PageResponse, PermissionSummary, UpdateDocumentMetadataRequest } from "../lib/api-types";
+import { DOCUMENT_STATUS_POLL_INTERVAL_MS, isDocumentProcessing } from "../lib/document-status";
 import { EmptyState, ErrorState, LoadingState, Notice, PageHeading, StatusPill, formatDate } from "../components/ui";
 
 const statuses = ["", "DRAFT", "UPLOADED", "INDEXING", "INDEXED", "FAILED", "ARCHIVED"];
 
-export function DocumentsPage({ onUpload }: { onUpload: () => void }) {
+export function DocumentsPage({ onUpload, refreshKey }: { onUpload: () => void; refreshKey: number }) {
   const [data, setData] = useState<PageResponse<DocumentSummary> | null>(null);
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
@@ -34,6 +35,14 @@ export function DocumentsPage({ onUpload }: { onUpload: () => void }) {
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load]);
+
+  // 업로드는 Modal에서 끝나므로 접수 신호가 바뀔 때만 목록을 다시 읽는다.
+  const loadedRefreshKey = useRef(refreshKey);
+  useEffect(() => {
+    if (loadedRefreshKey.current === refreshKey) return;
+    loadedRefreshKey.current = refreshKey;
+    void load();
+  }, [load, refreshKey]);
   const visible = data?.content.filter((document) => document.title.toLowerCase().includes(search.toLowerCase())) ?? [];
 
   return <section className="content page-view">
@@ -46,7 +55,7 @@ export function DocumentsPage({ onUpload }: { onUpload: () => void }) {
   </section>;
 }
 
-export function DocumentDetailPage({ documentId, onVersionUpload, notify }: { documentId: number; onVersionUpload: () => void; notify: (message: string) => void }) {
+export function DocumentDetailPage({ documentId, onVersionUpload, notify, refreshKey }: { documentId: number; onVersionUpload: () => void; notify: (message: string) => void; refreshKey: number }) {
   const [document, setDocument] = useState<DocumentDetail | null>(null);
   const [content, setContent] = useState<DocumentContent | null>(null);
   const [status, setStatus] = useState<DocumentStatus | null>(null);
@@ -59,8 +68,9 @@ export function DocumentDetailPage({ documentId, onVersionUpload, notify }: { do
   const [error, setError] = useState("");
   const [contentError, setContentError] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // silent 재조회는 인덱싱 완료 반영처럼 화면이 이미 떠 있는 상태에서 쓰므로 Loading 표시를 건너뛴다.
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoading(true);
     setError("");
     setContentError("");
     // 1. One unstable detail contract must not hide independently available status and permission data.
@@ -111,6 +121,37 @@ export function DocumentDetailPage({ documentId, onVersionUpload, notify }: { do
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load]);
+
+  // 새 버전 접수 신호가 바뀌면 처리 중 버전이 상세에 바로 드러나도록 다시 읽는다.
+  const loadedRefreshKey = useRef(refreshKey);
+  useEffect(() => {
+    if (loadedRefreshKey.current === refreshKey) return;
+    loadedRefreshKey.current = refreshKey;
+    void load();
+  }, [load, refreshKey]);
+
+  // 인덱싱은 비동기로 끝나므로, 처리 중 버전이 남아 있는 동안만 상태를 다시 읽어 완료 시점을 반영한다.
+  useEffect(() => {
+    if (!isDocumentProcessing(status)) return;
+
+    let active = true;
+    const timer = window.setInterval(async () => {
+      try {
+        const next = await apiRequest<DocumentStatus>(`/api/documents/${documentId}/status`);
+        if (!active) return;
+        setStatus(next);
+        // 처리가 끝난 시점에만 현재 버전과 추출 본문까지 최신 값으로 맞춘다.
+        if (!isDocumentProcessing(next)) await load({ silent: true });
+      } catch {
+        // 일시적인 조회 실패는 다음 주기에 다시 시도한다.
+      }
+    }, DOCUMENT_STATUS_POLL_INTERVAL_MS);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [documentId, load, status]);
 
   async function accessFile(action: "preview" | "download") {
     setFileAction(action);

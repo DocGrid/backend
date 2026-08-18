@@ -230,7 +230,7 @@ BUILD SUCCESSFUL
 - 문서 판단 4종(`canReadDocument`/`canWriteDocument`/`canAdminDocument`/`checkDocumentPermission`)은 `CollectionRepository.findEffectiveCollectionIdsForDocument()`(문서가 속한 컬렉션+그 조상 전체)를 마지막 단계로 추가.
 - 컬렉션 판단 3종(`canReadCollection`/`canWriteCollection`/`canAdminCollection`)은 `CollectionRepository.findAncestorIdsInclusive()`(자기 자신+조상 전체)를 마지막 단계로 추가.
 - 전부 **기존 로직은 안 건드리고 끝에 새 단계만 이어붙이는 방식**으로 넣었다 — 대규모 기존 테스트(`PermissionQueryServiceTest` 817줄, 원래 47개 케이스)를 한 줄도 안 고치고 그대로 통과시키기 위한 선택.
-- 컬렉션 목록(`GET /collections`)도 이번에 owner-only에서 "읽을 수 있는 전체"로 넓어졌는데, 그건 `PermissionQueryService`가 아니라 `CollectionRepository.findReadableCollectionIds()`라는 별도 native 쿼리로 구현했다 — 6개 판정 그룹과는 별개 경로다.
+- 컬렉션 목록(`GET /collections`)도 이번에 owner-only에서 "읽을 수 있는 전체"로 넓어졌는데, 그건 `PermissionQueryService`가 아니라 별도 native 쿼리로 구현했다 — 6개 판정 그룹과는 별개 경로다. (2026-08-19, 이슈 #240) 그 쿼리 이름이 `findReadableCollectionIds()`(ID만 조회 후 재조회하는 2단계 구조)에서 `findReadableCollections()`(COUNT(*) OVER()로 페이지 내용+총개수를 한 쿼리에서 처리)로 바뀌었다 — `docs/design/kangcheolung-#240-collection-list-pagination.md` 참고.
 
 상세 설계는 신규 문서 `docs/design/kangcheolung-#229-collection-tree.md` 참고.
 

@@ -260,7 +260,7 @@ BUILD SUCCESSFUL
 
 **`getMyCollections()` → `getCollections()` — 권한 반영 + 페이지네이션 + 검색 (관련 작업)**
 - 이름 그대로 "owner 것만"이라 문서 목록(`GET /api/documents`, owner+PUBLIC+권한부여 전부 포함)과 비대칭이었던 게 QA 중 재발견됨.
-- `CollectionRepository.findReadableCollectionIds(userId, keyword)` 신규 — owner+PUBLIC+USER직접권한+ROLE+DEPARTMENT(+부모 컬렉션 상속)를 전부 포함하는 native 쿼리. `DocumentRepository.findReadableDocumentIds`와 동일한 UNION 패턴.
+- ~~`CollectionRepository.findReadableCollectionIds(userId, keyword)` 신규~~ — owner+PUBLIC+USER직접권한+ROLE+DEPARTMENT(+부모 컬렉션 상속)를 전부 포함하는 native 쿼리. `DocumentRepository.findReadableDocumentIds`와 동일한 UNION 패턴. → **(2026-08-19, 이슈 #240) `findReadableCollections()`로 교체됨**: ID만 조회한 뒤 그 ID로 재조회하던 2단계 구조 대신, `COUNT(*) OVER()` 윈도우 함수로 페이지 내용과 총개수를 한 쿼리에서 함께 계산하도록 바꿨다 — `docs/design/kangcheolung-#240-collection-list-pagination.md` 참고.
 - `GET /collections?keyword=&page=&size=`로 페이지네이션과 이름/설명 검색까지 같이 추가.
 - 안 쓰이게 된 `findAllByOwnerIdAndStatus()`는 삭제.
 

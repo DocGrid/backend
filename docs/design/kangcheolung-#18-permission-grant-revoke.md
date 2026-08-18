@@ -176,7 +176,7 @@ private void validateTargetType(GrantPermissionRequest request) {
 ```java
 } else if (request.targetType() == PermissionTargetType.ROLE) {
     targetRole = roleRepository.findById(request.roleId())
-            .orElseThrow(() -> new DocGridException(ErrorCode.ROLE_NOT_GRANTABLE));
+            .orElseThrow(() -> new DocGridException(ErrorCode.ROLE_NOT_FOUND));
     if ("USER".equals(targetRole.getCode())) {
         throw new DocGridException(ErrorCode.ROLE_NOT_GRANTABLE);
     }

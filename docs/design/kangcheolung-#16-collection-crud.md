@@ -24,7 +24,7 @@ CollectionController.createCollection()
     │
     ▼
 CollectionCommandService.createCollection()
-    ├─ parentCollectionId 있으면 상위 컬렉션 존재 확인
+    ├─ parentCollectionId 있으면 상위 컬렉션 존재 확인 (+ #229부터 쓰기권한 확인도 추가됨)
     ├─ visibility 미입력 시 PRIVATE 기본값 적용
     └─ DocumentCollection 저장 (status=ACTIVE, owner=요청자)
     │
@@ -99,7 +99,7 @@ public class DocumentCollection extends BaseEntity {
 ```
 
 - `visibility`는 `document` 도메인의 `VisibilityType`(`PRIVATE`/`COLLECTION`/`DEPARTMENT`/`PUBLIC`)을 그대로 재사용한다 — 문서와 컬렉션이 같은 공개범위 개념을 공유하므로 별도 enum을 새로 만들지 않았다.
-- `parentCollection`이 self-FK라 컬렉션 트리(폴더 계층) 구조를 표현할 수 있지만, 이번 이슈에서는 "생성 시 상위 컬렉션 존재 확인" 정도만 쓰고 트리 순회 API는 만들지 않았다.
+- ~~`parentCollection`이 self-FK라 컬렉션 트리(폴더 계층) 구조를 표현할 수 있지만, 이번 이슈에서는 "생성 시 상위 컬렉션 존재 확인" 정도만 쓰고 트리 순회 API는 만들지 않았다.~~ → **#229에서 실제로 구현됨**: `GET /collections/{id}/children`(직계 자식 조회), 생성 시 부모 쓰기권한 체크, 부모→자식 권한 상속, cascade 삭제까지 전부 추가됨. 아래 "이후 업데이트" 절 참고.
 - 삭제는 `markDeleted()`로 `status`/`deletedAt`만 바꾸는 soft delete다 (`#29`에서 실제로 호출).
 
 ### 2. `domain/collection/entity/CollectionDocument.java`
@@ -317,6 +317,15 @@ BUILD SUCCESSFUL
 - `CollectionStatus.ARCHIVED`는 정의만 되어 있고 전환 로직이 없다.
 - ~~`CollectionPermission`/`DocumentPermission` 엔티티의 Javadoc에 이미 명시된 TODO: `target_type`별로 단일 FK만 채워져야 한다는 규칙이 DB CHECK 제약으로 강제되지 않고 애플리케이션 검증(`validateTargetType()`, `#18`)에만 의존한다.~~ → 확인 결과 이미 해결되어 있음: `V11__create_collection_permissions.sql`/`V12__create_document_permissions.sql`에 `CHECK` 제약이 반영되어 있다(엔티티 Javadoc만 갱신되지 않은 상태였음).
 
+## 이후 업데이트 (2026-08-18, 이슈 #229 — 컬렉션 트리)
+
+수동 QA(시나리오 4) 중 `parentCollectionId`가 스키마에만 있고 실제로 死코드라는 게 재발견되어, 이슈 #229에서 실제 트리 기능으로 완성했다. 상세 설계는 신규 문서 `docs/design/kangcheolung-#229-collection-tree.md` 참고. 이 문서와 직접 관련된 변경만 요약:
+
+- `createCollection()`에 부모 컬렉션 **쓰기권한 체크**(`canWriteCollection(parent)`) 추가 — 예전엔 부모 존재 여부만 확인해서, 남의 컬렉션 밑에도 마음대로 자식을 매달 수 있는 버그였다.
+- `CollectionRepository`에 `findAllByParentCollectionIdAndStatus`(직계 자식 조회) 신규.
+- `CollectionQueryService`에 `getChildren()` 신규, `GET /collections/{id}/children` 엔드포인트 추가.
+- 순환 참조 방지 로직은 만들지 않았다 — 컬렉션 이동/수정 API가 없어 생성 시점에만 부모를 지정할 수 있고, 존재하지 않는 컬렉션은 자기 자신의 조상이 될 수 없으므로 현재 API 구조상 순환 참조가 원천적으로 불가능하기 때문(검토 완료).
+
 ## 다음 단계
 
-`#18`(권한 부여/회수), `#21`(PermissionQueryService), `#24`(문서 권한 확인 API), `#29`(컬렉션 관리 API — 목록/삭제/문서 제거)로 이어진다.
+`#18`(권한 부여/회수), `#21`(PermissionQueryService), `#24`(문서 권한 확인 API), `#29`(컬렉션 관리 API — 목록/삭제/문서 제거)로 이어진다. 이후 `#229`(컬렉션 트리 — 하위 컬렉션 지원)로 이어진다.

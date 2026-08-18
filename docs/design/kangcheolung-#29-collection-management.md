@@ -14,7 +14,10 @@ closes #29
 
 ```text
 GET /collections                              → 내 컬렉션 목록 (ACTIVE만)
+                                                 (2026-08-18, 이슈 #229부터: owner+PUBLIC+권한부여+상속 전체,
+                                                  페이지네이션·keyword 검색 포함 — 아래 "이후 업데이트" 참고)
 DELETE /collections/{id}                       → 컬렉션 소유자만, 권한 전부 정리 후 소프트 삭제
+                                                 (2026-08-18부터: 하위 컬렉션 전체까지 cascade)
 DELETE /collections/{id}/documents/{docId}     → 컬렉션 소유자만, 그 문서에 대한 캐시만 정리 후 링크 삭제
 ```
 
@@ -54,6 +57,8 @@ public ResponseEntity<ApiResponse<Void>> removeDocument(
 
 ### `domain/collection/service/query/CollectionQueryService.java` — `getMyCollections()`
 
+**(2026-08-18, 이슈 #229 관련 작업으로 이 메서드는 `getCollections(userId, keyword, page, size)`로 완전히 교체됨. 아래는 작성 당시 원본 코드 — "이후 업데이트" 절 참고.)**
+
 ```java
 // 내 컬렉션 목록 조회 (ACTIVE 상태만)
 public List<CollectionResponse> getMyCollections(Long userId) {
@@ -63,9 +68,11 @@ public List<CollectionResponse> getMyCollections(Long userId) {
             .toList();
 }
 ```
-`#16`에 이미 있는 `getCollection(id)`(단건 조회, 권한 체크가 없다는 게 이미 TODO로 기록됨)와 다르게, 이건 `ownerId` 기준으로 리포지토리 쿼리 자체가 필터링한다 — "내가 만든 컬렉션 목록"이라 소유자 필터가 곧 접근 제어라서 서비스 레이어에 별도 권한 체크 코드가 필요 없다.
+`#16`에 이미 있는 `getCollection(id)`(단건 조회, 권한 체크가 없다는 게 이미 TODO로 기록됨)와 다르게, 이건 `ownerId` 기준으로 리포지토리 쿼리 자체가 필터링한다 — "내가 만든 컬렉션 목록"이라 소유자 필터가 곧 접근 제어라서 서비스 레이어에 별도 권한 체크 코드가 필요 없다(작성 당시 기준. 지금은 owner 외에도 권한부여자를 포함하므로 이 필터링 논리 자체가 바뀌었다).
 
 ### `domain/collection/service/command/CollectionCommandService.java` — `deleteCollection()`
+
+**(2026-08-18, 이슈 #229부터 하위 컬렉션 전체까지 cascade하도록 확장됨. 아래는 작성 당시 원본 — "이후 업데이트" 절 참고.)**
 
 ```java
 // 컬렉션 soft delete — 소유자만 가능
@@ -87,7 +94,7 @@ public void deleteCollection(Long collectionId, Long userId) {
     collection.markDeleted(LocalDateTime.now());
 }
 ```
-순서가 중요하다 — ① 캐시 무효화(`forEach`) → ② 권한 레코드 삭제(`deleteAll`) → ③ 컬렉션 소프트 삭제(`markDeleted`). 반대로 권한 레코드를 먼저 지워버리면 `p.getId()`로 캐시를 찾아 무효화할 근거(`DIRECT_COLLECTION_PERMISSION` + `sourceId`)가 사라진다. ROLE/DEPARTMENT 대상 권한은 캐시에 애초에 안 들어가 있으므로(`#18`의 비대칭 캐싱 설계) `filter(USER)`로 걸러지고, `deleteAll()`에서는 캐시 무효화 없이 같이 삭제되는 것만으로 충분하다.
+순서가 중요하다 — ① 캐시 무효화(`forEach`) → ② 권한 레코드 삭제(`deleteAll`) → ③ 컬렉션 소프트 삭제(`markDeleted`). 반대로 권한 레코드를 먼저 지워버리면 `p.getId()`로 캐시를 찾아 무효화할 근거(`DIRECT_COLLECTION_PERMISSION` + `sourceId`)가 사라진다. ROLE/DEPARTMENT 대상 권한은 캐시에 애초에 안 들어가 있으므로(`#18`의 비대칭 캐싱 설계) `filter(USER)`로 걸러지고, `deleteAll()`에서는 캐시 무효화 없이 같이 삭제되는 것만으로 충분하다. 이 순서 원칙(캐시 무효화 → 권한 삭제 → soft delete)은 cascade로 확장된 뒤에도 그대로 유지된다.
 
 ### `domain/collection/service/command/CollectionCommandService.java` — `removeDocument()`
 
@@ -203,7 +210,7 @@ GET /collections
 → 200 OK
 []
 ```
-소프트 삭제된 컬렉션이 `getMyCollections()`(ACTIVE 필터)에서 제외됨을 확인.
+소프트 삭제된 컬렉션이 `getMyCollections()`(ACTIVE 필터)에서 제외됨을 확인. (당시 응답이 배열이었던 건 `getMyCollections()` 기준 — 2026-08-18 `getCollections()`로 교체된 뒤로는 `PageResponse` 형태로 바뀌었다. 삭제된 컬렉션이 목록에서 빠진다는 결론 자체는 그대로 유효.)
 
 ### 자동 테스트
 
@@ -239,9 +246,24 @@ BUILD SUCCESSFUL
 
 ## 남은 이슈 / TODO
 
-- `getMyCollections()`가 페이지네이션 없이 전체 목록을 반환한다 — 컬렉션 수가 많아지는 시나리오는 아직 없어 이슈로 등록하지 않음.
+- ~~`getMyCollections()`가 페이지네이션 없이 전체 목록을 반환한다 — 컬렉션 수가 많아지는 시나리오는 아직 없어 이슈로 등록하지 않음.~~ → **2026-08-18 해결됨**: `getCollections(userId, keyword, page, size)`로 교체, `PageResponse` 반환. 아래 "이후 업데이트" 참고.
 - ~~`deleteCollection()`/`removeDocument()` 둘 다 `collectionRepository.findById()`로만 컬렉션을 조회한다 — `#16`에서 이미 지적된 것과 같은 이유로, 이미 `status=DELETED`인 컬렉션에 대해서도 (멱등하게) 재호출이 가능하다.~~ → 해결됨: 두 메서드 모두 `findById(...).filter(c -> c.getStatus() != CollectionStatus.DELETED)`로 변경(`#16`과 동일 패턴, `PermissionQueryService`의 `getActiveCollection()` 헬퍼와 동일한 관용구).
+
+## 이후 업데이트 (2026-08-18, 이슈 #229 및 관련 작업)
+
+수동 QA(시나리오 4) 중 이 문서가 만든 `getMyCollections()`/`deleteCollection()` 둘 다 실질적으로 다시 손보게 됐다. 상세 설계는 신규 문서 `docs/design/kangcheolung-#229-collection-tree.md` 참고.
+
+**`deleteCollection()` — cascade 삭제로 확장 (이슈 #229 본편)**
+- `CollectionRepository.findDescendantIdsInclusive(collectionId)`(자기 자신+모든 후손, `WITH RECURSIVE`)로 대상 전체 ID를 구한 뒤, 권한 삭제·캐시 무효화·soft delete를 전부 그 목록 전체에 대해 수행하도록 확장.
+- **문서 매핑(`collection_documents`)도 이번에 같이 지우도록 범위가 넓어졌다** — 원래는 컬렉션만 지우고 매핑은 안 건드렸는데(위 "DB 변화 예시" 참고), cascade 대상 전체의 `CollectionDocument`도 함께 삭제한다.
+- owner 체크는 **삭제 대상 root 1회만** 하고 하위 각각은 재확인하지 않는다 — 구글드라이브 공유폴더 삭제와 같은 멘탈모델("최상위에 대한 권한으로 하위 전체가 지워짐"). 트레이드오프: 하위 컬렉션의 owner가 root owner와 다를 수 있는데(부모에 쓰기권한만 있으면 자식을 만들 수 있으므로), 그 경우도 root owner가 삭제할 수 있다.
+
+**`getMyCollections()` → `getCollections()` — 권한 반영 + 페이지네이션 + 검색 (관련 작업)**
+- 이름 그대로 "owner 것만"이라 문서 목록(`GET /api/documents`, owner+PUBLIC+권한부여 전부 포함)과 비대칭이었던 게 QA 중 재발견됨.
+- `CollectionRepository.findReadableCollectionIds(userId, keyword)` 신규 — owner+PUBLIC+USER직접권한+ROLE+DEPARTMENT(+부모 컬렉션 상속)를 전부 포함하는 native 쿼리. `DocumentRepository.findReadableDocumentIds`와 동일한 UNION 패턴.
+- `GET /collections?keyword=&page=&size=`로 페이지네이션과 이름/설명 검색까지 같이 추가.
+- 안 쓰이게 된 `findAllByOwnerIdAndStatus()`는 삭제.
 
 ## 다음 단계
 
-권한 블록(`#16`, `#18`, `#21`, `#24`, `#29`) 전체 완료. RAG 블록(F-SEARCH, F-RAG)이 이 블록의 `PermissionQueryService.canReadDocument()`를 검색 단계 권한 필터링에 그대로 재사용한다(이미 완료·문서화됨: `docs/design/kangcheolung-#65-*.md` 이하 RAG 문서 시리즈).
+권한 블록(`#16`, `#18`, `#21`, `#24`, `#29`) 전체 완료. RAG 블록(F-SEARCH, F-RAG)이 이 블록의 `PermissionQueryService.canReadDocument()`를 검색 단계 권한 필터링에 그대로 재사용한다(이미 완료·문서화됨: `docs/design/kangcheolung-#65-*.md` 이하 RAG 문서 시리즈). 이후 `#229`(컬렉션 트리)로 이어진다.

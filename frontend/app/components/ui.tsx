@@ -62,6 +62,14 @@ export function formatDate(value: string | null | undefined, withTime = true) {
   }).format(date);
 }
 
+/** 파일 크기를 크기 구간에 맞는 단위로 표시한다. MB로 고정하면 작은 파일이 0.00MB로 보인다. */
+export function formatBytes(value: number | null | undefined) {
+  if (value === null || value === undefined) return "—";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 ** 2).toFixed(1)} MB`;
+}
+
 export function initials(name?: string | null) {
   return name?.trim().slice(0, 1) || "D";
 }

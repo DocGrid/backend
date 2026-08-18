@@ -45,6 +45,8 @@ import com.opensource.docgrid.domain.worker.enums.AttemptStatus;
 import com.opensource.docgrid.domain.worker.enums.IndexingEventType;
 import com.opensource.docgrid.global.common.response.PageResponse;
 import com.opensource.docgrid.global.config.SecurityConfig;
+import com.opensource.docgrid.global.exception.RestAccessDeniedHandler;
+import com.opensource.docgrid.global.exception.RestAuthenticationEntryPoint;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
@@ -52,7 +54,7 @@ import com.opensource.docgrid.global.exception.ErrorCode;
  * 관리자 인덱싱 Job 조회 API의 Pagination, 민감 정보 비노출, Validation과 Security 계약을 검증한다.
  */
 @WebMvcTest(IndexingJobAdminController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, RestAuthenticationEntryPoint.class, RestAccessDeniedHandler.class})
 @DisplayName("IndexingJobAdminController 조회 테스트")
 class IndexingJobAdminQueryControllerTest {
 
@@ -181,7 +183,7 @@ class IndexingJobAdminQueryControllerTest {
     void getQueries_returnForbidden_withoutAdminRole(String description, String url) throws Exception {
         mockMvc.perform(get(url).with(user("user").roles("USER")))
             .andExpect(status().isForbidden());
-        mockMvc.perform(get(url)).andExpect(status().isForbidden());
+        mockMvc.perform(get(url)).andExpect(status().isUnauthorized());
     }
 
     private static Stream<Arguments> invalidQueryRequests() {

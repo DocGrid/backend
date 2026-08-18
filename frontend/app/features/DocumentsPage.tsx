@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest, downloadBackendFile, errorMessage, previewBackendFile, toQuery } from "../lib/api";
 import type { DocumentContent, DocumentDetail, DocumentStatus, DocumentSummary, PageResponse, PermissionSummary, UpdateDocumentMetadataRequest } from "../lib/api-types";
 import { DOCUMENT_STATUS_POLL_INTERVAL_MS, isDocumentProcessing } from "../lib/document-status";
-import { EmptyState, ErrorState, LoadingState, Notice, PageHeading, StatusPill, formatDate } from "../components/ui";
+import { EmptyState, ErrorState, LoadingState, Notice, PageHeading, StatusPill, formatBytes, formatDate } from "../components/ui";
 
 const statuses = ["", "DRAFT", "UPLOADED", "INDEXING", "INDEXED", "FAILED", "ARCHIVED"];
 
@@ -226,7 +226,7 @@ function DocumentMetadataModal({ document, busy, error, onClose, onSubmit }: {
   return <div className="modal-layer"><form className="modal compact-modal" onSubmit={(event) => { event.preventDefault(); void onSubmit({ title, description }); }}>
     <div className="modal-header"><div><span className="modal-symbol">✎</span><div><h2>문서 정보 수정</h2><p>검색 결과와 문서 화면에 표시되는 제목과 설명을 변경합니다.</p></div></div><button type="button" disabled={busy} aria-label="닫기" onClick={onClose}>×</button></div>
     <label className="form-field">문서 제목<input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={500} required /></label>
-    <label className="form-field">문제 설명<textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={5} placeholder="문서가 해결하는 문제나 목적을 입력하세요." /></label>
+    <label className="form-field">문서 설명<textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={5} placeholder="문서가 해결하는 문제나 목적을 입력하세요." /></label>
     {error ? <div className="form-error" role="alert">{error}</div> : null}
     <div className="modal-footer"><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>취소</button><button className="primary-button" disabled={busy || !title.trim()}>{busy ? "저장 중…" : "변경사항 저장"}</button></div>
   </form></div>;
@@ -257,9 +257,3 @@ function fileTone(type: string) {
   return "green";
 }
 
-function formatBytes(value: number | null | undefined) {
-  if (value === null || value === undefined) return "—";
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / 1024 ** 2).toFixed(1)} MB`;
-}

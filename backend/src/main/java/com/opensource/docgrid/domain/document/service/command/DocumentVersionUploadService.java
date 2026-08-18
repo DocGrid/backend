@@ -133,6 +133,11 @@ public class DocumentVersionUploadService {
         if (!document.getOwner().getId().equals(userId)) {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
+        // 삭제된 문서는 다른 조회·수정 경로와 같이 존재하지 않는 것으로 다룬다.
+        // 상태 분기까지 내려가면 이 경우만 409가 되어 나머지 API의 404와 어긋난다.
+        if (document.getStatus() == DocumentStatus.DELETED) {
+            throw new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND);
+        }
         if (document.getSourceType() != DocumentSourceType.UPLOAD) {
             throw new DocGridException(ErrorCode.DOCUMENT_VERSION_NOT_ALLOWED);
         }

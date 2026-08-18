@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { apiRequest, errorMessage } from "../lib/api";
 import type { DocumentUploadResponse, DocumentVersionUploadResponse } from "../lib/api-types";
+import { formatBytes } from "./ui";
 
 export function UploadModal({ documentId, onClose, onSuccess }: {
   documentId?: number;
@@ -44,7 +45,7 @@ export function UploadModal({ documentId, onClose, onSuccess }: {
       <form className="modal" onSubmit={submit}>
         <div className="modal-header"><div><span className="modal-symbol">⇧</span><div><h2>{versionMode ? "새 버전 업로드" : "문서 업로드"}</h2><p>{versionMode ? `문서 #${documentId}에 새 파일 버전을 추가합니다.` : "파일 저장 후 비동기 인덱싱 Job을 생성합니다."}</p></div></div><button type="button" onClick={onClose}>×</button></div>
         {error ? <div className="form-error" role="alert">{error}</div> : null}
-        <label className={`dropzone ${file ? "selected" : ""}`}><input type="file" accept=".pdf,.docx,.txt,.md" onChange={(event) => { const selected = event.target.files?.[0] ?? null; setFile(selected); if (selected && !title) setTitle(selected.name.replace(/\.[^.]+$/, "")); }} /><span>▤</span>{file ? <><strong>{file.name}</strong><small>{(file.size / 1024 / 1024).toFixed(2)}MB · 업로드할 준비가 됐습니다.</small></> : <><strong>클릭해 파일을 선택하세요</strong><small>PDF, DOCX, TXT, MD</small></>}</label>
+        <label className={`dropzone ${file ? "selected" : ""}`}><input type="file" accept=".pdf,.docx,.txt,.md" onChange={(event) => { const selected = event.target.files?.[0] ?? null; setFile(selected); if (selected && !title) setTitle(selected.name.replace(/\.[^.]+$/, "")); }} /><span>▤</span>{file ? <><strong>{file.name}</strong><small>{formatBytes(file.size)} · 업로드할 준비가 됐습니다.</small></> : <><strong>클릭해 파일을 선택하세요</strong><small>PDF, DOCX, TXT, MD</small></>}</label>
         {!versionMode ? <>
           <label className="form-field">문서 제목<input name="title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="문서 제목" maxLength={500} required /></label>
           <label className="form-field">설명<textarea name="description" rows={3} placeholder="선택 입력" /></label>

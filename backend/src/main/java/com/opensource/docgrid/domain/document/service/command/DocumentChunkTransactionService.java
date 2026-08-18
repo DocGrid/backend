@@ -12,9 +12,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.entity.DocumentChunk;
 import com.opensource.docgrid.domain.document.entity.DocumentVersion;
 import com.opensource.docgrid.domain.document.entity.FileObject;
+import com.opensource.docgrid.domain.document.enums.DocumentStatus;
 import com.opensource.docgrid.domain.document.enums.DocumentType;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 import com.opensource.docgrid.domain.document.repository.DocumentChunkRepository;
@@ -101,6 +103,7 @@ public class DocumentChunkTransactionService {
         // 4. 최초 UPLOADED 요청만 PARSING 상태와 시작 이벤트를 같은 Transaction에 기록한다.
         if (documentVersion.getStatus() == DocumentVersionStatus.UPLOADED) {
             documentVersion.markParsing();
+            markDocumentIndexingIfNotSearchable(documentVersion.getDocument());
             indexingEventRepository.save(IndexingEvent.builder()
                 .embeddingJob(embeddingJob)
                 .eventType(IndexingEventType.PARSE_STARTED)
@@ -117,6 +120,23 @@ public class DocumentChunkTransactionService {
             documentVersion.getDocument().getDocumentType(),
             new StoredFile(fileObject.getBucketName(), fileObject.getObjectKey())
         ));
+    }
+
+    /**
+     * 검색 가능한 Version이 아직 없는 문서에 한해 진행 상태를 INDEXING으로 노출한다.
+     *
+     * <p>이미 INDEXED인 문서의 재인덱싱에는 적용하지 않는다. 검색 경로가
+     * {@code d.status = 'INDEXED'}로 필터하므로(VectorSearchRepository,
+     * AccessibleDocumentQueryService), 재인덱싱 중 상태를 바꾸면 기존에 검색되던 문서가
+     * 새 Version을 처리하는 동안 검색 결과에서 이탈한다.
+     *
+     * <p>UPLOADED는 최초 업로드와, FAILED 문서에 새 Version을 올려 재시도하는 경우를 함께
+     * 가리킨다. 두 경우 모두 검색 대상 Version이 없어 노출해도 검색 가용성에 영향이 없다.
+     */
+    private void markDocumentIndexingIfNotSearchable(Document document) {
+        if (document.getStatus() == DocumentStatus.UPLOADED) {
+            document.markIndexing();
+        }
     }
 
     /**

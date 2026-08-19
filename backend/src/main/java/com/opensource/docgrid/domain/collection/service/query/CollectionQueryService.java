@@ -34,13 +34,17 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class CollectionQueryService {
 
+    // 컬렉션 내 문서 조회 시, DELETED 문서는 제외하고 나머지 상태만 허용한다.
     private static final List<String> LISTABLE_DOCUMENT_STATUSES = EnumSet.complementOf(
             EnumSet.of(DocumentStatus.DELETED)
     ).stream().map(DocumentStatus::name).toList();
+
+    // 컬렉션 내 문서 조회 시, addedAt DESC, id DESC 순으로 정렬한다.
     private static final Sort COLLECTION_DOCUMENT_SORT = Sort.by(
             Sort.Order.desc("addedAt"),
             Sort.Order.desc("id")
     );
+    // 컬렉션 목록 조회 시, createdAt DESC, id DESC 순으로 정렬한다.
     private static final Sort COLLECTION_SORT = Sort.by(
             Sort.Order.desc("createdAt"),
             Sort.Order.desc("id")

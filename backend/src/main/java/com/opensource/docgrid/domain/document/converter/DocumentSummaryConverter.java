@@ -20,6 +20,7 @@ public class DocumentSummaryConverter {
             document.getStatus(),
             document.getVisibility(),
             document.getOwner().getId(),
+            document.getOwner().getName(),
             currentVersion == null ? null : currentVersion.getVersionNo(),
             currentVersion == null ? null : currentVersion.getStatus(),
             document.getCreatedAt(),

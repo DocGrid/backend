@@ -17,6 +17,7 @@ public record DocumentSummaryResponse(
     @Schema(description = "문서 상태", example = "INDEXED") DocumentStatus status,
     @Schema(description = "공개 범위", example = "PRIVATE") VisibilityType visibility,
     @Schema(description = "소유자 사용자 ID") Long ownerUserId,
+    @Schema(description = "소유자 이름") String ownerName,
     @Schema(description = "현재 활성 버전 번호, 아직 활성 버전이 없으면 null") Integer currentVersionNo,
     @Schema(description = "현재 활성 버전 상태, 아직 활성 버전이 없으면 null") DocumentVersionStatus currentVersionStatus,
     @Schema(description = "등록 시각") LocalDateTime createdAt,

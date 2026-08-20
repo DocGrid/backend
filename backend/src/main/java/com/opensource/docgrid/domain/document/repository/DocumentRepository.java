@@ -202,12 +202,13 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     );
 
     // 목록 화면용 — 권한 pre-filter로 걸러진 ID를 받아 정렬·페이징만 담당한다.
-    // currentVersion은 LAZY라 버전 번호·상태를 응답에 담으려면 JOIN FETCH가 필요하다.
+    // currentVersion·owner는 LAZY라 버전 번호·상태·소유자 이름을 응답에 담으려면 JOIN FETCH가 필요하다.
     @Query(
         value = """
             SELECT d
             FROM Document d
             LEFT JOIN FETCH d.currentVersion
+            JOIN FETCH d.owner
             WHERE d.id IN :documentIds
             """,
         countQuery = """

@@ -13,6 +13,7 @@ public interface CollectionRow {
     String getName();
     String getDescription();
     Long getOwnerUserId();
+    String getOwnerName();
     Long getParentCollectionId();
     String getVisibility();
     String getStatus();

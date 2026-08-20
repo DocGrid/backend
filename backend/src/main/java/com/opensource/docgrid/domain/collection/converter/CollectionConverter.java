@@ -11,6 +11,7 @@ import com.opensource.docgrid.domain.collection.enums.CollectionStatus;
 import com.opensource.docgrid.domain.collection.repository.CollectionRow;
 import com.opensource.docgrid.domain.document.converter.DocumentSummaryConverter;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
+import com.opensource.docgrid.domain.user.entity.User;
 
 import lombok.RequiredArgsConstructor;
 
@@ -24,7 +25,14 @@ public class CollectionConverter {
 
     private final DocumentSummaryConverter documentSummaryConverter;
 
+    // getChildren()처럼 여러 건을 한 번에 변환할 때 쓴다 — owner는 LAZY라 이름까지 필요하면
+    // 호출자가 batch 조회한 이름을 toResponse(collection, ownerName)로 넘겨야 한다.
     public CollectionResponse toResponse(DocumentCollection collection) {
+        return toResponse(collection, null);
+    }
+
+    // getCollection() 단건 상세처럼 owner 하나만 lazy-load해도 되는 경우에 쓴다.
+    public CollectionResponse toResponse(DocumentCollection collection, String ownerName) {
         Long parentId = collection.getParentCollection() != null
                 ? collection.getParentCollection().getId()
                 : null;
@@ -34,6 +42,7 @@ public class CollectionConverter {
                 collection.getName(),
                 collection.getDescription(),
                 collection.getOwner().getId(),
+                ownerName,
                 parentId,
                 collection.getVisibility(),
                 collection.getStatus(),
@@ -48,6 +57,7 @@ public class CollectionConverter {
                 row.getName(),
                 row.getDescription(),
                 row.getOwnerUserId(),
+                row.getOwnerName(),
                 row.getParentCollectionId(),
                 VisibilityType.valueOf(row.getVisibility()),
                 CollectionStatus.valueOf(row.getStatus()),
@@ -67,14 +77,13 @@ public class CollectionConverter {
     }
 
     public CollectionDocumentListItemResponse toDocumentListItemResponse(CollectionDocument collectionDocument) {
-        Long addedById = collectionDocument.getAddedBy() != null
-                ? collectionDocument.getAddedBy().getId()
-                : null;
+        User addedBy = collectionDocument.getAddedBy();
 
         return new CollectionDocumentListItemResponse(
                 collectionDocument.getCollection().getId(),
                 documentSummaryConverter.toResponse(collectionDocument.getDocument()),
-                addedById,
+                addedBy != null ? addedBy.getId() : null,
+                addedBy != null ? addedBy.getName() : null,
                 collectionDocument.getAddedAt()
         );
     }

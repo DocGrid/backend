@@ -67,6 +67,7 @@ public interface CollectionRepository extends JpaRepository<DocumentCollection, 
                 c.name AS name,
                 c.description AS description,
                 c.owner_user_id AS owner_user_id,
+                u.name AS owner_name,
                 c.parent_collection_id AS parent_collection_id,
                 c.visibility AS visibility,
                 c.status AS status,
@@ -74,6 +75,7 @@ public interface CollectionRepository extends JpaRepository<DocumentCollection, 
                 COUNT(*) OVER() AS total_count
             FROM collections c
             JOIN readable r ON r.id = c.id
+            JOIN users u ON u.id = c.owner_user_id
             ORDER BY c.created_at DESC, c.id DESC
             LIMIT :limit OFFSET :offset
             """, nativeQuery = true)

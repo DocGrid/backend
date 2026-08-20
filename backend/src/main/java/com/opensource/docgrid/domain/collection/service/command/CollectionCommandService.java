@@ -73,7 +73,7 @@ public class CollectionCommandService {
                 .build();
 
         collectionRepository.save(collection);
-        return collectionConverter.toResponse(collection);
+        return collectionConverter.toResponse(collection, owner.getName());
     }
 
     // 폴더에 문서 추가

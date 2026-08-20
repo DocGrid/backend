@@ -43,6 +43,7 @@ API는 `PRIVATE`/`PUBLIC` 토글만 지원하고 나머지 두 값은 명시적�
 **Response**: `204 No Content`
 
 **에러 케이스**
+
 | 상황 | ErrorCode | HTTP |
 |---|---|---|
 | 대상 문서 없음(또는 이미 삭제됨) | `DOCUMENT_NOT_FOUND` | 404 |
@@ -59,6 +60,7 @@ API는 `PRIVATE`/`PUBLIC` 토글만 지원하고 나머지 두 값은 명시적�
 **Response**: `204 No Content`
 
 **에러 케이스**
+
 | 상황 | ErrorCode | HTTP |
 |---|---|---|
 | 대상 컬렉션 없음(또는 이미 삭제됨) | `COLLECTION_NOT_FOUND` | 404 |

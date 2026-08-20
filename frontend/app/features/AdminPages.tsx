@@ -260,6 +260,8 @@ export function AdminUsersPage({ notify }: { notify: (message: string) => void }
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(0);
   const [selectedUserId, setSelectedUserId] = useState("");
+  const [currentDepartmentId, setCurrentDepartmentId] = useState("");
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState("");
   const [result, setResult] = useState<UserRoleResponse | null>(null);
   const [deptResult, setDeptResult] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -318,11 +320,11 @@ export function AdminUsersPage({ notify }: { notify: (message: string) => void }
   async function changeDepartment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setDeptBusy(true); setError("");
-    const form = new FormData(event.currentTarget);
     const userId = Number(selectedUserId);
     try {
-      const response = await apiRequest<AdminUser>(`/admin/users/${userId}/department`, { method: "PATCH", body: { departmentId: Number(form.get("departmentId")) } });
+      const response = await apiRequest<AdminUser>(`/admin/users/${userId}/department`, { method: "PATCH", body: { departmentId: Number(selectedDepartmentId) } });
       setDeptResult(response);
+      setCurrentDepartmentId(response.departmentId != null ? String(response.departmentId) : "");
       notify(`${response.name} 사용자의 부서를 변경했습니다.`);
       // Refresh department column in the list after the command succeeds.
       await load();
@@ -346,6 +348,12 @@ export function AdminUsersPage({ notify }: { notify: (message: string) => void }
     setPage(0);
   }
 
+  function selectUser(userId: string, departmentId: number | null = null) {
+    setSelectedUserId(userId);
+    setCurrentDepartmentId(departmentId != null ? String(departmentId) : "");
+    setSelectedDepartmentId(departmentId != null ? String(departmentId) : "");
+  }
+
   return <section className="content page-view wide-page">
     <PageHeading kicker="ADMINISTRATION" title="사용자·역할" description="사용자를 검색·필터링하고 현재 역할을 확인한 뒤 새 역할을 부여하세요." />
     {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
@@ -355,14 +363,14 @@ export function AdminUsersPage({ notify }: { notify: (message: string) => void }
         {loading ? <LoadingState label="사용자 목록을 불러오는 중입니다." /> : null}
         {!loading && data && !data.content.length ? <EmptyState symbol="◎" title="조건에 맞는 사용자가 없습니다" description="검색어나 필터를 바꾸어 다시 조회해 보세요." /> : null}
         {!loading && data?.content.length ? <>
-          <div className="mini-table users-table"><div className="table-labels"><span>사용자</span><span>부서</span><span>역할</span><span>상태</span><span /></div>{data.content.map((user) => <div key={user.userId}><span><strong>{user.name}</strong><small>#{user.userId} · {user.email}<br />가입 {formatDate(user.createdAt, false)}</small></span><span>{user.departmentName ?? "미지정"}</span><span className="role-chips">{user.roles.map((role) => <span key={role} className="role-chip-revoke"><StatusPill value={role} /><button type="button" title={`${role} 역할 회수`} disabled={revokingKey === `${user.userId}:${role}`} onClick={() => void revokeRole(user.userId, role)}>×</button></span>)}</span><StatusPill value={user.status} /><button onClick={() => setSelectedUserId(String(user.userId))}>역할 관리</button></div>)}</div>
+          <div className="mini-table users-table"><div className="table-labels"><span>사용자</span><span>부서</span><span>역할</span><span>상태</span><span /></div>{data.content.map((user) => <div key={user.userId}><span><strong>{user.name}</strong><small>#{user.userId} · {user.email}<br />가입 {formatDate(user.createdAt, false)}</small></span><span>{user.departmentName ?? "미지정"}</span><span className="role-chips">{user.roles.map((role) => <span key={role} className="role-chip-revoke"><StatusPill value={role} /><button type="button" title={`${role} 역할 회수`} disabled={revokingKey === `${user.userId}:${role}`} onClick={() => void revokeRole(user.userId, role)}>×</button></span>)}</span><StatusPill value={user.status} /><button onClick={() => selectUser(String(user.userId), user.departmentId)}>역할 관리</button></div>)}</div>
           <div className="pagination"><span>{data.totalElements}명 · {data.size}명씩</span><div><button disabled={data.first} onClick={() => setPage((current) => Math.max(0, current - 1))}>이전</button><button className="active">{data.page + 1}</button><button disabled={data.last} onClick={() => setPage((current) => current + 1)}>다음</button></div></div>
         </> : null}
       </div>
       <div className="user-side">
-        <form className="panel-card" onSubmit={assign}><div className="panel-heading"><div><h2>역할 부여</h2><p>목록에서 사용자를 선택하거나 ID를 입력하세요.</p></div></div><label className="form-field">사용자 ID<input name="userId" type="number" min="1" value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)} required /></label><label className="form-field">역할<select name="roleCode" defaultValue="DOCUMENT_MANAGER"><option value="USER">USER</option><option value="DOCUMENT_MANAGER">DOCUMENT_MANAGER</option><option value="ADMIN">ADMIN</option></select></label><button className="primary-button full-button action-submit" disabled={!selectedUserId || busy}>{busy ? "부여 중…" : "역할 부여"}</button></form>
+        <form className="panel-card" onSubmit={assign}><div className="panel-heading"><div><h2>역할 부여</h2><p>목록에서 사용자를 선택하거나 ID를 입력하세요.</p></div></div><label className="form-field">사용자 ID<input name="userId" type="number" min="1" value={selectedUserId} onChange={(event) => selectUser(event.target.value)} required /></label><label className="form-field">역할<select name="roleCode" defaultValue="DOCUMENT_MANAGER"><option value="USER">USER</option><option value="DOCUMENT_MANAGER">DOCUMENT_MANAGER</option><option value="ADMIN">ADMIN</option></select></label><button className="primary-button full-button action-submit" disabled={!selectedUserId || busy}>{busy ? "부여 중…" : "역할 부여"}</button></form>
         {result ? <div className="panel-card result-card"><h2>부여 결과</h2><dl><div><dt>userId</dt><dd>{result.userId}</dd></div><div><dt>이름</dt><dd>{result.name}</dd></div><div><dt>이메일</dt><dd>{result.email}</dd></div><div><dt>역할</dt><dd className="role-chips">{result.roles.map((role) => <StatusPill value={role} key={role} />)}</dd></div></dl></div> : null}
-        <form className="panel-card" onSubmit={changeDepartment}><div className="panel-heading"><div><h2>부서 변경</h2><p>왼쪽 목록에서 선택한 사용자 ID의 소속 부서를 변경하세요.</p></div></div><label className="form-field">사용자 ID<input name="userId" type="number" min="1" value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)} required /></label><label className="form-field">부서<select name="departmentId" required>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></label><button className="primary-button full-button action-submit" disabled={!selectedUserId || deptBusy}>{deptBusy ? "변경 중…" : "부서 변경"}</button></form>
+        <form className="panel-card" onSubmit={changeDepartment}><div className="panel-heading"><div><h2>부서 변경</h2><p>왼쪽 목록에서 선택한 사용자 ID의 소속 부서를 변경하세요.</p></div></div><label className="form-field">사용자 ID<input name="userId" type="number" min="1" value={selectedUserId} onChange={(event) => selectUser(event.target.value)} required /></label><label className="form-field">부서<select name="departmentId" required value={selectedDepartmentId} onChange={(event) => setSelectedDepartmentId(event.target.value)}><option value="" disabled>부서를 선택하세요</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></label><button className="primary-button full-button action-submit" disabled={!selectedUserId || !selectedDepartmentId || selectedDepartmentId === currentDepartmentId || deptBusy}>{deptBusy ? "변경 중…" : currentDepartmentId && selectedDepartmentId && selectedDepartmentId !== currentDepartmentId ? `${departments.find((department) => String(department.id) === currentDepartmentId)?.name ?? "?"} → ${departments.find((department) => String(department.id) === selectedDepartmentId)?.name ?? "?"}로 변경` : "부서 변경"}</button></form>
         {deptResult ? <div className="panel-card result-card"><h2>변경 결과</h2><dl><div><dt>userId</dt><dd>{deptResult.userId}</dd></div><div><dt>이름</dt><dd>{deptResult.name}</dd></div><div><dt>부서</dt><dd>{deptResult.departmentName ?? "미지정"}</dd></div></dl></div> : null}
       </div>
     </div>

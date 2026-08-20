@@ -138,3 +138,12 @@ test("restricts collection document removal to current members and disables empt
   assert.match(source, /memberPage\.content\.some\([\s\S]*String\(item\.document\.documentId\) === current/);
   assert.doesNotMatch(source, /<input[^>]*value=\{removeDocumentId\}/);
 });
+
+test("derives RAG socket status from token instead of setState inside the effect body", async () => {
+  const source = await readFile(new URL("../app/lib/useRagAnswerSocket.ts", import.meta.url), "utf8");
+
+  assert.match(source, /const \[liveStatus, setLiveStatus\] = useState<RagSocketStatus>\("CONNECTING"\);/);
+  assert.match(source, /if \(!enabled\) return;\s*\n\s*const token = typeof window === "undefined" \? null : window\.sessionStorage\.getItem\(ACCESS_TOKEN_KEY\);\s*\n\s*if \(!token\) return;/);
+  assert.match(source, /if \(!enabled\) return "CONNECTING";/);
+  assert.match(source, /return hasToken \? liveStatus : "POLLING";/);
+});

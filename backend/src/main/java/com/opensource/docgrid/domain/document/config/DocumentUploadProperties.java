@@ -13,5 +13,5 @@ import lombok.Setter;
 @ConfigurationProperties(prefix = "document.upload")
 public class DocumentUploadProperties {
 
-    private DataSize maxFileSize = DataSize.ofMegabytes(10);
+    private DataSize maxFileSize = DataSize.ofMegabytes(20);
 }

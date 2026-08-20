@@ -89,6 +89,7 @@ class EmbeddingJobManualRetryServiceTest {
             embeddingRepository,
             indexingEventRepository,
             new EmbeddingJobConverter(),
+            new EmbeddingJobManualRetryPolicy(),
             clock
         );
     }

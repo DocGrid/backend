@@ -3,9 +3,7 @@ package com.opensource.docgrid.domain.embedding.service.command;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.EnumSet;
 import java.util.Objects;
-import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +18,7 @@ import com.opensource.docgrid.domain.document.repository.DocumentVersionReposito
 import com.opensource.docgrid.domain.embedding.converter.EmbeddingJobConverter;
 import com.opensource.docgrid.domain.embedding.dto.response.ManualRetriedIndexingJobResponse;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
+import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobManualRetryEligibility;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingRepository;
@@ -51,18 +50,6 @@ public class EmbeddingJobManualRetryService {
 
     private static final String MANUAL_RETRY_MESSAGE =
         "관리자 요청으로 최종 실패한 Embedding Job을 다시 Queue에 넣었습니다.";
-    // 같은 Version에 이미 살아 있는 Job이 있으면 같은 대상이 두 번 처리되므로 재처리를 거부한다.
-    private static final Set<EmbeddingJobStatus> LIVE_JOB_STATUSES = EnumSet.of(
-        EmbeddingJobStatus.PENDING,
-        EmbeddingJobStatus.PROCESSING
-    );
-    // 재처리 후 완료 Transaction이 다시 확정할 수 있는 문서 상태만 허용한다.
-    private static final Set<DocumentStatus> RETRYABLE_DOCUMENT_STATUSES = EnumSet.of(
-        DocumentStatus.UPLOADED,
-        DocumentStatus.INDEXING,
-        DocumentStatus.INDEXED,
-        DocumentStatus.FAILED
-    );
 
     private final EmbeddingJobRepository embeddingJobRepository;
     private final DocumentVersionRepository documentVersionRepository;
@@ -71,6 +58,7 @@ public class EmbeddingJobManualRetryService {
     private final EmbeddingRepository embeddingRepository;
     private final IndexingEventRepository indexingEventRepository;
     private final EmbeddingJobConverter embeddingJobConverter;
+    private final EmbeddingJobManualRetryPolicy manualRetryPolicy;
     private final Clock clock;
 
     /**
@@ -93,7 +81,7 @@ public class EmbeddingJobManualRetryService {
         // 3. 기존 완료·실패 경로와 같은 잠금 순서를 유지한 뒤 재처리 대상 조건을 검증한다.
         DocumentVersion documentVersion = findLockedVersion(embeddingJob);
         Document document = findLockedDocument(documentVersion);
-        validateRetryTarget(documentVersion, document);
+        validateRetryTarget(embeddingJob, documentVersion, document);
 
         // 4. 저장된 Chunk Set 유무로 재개 지점을 정하고 검색에서 제외된 대상 Embedding만 제거한다.
         DocumentVersionStatus resumeStatus = resolveResumeStatus(documentVersion);
@@ -154,41 +142,48 @@ public class EmbeddingJobManualRetryService {
             .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT));
     }
 
-    private void validateRetryTarget(DocumentVersion documentVersion, Document document) {
-        // 1. 최종 실패 Job의 Version은 반드시 FAILED여야 하며 그렇지 않으면 종료 데이터가 깨진 상태다.
-        if (documentVersion.getStatus() != DocumentVersionStatus.FAILED) {
-            throw new DocGridException(ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT);
-        }
+    private void validateRetryTarget(
+        EmbeddingJob embeddingJob,
+        DocumentVersion documentVersion,
+        Document document
+    ) {
+        // 1. 최신 Version 조회 전 확인 가능한 불변식부터 검증해 잘못된 종료 데이터를 조기에 차단한다.
+        throwWhenRetryBlocked(manualRetryPolicy.evaluateInvariant(
+            embeddingJob,
+            documentVersion,
+            document
+        ));
 
-        // 2. 삭제됐거나 다시 인덱싱을 확정할 수 없는 문서는 재처리 대상이 아니다.
-        if (document.getDeletedAt() != null
-            || !RETRYABLE_DOCUMENT_STATUSES.contains(document.getStatus())) {
-            throw new DocGridException(ErrorCode.EMBEDDING_JOB_MANUAL_RETRY_TARGET_INVALID);
-        }
-
-        // 3. 현재 Version 포인터가 다른 문서를 가리키면 검색 보호 판단 자체를 신뢰할 수 없다.
-        DocumentVersion currentVersion = document.getCurrentVersion();
-        if (currentVersion == null
-            || currentVersion.getId() == null
-            || currentVersion.getDocument() == null
-            || !Objects.equals(currentVersion.getDocument().getId(), document.getId())) {
-            throw new DocGridException(ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT);
-        }
-
-        // 4. 더 새로운 Version이 올라온 뒤라면 과거 Version을 다시 인덱싱해도 완료할 수 없다.
+        // 2. 더 새로운 Version과 활성 Job을 확인한 뒤 같은 정책으로 최종 대상 여부를 판정한다.
         DocumentVersion latestVersion = documentVersionRepository
             .findTopByDocumentIdOrderByVersionNoDesc(document.getId())
             .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT));
-        if (!Objects.equals(latestVersion.getId(), documentVersion.getId())) {
-            throw new DocGridException(ErrorCode.EMBEDDING_JOB_MANUAL_RETRY_TARGET_INVALID);
-        }
-
-        // 5. 같은 Version을 처리 중이거나 대기 중인 Job이 있으면 중복 처리가 되므로 거부한다.
-        if (embeddingJobRepository.countByDocumentVersionIdAndStatusIn(
+        boolean liveJobExists = embeddingJobRepository.countByDocumentVersionIdAndStatusIn(
             documentVersion.getId(),
-            LIVE_JOB_STATUSES
-        ) > 0) {
-            throw new DocGridException(ErrorCode.EMBEDDING_JOB_MANUAL_RETRY_TARGET_INVALID);
+            EmbeddingJobManualRetryPolicy.LIVE_JOB_STATUSES
+        ) > 0;
+        throwWhenRetryBlocked(manualRetryPolicy.evaluate(
+            embeddingJob,
+            documentVersion,
+            document,
+            latestVersion.getId(),
+            liveJobExists
+        ));
+    }
+
+    private void throwWhenRetryBlocked(EmbeddingJobManualRetryEligibility eligibility) {
+        switch (eligibility) {
+            case ELIGIBLE -> {
+                return;
+            }
+            case JOB_NOT_FAILED -> throw new DocGridException(
+                ErrorCode.EMBEDDING_JOB_MANUAL_RETRY_NOT_ALLOWED
+            );
+            case VERSION_NOT_FAILED, CURRENT_VERSION_INCONSISTENT, DATA_INCONSISTENT ->
+                throw new DocGridException(ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT);
+            default -> throw new DocGridException(
+                ErrorCode.EMBEDDING_JOB_MANUAL_RETRY_TARGET_INVALID
+            );
         }
     }
 

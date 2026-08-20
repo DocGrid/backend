@@ -1,6 +1,7 @@
 package com.opensource.docgrid.domain.embedding.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -22,6 +23,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingEventResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingJobAttemptResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingJobResponse;
+import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobManualRetryEligibility;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.service.query.IndexingJobAdminQueryService;
 import com.opensource.docgrid.global.common.response.PageResponse;
@@ -122,6 +124,55 @@ class IndexingJobAdminQueryIntegrationTest {
         assertThat(second.content()).extracting(AdminIndexingJobResponse::jobId)
             .containsExactly(oldest.jobId());
         assertThat(second.last()).isTrue();
+    }
+
+    @Test
+    @DisplayName("같은 문서의 FAILED Job은 최신 Version만 수동 재처리 가능하다고 반환한다")
+    void getJobs_marksOnlyLatestFailedVersionAsEligibleForManualRetry() {
+        String suffix = UUID.randomUUID().toString();
+        Long userId = jdbcTemplate.queryForObject("""
+            INSERT INTO users (email, password_hash, name, status)
+            VALUES (?, 'test-password-hash', '재처리 가능 여부 테스트', 'ACTIVE')
+            RETURNING id
+            """, Long.class, "retry-eligibility-" + suffix + "@example.com");
+        Long documentId = jdbcTemplate.queryForObject("""
+            INSERT INTO documents (
+                owner_user_id, title, document_type, source_type, status, visibility, created_at
+            ) VALUES (?, '버전별 재처리 가능 여부', 'TXT', 'UPLOAD', 'FAILED', 'PRIVATE', ?)
+            RETURNING id
+            """, Long.class, userId, BASE_TIME);
+        Long oldVersionId = insertFailedVersion(documentId, userId, 1, suffix + "-v1");
+        Long latestVersionId = insertFailedVersion(documentId, userId, 2, suffix + "-v2");
+        // 이전 검색 가능 Version을 가리키는 정상적인 재인덱싱 실패 상황을 재현한다.
+        jdbcTemplate.update(
+            "UPDATE documents SET current_version_id = ? WHERE id = ?",
+            oldVersionId,
+            documentId
+        );
+        Long oldJobId = insertFailedJob(oldVersionId, BASE_TIME);
+        Long latestJobId = insertFailedJob(latestVersionId, BASE_TIME.plusMinutes(1));
+
+        PageResponse<AdminIndexingJobResponse> result = indexingJobAdminQueryService.getJobs(
+            EmbeddingJobStatus.FAILED,
+            documentId,
+            null,
+            0,
+            20
+        );
+
+        assertThat(result.content()).extracting(
+            AdminIndexingJobResponse::jobId,
+            AdminIndexingJobResponse::manualRetryEligibility
+        ).containsExactly(
+            tuple(
+                latestJobId,
+                EmbeddingJobManualRetryEligibility.ELIGIBLE
+            ),
+            tuple(
+                oldJobId,
+                EmbeddingJobManualRetryEligibility.SUPERSEDED_VERSION
+            )
+        );
     }
 
     @Test
@@ -240,6 +291,34 @@ class IndexingJobAdminQueryIntegrationTest {
             ) VALUES (?, ?, 'test-host', '127.0.0.1', 'ACTIVE', ?, ?)
             RETURNING id
             """, Long.class, name, suffix, BASE_TIME, BASE_TIME.minusMinutes(1));
+    }
+
+    private Long insertFailedVersion(
+        Long documentId,
+        Long userId,
+        int versionNo,
+        String hash
+    ) {
+        return jdbcTemplate.queryForObject("""
+            INSERT INTO document_versions (
+                document_id, version_no, title_snapshot, file_hash, status, created_by, created_at
+            ) VALUES (?, ?, '버전별 재처리 가능 여부', ?, 'FAILED', ?, ?)
+            RETURNING id
+            """, Long.class, documentId, versionNo, hash, userId, BASE_TIME.plusMinutes(versionNo));
+    }
+
+    private Long insertFailedJob(Long versionId, LocalDateTime createdAt) {
+        Long modelId = jdbcTemplate.queryForObject(
+            "SELECT id FROM embedding_models WHERE is_active = TRUE AND is_searchable = TRUE",
+            Long.class
+        );
+        return jdbcTemplate.queryForObject("""
+            INSERT INTO embedding_jobs (
+                document_version_id, embedding_model_id, status, priority, retry_count,
+                max_retry_count, started_at, failed_at, error_code, error_message, created_at
+            ) VALUES (?, ?, 'FAILED', 0, 3, 3, ?, ?, 'TEST-ERROR', 'internal-test-message', ?)
+            RETURNING id
+            """, Long.class, versionId, modelId, createdAt, createdAt.plusSeconds(1), createdAt);
     }
 
     private void insertAttempt(

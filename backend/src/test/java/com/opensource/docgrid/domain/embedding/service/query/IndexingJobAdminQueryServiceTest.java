@@ -19,13 +19,19 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
+import com.opensource.docgrid.domain.document.entity.Document;
+import com.opensource.docgrid.domain.document.entity.DocumentVersion;
+import com.opensource.docgrid.domain.document.repository.DocumentVersionRepository;
+import com.opensource.docgrid.domain.document.repository.LatestDocumentVersionProjection;
 import com.opensource.docgrid.domain.embedding.converter.IndexingJobAdminConverter;
 import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingEventResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingJobAttemptResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingJobResponse;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
+import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobManualRetryEligibility;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
+import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobManualRetryPolicy;
 import com.opensource.docgrid.domain.worker.entity.EmbeddingJobAttempt;
 import com.opensource.docgrid.domain.worker.entity.IndexingEvent;
 import com.opensource.docgrid.domain.worker.repository.EmbeddingJobAttemptRepository;
@@ -41,9 +47,11 @@ class IndexingJobAdminQueryServiceTest {
     private static final Long JOB_ID = 10L;
 
     @Mock private EmbeddingJobRepository embeddingJobRepository;
+    @Mock private DocumentVersionRepository documentVersionRepository;
     @Mock private EmbeddingJobAttemptRepository embeddingJobAttemptRepository;
     @Mock private IndexingEventRepository indexingEventRepository;
     @Mock private IndexingJobAdminConverter indexingJobAdminConverter;
+    @Mock private EmbeddingJobManualRetryPolicy manualRetryPolicy;
 
     @InjectMocks private IndexingJobAdminQueryService indexingJobAdminQueryService;
 
@@ -58,7 +66,10 @@ class IndexingJobAdminQueryServiceTest {
             org.mockito.ArgumentMatchers.eq(7L),
             org.mockito.ArgumentMatchers.any(Pageable.class)
         )).willReturn(new PageImpl<>(List.of(job), PageRequest.of(1, 5), 6));
-        given(indexingJobAdminConverter.toJobResponse(job)).willReturn(response);
+        given(indexingJobAdminConverter.toJobResponse(
+            job,
+            EmbeddingJobManualRetryEligibility.JOB_NOT_FAILED
+        )).willReturn(response);
 
         PageResponse<AdminIndexingJobResponse> result = indexingJobAdminQueryService.getJobs(
             EmbeddingJobStatus.FAILED,
@@ -83,12 +94,71 @@ class IndexingJobAdminQueryServiceTest {
     }
 
     @Test
+    @DisplayName("FAILED Job 목록은 최신 Version과 활성 Job을 일괄 조회해 재처리 가능 여부를 반환한다")
+    void getJobs_resolvesManualRetryEligibilityInBatches() {
+        EmbeddingJob job = org.mockito.Mockito.mock(EmbeddingJob.class);
+        DocumentVersion version = org.mockito.Mockito.mock(DocumentVersion.class);
+        Document document = org.mockito.Mockito.mock(Document.class);
+        LatestDocumentVersionProjection latestVersion = org.mockito.Mockito.mock(
+            LatestDocumentVersionProjection.class
+        );
+        AdminIndexingJobResponse response = org.mockito.Mockito.mock(AdminIndexingJobResponse.class);
+        given(job.getId()).willReturn(JOB_ID);
+        given(job.getStatus()).willReturn(EmbeddingJobStatus.FAILED);
+        given(job.getDocumentVersion()).willReturn(version);
+        given(version.getId()).willReturn(5L);
+        given(version.getDocument()).willReturn(document);
+        given(document.getId()).willReturn(3L);
+        given(latestVersion.getDocumentId()).willReturn(3L);
+        given(latestVersion.getVersionId()).willReturn(6L);
+        given(embeddingJobRepository.findAdminJobs(
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.any(Pageable.class)
+        )).willReturn(new PageImpl<>(List.of(job)));
+        given(documentVersionRepository.findLatestVersionIdsByDocumentIds(
+            org.mockito.ArgumentMatchers.anyCollection()
+        )).willReturn(List.of(latestVersion));
+        given(embeddingJobRepository.findDocumentVersionIdsWithStatusIn(
+            org.mockito.ArgumentMatchers.anyCollection(),
+            org.mockito.ArgumentMatchers.anyCollection()
+        )).willReturn(List.of());
+        given(manualRetryPolicy.evaluate(job, version, document, 6L, false))
+            .willReturn(EmbeddingJobManualRetryEligibility.SUPERSEDED_VERSION);
+        given(indexingJobAdminConverter.toJobResponse(
+            job,
+            EmbeddingJobManualRetryEligibility.SUPERSEDED_VERSION
+        )).willReturn(response);
+
+        PageResponse<AdminIndexingJobResponse> result = indexingJobAdminQueryService.getJobs(
+            null,
+            null,
+            null,
+            0,
+            20
+        );
+
+        assertThat(result.content()).containsExactly(response);
+        then(documentVersionRepository).should().findLatestVersionIdsByDocumentIds(
+            org.mockito.ArgumentMatchers.argThat(ids -> ids.contains(3L) && ids.size() == 1)
+        );
+        then(embeddingJobRepository).should().findDocumentVersionIdsWithStatusIn(
+            org.mockito.ArgumentMatchers.argThat(ids -> ids.contains(5L) && ids.size() == 1),
+            org.mockito.ArgumentMatchers.anyCollection()
+        );
+    }
+
+    @Test
     @DisplayName("Job 상세를 공개 응답으로 변환한다")
     void getJob_convertsAdminDetail() {
         EmbeddingJob job = org.mockito.Mockito.mock(EmbeddingJob.class);
         AdminIndexingJobResponse expected = org.mockito.Mockito.mock(AdminIndexingJobResponse.class);
         given(embeddingJobRepository.findAdminDetailById(JOB_ID)).willReturn(Optional.of(job));
-        given(indexingJobAdminConverter.toJobResponse(job)).willReturn(expected);
+        given(indexingJobAdminConverter.toJobResponse(
+            job,
+            EmbeddingJobManualRetryEligibility.JOB_NOT_FAILED
+        )).willReturn(expected);
 
         assertThat(indexingJobAdminQueryService.getJob(JOB_ID)).isSameAs(expected);
     }

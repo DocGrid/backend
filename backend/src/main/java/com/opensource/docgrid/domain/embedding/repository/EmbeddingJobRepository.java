@@ -50,6 +50,7 @@ public interface EmbeddingJobRepository extends JpaRepository<EmbeddingJob, Long
             FROM EmbeddingJob job
             JOIN FETCH job.documentVersion version
             JOIN FETCH version.document document
+            LEFT JOIN FETCH document.currentVersion currentVersion
             JOIN FETCH job.embeddingModel model
             LEFT JOIN FETCH job.lockedByWorker worker
             WHERE (:status IS NULL OR job.status = :status)
@@ -82,6 +83,7 @@ public interface EmbeddingJobRepository extends JpaRepository<EmbeddingJob, Long
         FROM EmbeddingJob job
         JOIN FETCH job.documentVersion version
         JOIN FETCH version.document document
+        LEFT JOIN FETCH document.currentVersion currentVersion
         JOIN FETCH job.embeddingModel model
         LEFT JOIN FETCH job.lockedByWorker worker
         WHERE job.id = :jobId
@@ -94,6 +96,20 @@ public interface EmbeddingJobRepository extends JpaRepository<EmbeddingJob, Long
     long countByDocumentVersionIdAndStatusIn(
         Long documentVersionId,
         Collection<EmbeddingJobStatus> statuses
+    );
+
+    /**
+     * 지정된 Version 중 활성 상태 Job이 존재하는 Version ID를 일괄 조회한다.
+     */
+    @Query("""
+        SELECT DISTINCT job.documentVersion.id
+        FROM EmbeddingJob job
+        WHERE job.documentVersion.id IN :documentVersionIds
+          AND job.status IN :statuses
+        """)
+    List<Long> findDocumentVersionIdsWithStatusIn(
+        @Param("documentVersionIds") Collection<Long> documentVersionIds,
+        @Param("statuses") Collection<EmbeddingJobStatus> statuses
     );
 
     /**

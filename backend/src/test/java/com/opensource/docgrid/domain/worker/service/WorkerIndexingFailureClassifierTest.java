@@ -73,6 +73,8 @@ class WorkerIndexingFailureClassifierTest {
             .failureType()).isEqualTo(IndexingFailureType.DOCUMENT_CONTENT_INVALID);
         assertThat(classifier.classify(new DocGridException(ErrorCode.DOCUMENT_PARSING_FAILED))
             .failureType()).isEqualTo(IndexingFailureType.DOCUMENT_CONTENT_INVALID);
+        assertThat(classifier.classify(new DocGridException(ErrorCode.DOCUMENT_CONTENT_GARBLED))
+            .failureType()).isEqualTo(IndexingFailureType.DOCUMENT_CONTENT_INVALID);
         assertThat(classifier.classify(new DocGridException(ErrorCode.EMBEDDING_VECTOR_INVALID))
             .failureType()).isEqualTo(IndexingFailureType.EMBEDDING_RESULT_INVALID);
         assertThat(classifier.classify(new DocGridException(ErrorCode.DOCUMENT_CHUNKS_INCONSISTENT))

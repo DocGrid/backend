@@ -170,10 +170,10 @@ public class SyncAdminQueryService {
             .orElse(null);
     }
 
-    private double successRate(long processedCount, long failedCount) {
+    static Double successRate(long processedCount, long failedCount) {
         long completedCount = processedCount + failedCount;
         if (completedCount == 0) {
-            return 100.0;
+            return null;
         }
         return Math.round(processedCount * 1000.0 / completedCount) / 10.0;
     }

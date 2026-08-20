@@ -108,6 +108,28 @@ class AuthCommandServiceTest {
     }
 
     @Test
+    @DisplayName("비밀번호가 이메일과 같으면 WEAK_PASSWORD 예외가 발생한다")
+    void signup_throws_when_passwordEqualsEmail() {
+        SignupRequest request = new SignupRequest(AuthFixture.EMAIL, AuthFixture.EMAIL, AuthFixture.NAME, AuthFixture.DEPARTMENT_ID);
+        given(userRepository.existsByEmail(AuthFixture.EMAIL)).willReturn(false);
+
+        assertThatThrownBy(() -> authCommandService.signup(request))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.WEAK_PASSWORD);
+    }
+
+    @Test
+    @DisplayName("비밀번호가 이름과 같으면 WEAK_PASSWORD 예외가 발생한다")
+    void signup_throws_when_passwordEqualsName() {
+        SignupRequest request = new SignupRequest(AuthFixture.EMAIL, AuthFixture.NAME, AuthFixture.NAME, AuthFixture.DEPARTMENT_ID);
+        given(userRepository.existsByEmail(AuthFixture.EMAIL)).willReturn(false);
+
+        assertThatThrownBy(() -> authCommandService.signup(request))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.WEAK_PASSWORD);
+    }
+
+    @Test
     @DisplayName("존재하지 않는 부서로 가입하면 DEPARTMENT_NOT_FOUND 예외가 발생한다")
     void signup_throws_when_departmentNotFound() {
         SignupRequest request = new SignupRequest(AuthFixture.EMAIL, AuthFixture.PASSWORD, AuthFixture.NAME, AuthFixture.DEPARTMENT_ID);

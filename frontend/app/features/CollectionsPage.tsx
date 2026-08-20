@@ -93,7 +93,8 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
   const [children, setChildren] = useState<Collection[]>([]);
   const [availableDocuments, setAvailableDocuments] = useState<DocumentSummary[]>([]);
   const [collectionDocuments, setCollectionDocuments] = useState<PageResponse<CollectionDocument> | null>(null);
-  const [documentId, setDocumentId] = useState("");
+  const [addDocumentId, setAddDocumentId] = useState("");
+  const [removeDocumentId, setRemoveDocumentId] = useState("");
   const [page, setPage] = useState(0);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -131,7 +132,7 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  async function mutate(action: "add" | "remove", selectedDocumentId = Number(documentId)) {
+  async function mutate(action: "add" | "remove", selectedDocumentId: number) {
     if (!selectedDocumentId) return;
     setBusy(true);
     setError("");
@@ -139,7 +140,7 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
       if (action === "add") await apiRequest(`/collections/${collectionId}/documents`, { method: "POST", body: { documentId: selectedDocumentId } });
       else await apiRequest(`/collections/${collectionId}/documents/${selectedDocumentId}`, { method: "DELETE" });
       notify(action === "add" ? "문서를 컬렉션에 추가했습니다." : "문서를 컬렉션에서 제거했습니다.");
-      setDocumentId("");
+      if (action === "add") setAddDocumentId(""); else setRemoveDocumentId("");
       // 2. Refresh the permission-filtered list so totals and visible rows stay consistent with the backend.
       await load();
     } catch (reason) { setError(errorMessage(reason)); }
@@ -182,8 +183,8 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
       <div className="collection-summary"><div><span className="folder-shape" style={{ "--folder-color": "#6558e8" } as React.CSSProperties}>▱</span><div><strong>{collection.name}</strong><span>owner #{collection.ownerUserId} · {formatDate(collection.createdAt, false)}</span></div></div><StatusPill value={collection.status} /></div>
       <div className="panel-card"><div className="panel-heading"><div><h2>하위 컬렉션</h2><p>클릭하면 해당 컬렉션을 엽니다.</p></div></div>{children.length ? <div className="collection-grid">{children.map((child, index) => <a className="collection-card" href={`/collections/${child.collectionId}`} target="_top" key={child.collectionId}><div className="collection-top"><span className="folder-shape" style={{ "--folder-color": collectionColor(index) } as React.CSSProperties}>▱</span><StatusPill value={child.status} /></div><div className="collection-badges"><StatusPill value={child.visibility} /></div><h2>{child.name}</h2><p>{child.description || "설명이 없습니다."}</p></a>)}</div> : <EmptyState symbol="▱" title="하위 컬렉션이 없습니다" description="이 컬렉션 안에 하위 컬렉션을 만들면 여기에 표시됩니다." />}</div>
       <div className="detail-grid collection-action-grid">
-        <div className="panel-card"><div className="panel-heading"><div><h2>문서 추가</h2><p>내가 읽을 수 있는 문서 중 하나를 선택합니다.</p></div></div><label className="form-field">문서<select value={documentId} onChange={(event) => setDocumentId(event.target.value)}><option value="">문서를 선택하세요</option>{availableDocuments.map((document) => <option key={document.documentId} value={document.documentId}>#{document.documentId} · {document.title}</option>)}</select></label><button className="primary-button full-button action-submit" disabled={!documentId || busy} onClick={() => void mutate("add")}>컬렉션에 추가</button></div>
-        <div className="panel-card"><div className="panel-heading"><div><h2>문서 제거</h2><p>목록의 문서를 선택하거나 ID를 직접 입력하세요.</p></div></div><label className="form-field">documentId<input type="number" min="1" value={documentId} onChange={(event) => setDocumentId(event.target.value)} placeholder="문서 ID" /></label><button className="secondary-button full-button action-submit" disabled={!documentId || busy} onClick={() => void mutate("remove")}>컬렉션에서 제거</button></div>
+        <div className="panel-card"><div className="panel-heading"><div><h2>문서 추가</h2><p>내가 읽을 수 있는 문서 중 하나를 선택합니다.</p></div></div><label className="form-field">문서<select value={addDocumentId} onChange={(event) => setAddDocumentId(event.target.value)}><option value="">문서를 선택하세요</option>{availableDocuments.map((document) => <option key={document.documentId} value={document.documentId}>#{document.documentId} · {document.title}</option>)}</select></label><button className="primary-button full-button action-submit" disabled={!addDocumentId || busy} onClick={() => void mutate("add", Number(addDocumentId))}>컬렉션에 추가</button></div>
+        <div className="panel-card"><div className="panel-heading"><div><h2>문서 제거</h2><p>이 컬렉션에 포함된 문서 중 하나를 선택합니다.</p></div></div>{collectionDocuments?.content.length ? <><label className="form-field">문서<select value={removeDocumentId} onChange={(event) => setRemoveDocumentId(event.target.value)}><option value="">문서를 선택하세요</option>{collectionDocuments.content.map((item) => <option key={item.document.documentId} value={item.document.documentId}>#{item.document.documentId} · {item.document.title}</option>)}</select></label><button className="secondary-button full-button action-submit" disabled={!removeDocumentId || busy} onClick={() => void mutate("remove", Number(removeDocumentId))}>컬렉션에서 제거</button></> : <span className="auth-field-help">제거할 수 있는 문서가 없습니다.</span>}</div>
       </div>
       {collectionDocuments && !collectionDocuments.content.length ? <EmptyState symbol="▱" title="컬렉션에 문서가 없습니다" description="위에서 문서를 선택해 컬렉션에 추가해 보세요." /> : null}
       {collectionDocuments?.content.length ? <div className="data-table collection-documents-table">

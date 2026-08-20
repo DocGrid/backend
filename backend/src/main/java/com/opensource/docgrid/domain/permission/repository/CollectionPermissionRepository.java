@@ -10,6 +10,10 @@ import com.opensource.docgrid.domain.permission.entity.CollectionPermission;
 
 public interface CollectionPermissionRepository extends JpaRepository<CollectionPermission, Long> {
 
+    /**
+     * 기본 조회 — 삭제/목록 용도 (3개)
+     */
+
     // 컬렉션에 속한 권한 전체 조회 (soft delete 시 캐시 무효화 + 권한 삭제용)
     List<CollectionPermission> findAllByCollectionId(Long collectionId);
 
@@ -31,6 +35,13 @@ public interface CollectionPermissionRepository extends JpaRepository<Collection
             ORDER BY cp.grantedAt DESC, cp.id DESC
             """)
     List<CollectionPermission> findAllWithTargetsByCollectionId(@Param("collectionId") Long collectionId);
+
+    /**
+     * ① 문서 기준 live 체크 — ROLE/DEPARTMENT 대상만 (ROLE 3개 + DEPT 3개 = 6개)
+     *
+     * <p>문서가 속한 컬렉션에 걸린 권한을 확인한다. USER 대상은 캐시(UserDocumentAccessCache)로
+     * 판단하므로 여기 없음. 직속 컬렉션만 보고 조상 컬렉션 상속은 보지 않는다(④가 담당).
+     */
 
     // ROLE live — 사용자 역할 기반 컬렉션→문서 읽기 권한 존재 여부
     @Query("""
@@ -110,6 +121,12 @@ public interface CollectionPermissionRepository extends JpaRepository<Collection
             """)
     boolean existsDeptAdminPermissionForDocument(@Param("userId") Long userId, @Param("documentId") Long documentId);
 
+    /**
+     * ② 컬렉션 단건 — USER 대상 (3개)
+     *
+     * <p>"컬렉션 자체"에 대한 USER 직접 권한. 문서 캐시 대상이 아니라서 항상 라이브로 확인한다.
+     */
+
     // USER 직접 권한 — 컬렉션에 읽기 권한이 있는지 (canReadCollection 판단용)
     @Query("""
             SELECT COUNT(cp) > 0 FROM CollectionPermission cp
@@ -142,6 +159,12 @@ public interface CollectionPermissionRepository extends JpaRepository<Collection
               AND (cp.expiresAt IS NULL OR cp.expiresAt > CURRENT_TIMESTAMP)
             """)
     boolean existsUserAdminPermission(@Param("userId") Long userId, @Param("collectionId") Long collectionId);
+
+    /**
+     * ③ 컬렉션 단건 — ROLE/DEPARTMENT 대상 (ROLE 3개 + DEPT 3개 = 6개)
+     *
+     * <p>"컬렉션 자체"에 걸린 ROLE/DEPARTMENT 권한. 조상 컬렉션 상속은 보지 않음(④가 담당).
+     */
 
     // ROLE live — 사용자 역할 기반 컬렉션 읽기 권한 존재 여부 (canReadCollection 판단용)
     @Query("""
@@ -215,8 +238,12 @@ public interface CollectionPermissionRepository extends JpaRepository<Collection
             """)
     boolean existsDeptAdminPermissionForCollection(@Param("userId") Long userId, @Param("collectionId") Long collectionId);
 
-    // 컬렉션 트리 상속용 — 컬렉션 ID 목록(자기 자신+조상 또는 문서가 속한 컬렉션+조상) 중
-    // 하나라도 ROLE/DEPARTMENT 권한이 있으면 true. 기존 단일-ID 메서드는 그대로 두고 추가로 병행한다.
+    /**
+     * ④ 컬렉션 리스트(조상 체인) — ROLE/DEPARTMENT 대상 (ROLE 3개 + DEPT 3개 = 6개)
+     *
+     * <p>컬렉션 트리 상속용 — 컬렉션 ID 목록(자기 자신+조상 또는 문서가 속한 컬렉션+조상) 중
+     * 하나라도 ROLE/DEPARTMENT 권한이 있으면 true. 기존 단일-ID 메서드(③)는 그대로 두고 추가로 병행한다.
+     */
 
     @Query("""
             SELECT COUNT(cp) > 0 FROM CollectionPermission cp

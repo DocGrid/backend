@@ -11,6 +11,10 @@ import com.opensource.docgrid.domain.permission.entity.DocumentPermission;
 public interface DocumentPermissionRepository extends JpaRepository<DocumentPermission, Long> {
 
     /**
+     * 그룹 1 — 기본 조회 (1개)
+     */
+
+    /**
      * 문서에 직접 부여된 권한을 대상·부여자 정보와 함께 최신순으로 조회한다.
      */
     @Query("""
@@ -25,6 +29,14 @@ public interface DocumentPermissionRepository extends JpaRepository<DocumentPerm
             ORDER BY dp.grantedAt DESC, dp.id DESC
             """)
     List<DocumentPermission> findAllWithTargetsByDocumentId(@Param("documentId") Long documentId);
+
+    /**
+     * 그룹 2 — ROLE/DEPARTMENT live 체크 (ROLE 3개 + DEPT 3개 = 6개)
+     *
+     * <p>문서 자체에 직접 걸린 예외 권한(document_permissions)만 확인한다. 중간 조인 테이블 없이
+     * dp.document.id로 바로 필터링 — CollectionPermissionRepository ①(컬렉션 경유)과 다름.
+     * USER 대상은 없음(캐시로 판단), 조상 리스트 버전도 없음(문서는 트리 구조가 아님).
+     */
 
     // ROLE live — 사용자 역할 기반 문서 읽기 권한 존재 여부
     @Query("""

@@ -13,15 +13,14 @@ export type RagSocketStatus = "CONNECTING" | "LIVE" | "POLLING";
  * 동일하게 원본 프레임은 신호로만 쓰고, 실제 최신 상태는 호출자가 REST로 다시 읽는다.
  */
 export function useRagAnswerSocket(enabled: boolean, onMessage: () => void): RagSocketStatus {
-  const [status, setStatus] = useState<RagSocketStatus>("CONNECTING");
+  // liveStatus는 실제 WebSocket 생명주기(연결/성공/실패)에서만 바뀐다 — token 없음은
+  // effect 밖에서 매 렌더마다 계산해, effect 안에서 즉시 setState하는 것을 피한다.
+  const [liveStatus, setLiveStatus] = useState<RagSocketStatus>("CONNECTING");
 
   useEffect(() => {
     if (!enabled) return;
     const token = typeof window === "undefined" ? null : window.sessionStorage.getItem(ACCESS_TOKEN_KEY);
-    if (!token) {
-      setStatus("POLLING");
-      return;
-    }
+    if (!token) return;
 
     const socketUrl = `${WS_BASE_URL.replace(/^http/, "ws")}/ws/websocket`;
     const socket = new WebSocket(socketUrl);
@@ -33,15 +32,17 @@ export function useRagAnswerSocket(enabled: boolean, onMessage: () => void): Rag
       if (frame.startsWith("CONNECTED")) {
         // /user/** 목적지는 클라이언트가 이 형태로 그대로 구독하고, 서버가 세션별로 실제 큐를 연결한다.
         socket.send("SUBSCRIBE\nid:rag-answer\ndestination:/user/queue/rag-answer\nack:auto\n\n\0");
-        setStatus("LIVE");
+        setLiveStatus("LIVE");
         return;
       }
       if (frame.startsWith("MESSAGE")) onMessage();
     };
-    socket.onerror = () => setStatus("POLLING");
-    socket.onclose = () => setStatus("POLLING");
+    socket.onerror = () => setLiveStatus("POLLING");
+    socket.onclose = () => setLiveStatus("POLLING");
     return () => socket.close();
   }, [enabled, onMessage]);
 
-  return status;
+  if (!enabled) return "CONNECTING";
+  const hasToken = typeof window !== "undefined" && Boolean(window.sessionStorage.getItem(ACCESS_TOKEN_KEY));
+  return hasToken ? liveStatus : "POLLING";
 }

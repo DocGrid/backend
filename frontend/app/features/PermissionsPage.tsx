@@ -96,10 +96,14 @@ export function PermissionsPage({ notify }: { notify: (message: string) => void 
 
   async function revoke(permission: PermissionGrant) {
     if (!resourceId) return;
-    const resourceLabel = resources.find((item) => String(item.id) === resourceId)?.label ?? resourceId;
-    const message = `${resourceType === "documents" ? "문서" : "컬렉션"} “${resourceLabel}”에서 ${targetLabel(permission)}의 ${permission.permissionType} 권한을 회수할까요?`;
-    if (!window.confirm(message)) return;
+    const target = targetLabel(permission, roles, departments);
+    const resourceName = resourceType === "documents"
+      ? documents.find((item) => item.documentId === Number(resourceId))?.title
+      : collections.find((item) => item.collectionId === Number(resourceId))?.name;
+    const resourceLabel = resourceName ?? `${resourceType === "documents" ? "문서" : "컬렉션"} #${resourceId}`;
+    if (!window.confirm(`${resourceLabel}에서 ${target}의 ${permission.permissionType} 권한을 회수할까요?`)) return;
     setBusy(true);
+    setError("");
     try {
       await apiRequest(`/permissions/${resourceType}/${resourceId}/${permission.permissionId}`, { method: "DELETE" });
       notify("권한을 회수했습니다.");
@@ -135,13 +139,20 @@ export function PermissionsPage({ notify }: { notify: (message: string) => void 
         {permissionsLoading ? <LoadingState label="직접 권한을 불러오는 중입니다." /> : null}
         {!permissionsLoading && permissionsError ? <Notice>직접 권한 목록을 조회할 수 없습니다. {permissionsError}</Notice> : null}
         {!permissionsLoading && !permissionsError && !directPermissions.length ? <Notice>이 리소스에 직접 부여된 권한이 없습니다.</Notice> : null}
-        {!permissionsLoading && directPermissions.length ? <div className="mini-table permission-table"><div className="table-labels"><span>대상</span><span>권한</span><span>만료</span><span /></div>{directPermissions.map((permission) => <div key={permission.permissionId}><span><strong>{targetLabel(permission)}</strong><small>#{permission.permissionId} · user #{permission.grantedBy} · {formatDate(permission.grantedAt)}</small></span><StatusPill value={permission.permissionType} /><span>{permission.expiresAt ? formatDate(permission.expiresAt) : "제한 없음"}</span><button className="danger-text" disabled={busy} onClick={() => void revoke(permission)}>회수</button></div>)}</div> : null}
+        {!permissionsLoading && directPermissions.length ? <div className="mini-table permission-table"><div className="table-labels"><span>대상</span><span>권한</span><span>만료</span><span /></div>{directPermissions.map((permission) => <div key={permission.permissionId}><span><strong>{targetLabel(permission, roles, departments)}</strong><small>#{permission.permissionId} · user #{permission.grantedBy} · {formatDate(permission.grantedAt)}</small></span><StatusPill value={permission.permissionType} /><span>{permission.expiresAt ? formatDate(permission.expiresAt) : "제한 없음"}</span><button className="danger-text" disabled={busy} title={`${targetLabel(permission, roles, departments)} ${permission.permissionType} 권한 회수`} aria-label={`${targetLabel(permission, roles, departments)} ${permission.permissionType} 권한 회수`} onClick={() => void revoke(permission)}>회수</button></div>)}</div> : null}
       </div>
     </> : null}
   </section>;
 }
 
-function targetLabel(permission: PermissionGrant) {
-  const targetId = permission.userId ?? permission.roleId ?? permission.departmentId;
-  return `${permission.targetType} #${targetId ?? "—"}`;
+function targetLabel(permission: PermissionGrant, roles: Role[], departments: Department[]) {
+  if (permission.targetType === "ROLE") {
+    const role = roles.find((item) => item.id === permission.roleId);
+    return role ? `ROLE ${role.name}` : `ROLE #${permission.roleId ?? "—"}`;
+  }
+  if (permission.targetType === "DEPARTMENT") {
+    const department = departments.find((item) => item.id === permission.departmentId);
+    return department ? `DEPARTMENT ${department.name}` : `DEPARTMENT #${permission.departmentId ?? "—"}`;
+  }
+  return `USER #${permission.userId ?? "—"}`;
 }

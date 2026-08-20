@@ -44,6 +44,9 @@ public enum ErrorCode {
     COLLECTION_NOT_FOUND(HttpStatus.NOT_FOUND, "COLLECTION-001", "컬렉션을 찾을 수 없습니다."),
     COLLECTION_DOCUMENT_ALREADY_EXISTS(HttpStatus.CONFLICT, "COLLECTION-002", "이미 컬렉션에 추가된 문서입니다."),
     COLLECTION_DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "COLLECTION-003", "컬렉션에서 해당 문서를 찾을 수 없습니다."),
+    COLLECTION_VISIBILITY_NOT_SUPPORTED(
+        HttpStatus.BAD_REQUEST, "COLLECTION-004", "공개 범위는 PRIVATE 또는 PUBLIC만 지정할 수 있습니다."
+    ),
 
     // DOCUMENT
     DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "DOCUMENT-001", "문서를 찾을 수 없습니다."),
@@ -167,6 +170,11 @@ public enum ErrorCode {
         HttpStatus.INTERNAL_SERVER_ERROR,
         "DOCUMENT-INDEXING-004",
         "문서 인덱싱 실패 데이터를 확인할 수 없습니다."
+    ),
+    DOCUMENT_VISIBILITY_NOT_SUPPORTED(
+        HttpStatus.BAD_REQUEST,
+        "DOCUMENT-VISIBILITY-001",
+        "공개 범위는 PRIVATE 또는 PUBLIC만 지정할 수 있습니다."
     ),
 
     // PERMISSION

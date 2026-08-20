@@ -136,6 +136,10 @@ public class Document extends BaseEntity {
         this.description = description == null || description.isBlank() ? null : description.trim();
     }
 
+    public void updateVisibility(VisibilityType visibility) {
+        this.visibility = visibility;
+    }
+
     /**
      * 같은 문서에 속하고 인덱싱을 마친 Version을 현재 검색 대상으로 활성화한다.
      *

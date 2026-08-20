@@ -97,4 +97,8 @@ public class DocumentCollection extends BaseEntity {
         this.status = CollectionStatus.DELETED;
         this.deletedAt = deletedAt;
     }
+
+    public void updateVisibility(VisibilityType visibility) {
+        this.visibility = visibility;
+    }
 }

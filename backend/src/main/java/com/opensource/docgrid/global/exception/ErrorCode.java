@@ -69,7 +69,7 @@ public enum ErrorCode {
         HttpStatus.INTERNAL_SERVER_ERROR, "DOCUMENT-STATUS-001", "문서 인덱싱 상태를 조회할 수 없습니다."
     ),
     EMPTY_FILE(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-001", "빈 파일은 업로드할 수 없습니다."),
-    FILE_SIZE_EXCEEDED(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-002", "파일 크기 제한을 초과했습니다."),
+    FILE_SIZE_EXCEEDED(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-002", "파일 용량이 큽니다."),
     UNSUPPORTED_FILE_EXTENSION(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-003", "지원하지 않는 파일 확장자입니다."),
     UNSUPPORTED_FILE_CONTENT_TYPE(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-004", "지원하지 않는 파일 형식입니다."),
     INVALID_FILE_NAME(HttpStatus.BAD_REQUEST, "DOCUMENT-FILE-005", "유효하지 않은 파일명입니다."),

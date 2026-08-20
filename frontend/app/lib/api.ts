@@ -60,7 +60,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const payload = text ? safeJson(text) : null;
   if (!response.ok) {
     const error = (payload ?? {}) as ApiErrorBody;
-    throw new ApiError(response.status, error.message ?? "요청을 처리하지 못했습니다.", error.code);
+    // 4. Convert a plain-text proxy rejection into an actionable upload message.
+    const fallbackMessage = response.status === 413 ? "파일 용량이 큽니다." : "요청을 처리하지 못했습니다.";
+    throw new ApiError(response.status, error.message ?? fallbackMessage, error.code);
   }
 
   return (payload as ApiEnvelope<T>).data;

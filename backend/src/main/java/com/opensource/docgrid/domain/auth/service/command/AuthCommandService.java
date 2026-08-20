@@ -52,6 +52,10 @@ public class AuthCommandService {
             throw new DocGridException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
 
+        if (request.password().equals(request.email()) || request.password().equals(request.name())) {
+            throw new DocGridException(ErrorCode.WEAK_PASSWORD);
+        }
+
         Department department = departmentRepository.findById(request.departmentId())
                 .filter(d -> d.getStatus() == CommonStatus.ACTIVE)
                 .orElseThrow(() -> new DocGridException(ErrorCode.DEPARTMENT_NOT_FOUND));

@@ -102,7 +102,7 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
           {error ? <div className="form-error" role="alert">{error}</div> : null}
           {departmentError ? <div className="form-error auth-load-error" role="alert"><span>{departmentError}</span><button type="button" onClick={() => { setDepartmentsLoading(true); setDepartmentError(""); setDepartments([]); setDepartmentId(""); setDepartmentRequest((request) => request + 1); }}>다시 시도</button></div> : null}
           <label>이메일<input name="email" type="email" placeholder="name@company.com" autoComplete="email" required /></label>
-          <label>비밀번호<input name="password" type="password" placeholder="비밀번호" autoComplete={signup ? "new-password" : "current-password"} required /></label>
+          <label>비밀번호<input name="password" type="password" placeholder={signup ? "비밀번호 (12자 이상)" : "비밀번호"} autoComplete={signup ? "new-password" : "current-password"} minLength={signup ? 12 : undefined} required /></label>
           {signup ? <>
             <label>이름<input name="name" placeholder="홍길동" autoComplete="name" required /></label>
             <label>부서<select name="departmentId" required value={departmentId} disabled={departmentsLoading || Boolean(departmentError)} aria-describedby="department-help" onChange={(event) => { setDepartmentId(event.target.value); setError(""); }}><option value="" disabled>{departmentsLoading ? "부서 목록 불러오는 중…" : departmentError ? "부서를 불러오지 못했습니다" : "부서를 선택하세요"}</option>{departments.map((department) => <option value={department.id} key={department.id}>{department.name} · {department.code}</option>)}</select></label>

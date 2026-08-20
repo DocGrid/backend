@@ -102,6 +102,24 @@ class SyncAdminQueryServiceTest {
         assertThat(result.reconciliation().detectedCount()).isEqualTo(3);
     }
 
+    @Test
+    @DisplayName("처리 이력이 없으면 성공률은 null이다")
+    void successRate_returnsNull_whenNoEventsCompleted() {
+        assertThat(SyncAdminQueryService.successRate(0L, 0L)).isNull();
+    }
+
+    @Test
+    @DisplayName("성공만 있으면 성공률은 100%다")
+    void successRate_returns100_whenOnlySucceeded() {
+        assertThat(SyncAdminQueryService.successRate(1L, 0L)).isEqualTo(100.0);
+    }
+
+    @Test
+    @DisplayName("실패만 있으면 성공률은 0%다")
+    void successRate_returns0_whenOnlyFailed() {
+        assertThat(SyncAdminQueryService.successRate(0L, 1L)).isEqualTo(0.0);
+    }
+
     private SyncOutboxEvent processedEvent() {
         SyncOutboxEvent event = SyncOutboxEvent.builder()
             .eventId(UUID.randomUUID())

@@ -34,7 +34,8 @@ public class WorkerIndexingFailureClassifier {
         ErrorCode.DOCUMENT_TEXT_DECODING_FAILED,
         ErrorCode.DOCUMENT_PDF_ENCRYPTED,
         ErrorCode.DOCUMENT_OCR_REQUIRED,
-        ErrorCode.DOCUMENT_PARSING_FAILED
+        ErrorCode.DOCUMENT_PARSING_FAILED,
+        ErrorCode.DOCUMENT_CONTENT_GARBLED
     );
     private static final Set<ErrorCode> EMBEDDING_RESULT_ERRORS = EnumSet.of(
         ErrorCode.EMBEDDING_DIMENSION_MISMATCH,

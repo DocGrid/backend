@@ -116,3 +116,25 @@ test("wires document metadata update and soft delete actions to their permission
   assert.match(source, /method: "DELETE"/);
   assert.match(source, /window\.location\.assign\("\/documents"\)/);
 });
+
+test("keeps collection document add selection independent from removal", async () => {
+  const source = await readFile(new URL("../app/features/CollectionsPage.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /const \[addDocumentId, setAddDocumentId\] = useState\(""\);/);
+  assert.match(source, /const \[removeDocumentId, setRemoveDocumentId\] = useState\(""\);/);
+  assert.match(source, /<select value=\{addDocumentId\} onChange=\{\(event\) => setAddDocumentId\(event\.target\.value\)\}/);
+  assert.match(source, /mutate\("add", Number\(addDocumentId\)\)/);
+  assert.match(source, /if \(action === "add"\) setAddDocumentId\(""\); else setRemoveDocumentId\(""\);/);
+});
+
+test("restricts collection document removal to current members and disables empty removal", async () => {
+  const source = await readFile(new URL("../app/features/CollectionsPage.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /const removableDocuments = collectionDocuments\?\.content \?\? \[\];/);
+  assert.match(source, /<select value=\{removeDocumentId\} disabled=\{!hasRemovableDocuments \|\| busy\} onChange=\{\(event\) => setRemoveDocumentId\(event\.target\.value\)\}/);
+  assert.match(source, /removableDocuments\.map\(\(item\) => <option/);
+  assert.match(source, /disabled=\{!removeDocumentId \|\| busy \|\| !hasRemovableDocuments\}/);
+  assert.match(source, /mutate\("remove", Number\(removeDocumentId\)\)/);
+  assert.match(source, /memberPage\.content\.some\([\s\S]*String\(item\.document\.documentId\) === current/);
+  assert.doesNotMatch(source, /<input[^>]*value=\{removeDocumentId\}/);
+});

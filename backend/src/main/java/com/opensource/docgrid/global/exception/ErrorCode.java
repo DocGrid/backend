@@ -30,6 +30,7 @@ public enum ErrorCode {
     EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "USER-002", "이미 사용 중인 이메일입니다."),
     ACCOUNT_INACTIVE(HttpStatus.FORBIDDEN, "USER-003", "비활성화된 계정입니다."),
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "USER-004", "이메일 또는 비밀번호가 올바르지 않습니다."),
+    WEAK_PASSWORD(HttpStatus.BAD_REQUEST, "USER-005", "비밀번호는 이메일 또는 이름과 같을 수 없습니다."),
 
     // DEPARTMENT
     DEPARTMENT_NOT_FOUND(HttpStatus.BAD_REQUEST, "DEPT-001", "존재하지 않는 부서입니다."),

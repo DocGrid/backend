@@ -226,9 +226,21 @@ export type DashboardSummary = {
   search: { recent24hCount: number };
 };
 
+export type ManualRetryEligibility =
+  | "ELIGIBLE"
+  | "JOB_NOT_FAILED"
+  | "VERSION_NOT_FAILED"
+  | "DOCUMENT_DELETED"
+  | "DOCUMENT_STATUS_INVALID"
+  | "CURRENT_VERSION_INCONSISTENT"
+  | "SUPERSEDED_VERSION"
+  | "LIVE_JOB_EXISTS"
+  | "DATA_INCONSISTENT";
+
 export type IndexingJob = {
   jobId: number;
   status: string;
+  manualRetryEligibility: ManualRetryEligibility;
   priority: number;
   retryCount: number;
   maxRetryCount: number;
@@ -250,6 +262,14 @@ export type IndexingJob = {
   startedAt: string | null;
   completedAt: string | null;
   failedAt: string | null;
+};
+
+export type RetryAllJobsResult = {
+  scannedCount: number;
+  retriedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  message: string;
 };
 
 export type IndexingAttempt = {

@@ -60,6 +60,7 @@ export type DocumentSummary = {
   status: string;
   visibility: string;
   ownerUserId: number;
+  ownerName: string;
   currentVersionNo: number | null;
   currentVersionStatus: string | null;
   createdAt: string;
@@ -167,6 +168,7 @@ export type Collection = {
   name: string;
   description: string | null;
   ownerUserId: number;
+  ownerName: string | null;
   parentCollectionId: number | null;
   visibility: string;
   status: string;
@@ -177,6 +179,7 @@ export type CollectionDocument = {
   collectionId: number;
   document: DocumentSummary;
   addedBy: number | null;
+  addedByName: string | null;
   addedAt: string;
 };
 
@@ -194,13 +197,17 @@ export type PermissionGrant = {
   collectionId?: number;
   targetType: string;
   userId: number | null;
+  userName: string | null;
   roleId: number | null;
+  roleName: string | null;
   departmentId: number | null;
+  departmentName: string | null;
   permissionType: string;
   canRead: boolean;
   canWrite: boolean;
   canAdmin: boolean;
   grantedBy: number;
+  grantedByName: string | null;
   grantedAt: string;
   expiresAt: string | null;
 };

@@ -64,7 +64,7 @@ public class CollectionQueryService {
         if (!permissionQueryService.canReadCollection(userId, collection)) {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
-        return collectionConverter.toResponse(collection);
+        return collectionConverter.toResponse(collection, collection.getOwner().getName());
     }
 
     /**

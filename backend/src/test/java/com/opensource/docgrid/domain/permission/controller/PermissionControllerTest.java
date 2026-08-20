@@ -50,6 +50,9 @@ class PermissionControllerTest {
                 5L,
                 PermissionTargetType.USER,
                 20L,
+                "대상유저",
+                null,
+                null,
                 null,
                 null,
                 PermissionType.READ,
@@ -57,6 +60,7 @@ class PermissionControllerTest {
                 false,
                 false,
                 10L,
+                "테스트유저",
                 LocalDateTime.of(2026, 8, 1, 10, 0),
                 null
         );
@@ -67,7 +71,9 @@ class PermissionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].permissionId").value(100))
                 .andExpect(jsonPath("$.data[0].targetType").value("USER"))
-                .andExpect(jsonPath("$.data[0].userId").value(20));
+                .andExpect(jsonPath("$.data[0].userId").value(20))
+                .andExpect(jsonPath("$.data[0].userName").value("대상유저"))
+                .andExpect(jsonPath("$.data[0].grantedByName").value("테스트유저"));
     }
 
     @Test
@@ -78,13 +84,17 @@ class PermissionControllerTest {
                 1L,
                 PermissionTargetType.ROLE,
                 null,
+                null,
                 30L,
+                "ADMIN",
+                null,
                 null,
                 PermissionType.ADMIN,
                 true,
                 true,
                 true,
                 10L,
+                "테스트유저",
                 LocalDateTime.of(2026, 8, 1, 10, 0),
                 null
         );
@@ -95,6 +105,8 @@ class PermissionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].permissionId").value(200))
                 .andExpect(jsonPath("$.data[0].roleId").value(30))
+                .andExpect(jsonPath("$.data[0].roleName").value("ADMIN"))
+                .andExpect(jsonPath("$.data[0].grantedByName").value("테스트유저"))
                 .andExpect(jsonPath("$.data[0].canAdmin").value(true));
     }
 

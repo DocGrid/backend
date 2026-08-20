@@ -68,12 +68,12 @@ class CollectionQueryServiceTest {
         CollectionResponse expected = CollectionFixture.createCollectionResponse();
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
         given(permissionQueryService.canReadCollection(CollectionFixture.USER_ID, collection)).willReturn(true);
-        given(collectionConverter.toResponse(collection)).willReturn(expected);
+        given(collectionConverter.toResponse(collection, collection.getOwner().getName())).willReturn(expected);
 
         CollectionResponse result = collectionQueryService.getCollection(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID);
 
         assertThat(result).isEqualTo(expected);
-        then(collectionConverter).should().toResponse(collection);
+        then(collectionConverter).should().toResponse(collection, collection.getOwner().getName());
     }
 
     @Test

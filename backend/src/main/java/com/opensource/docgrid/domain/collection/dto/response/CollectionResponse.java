@@ -13,6 +13,7 @@ public record CollectionResponse(
         @Schema(description = "컬렉션 이름") String name,
         @Schema(description = "컬렉션 설명") String description,
         @Schema(description = "소유자 사용자 ID") Long ownerUserId,
+        @Schema(description = "소유자 이름") String ownerName,
         @Schema(description = "상위 컬렉션 ID") Long parentCollectionId,
         @Schema(description = "공개 범위") VisibilityType visibility,
         @Schema(description = "컬렉션 상태") CollectionStatus status,

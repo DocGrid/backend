@@ -58,6 +58,7 @@ class CollectionControllerTest {
                 DocumentStatus.INDEXED,
                 VisibilityType.PRIVATE,
                 10L,
+                "테스트유저",
                 2,
                 DocumentVersionStatus.INDEXED,
                 LocalDateTime.of(2026, 8, 1, 10, 0),
@@ -67,6 +68,7 @@ class CollectionControllerTest {
                 1L,
                 document,
                 10L,
+                "테스트유저",
                 LocalDateTime.of(2026, 8, 3, 10, 0)
         );
         given(collectionQueryService.getCollectionDocuments(10L, 1L, 0, 20))
@@ -79,7 +81,9 @@ class CollectionControllerTest {
                 .andExpect(jsonPath("$.data.content[0].document.documentId").value(5))
                 .andExpect(jsonPath("$.data.content[0].document.title").value("운영 가이드"))
                 .andExpect(jsonPath("$.data.content[0].document.currentVersionNo").value(2))
+                .andExpect(jsonPath("$.data.content[0].document.ownerName").value("테스트유저"))
                 .andExpect(jsonPath("$.data.content[0].addedBy").value(10))
+                .andExpect(jsonPath("$.data.content[0].addedByName").value("테스트유저"))
                 .andExpect(jsonPath("$.data.totalElements").value(1));
     }
 
@@ -97,7 +101,7 @@ class CollectionControllerTest {
     @DisplayName("인증된 사용자가 직계 자식 컬렉션 목록을 조회한다")
     void getChildren_returnsChildCollections() throws Exception {
         CollectionResponse child = new CollectionResponse(
-                2L, "하위 컬렉션", null, 10L, 1L, VisibilityType.PRIVATE, CollectionStatus.ACTIVE,
+                2L, "하위 컬렉션", null, 10L, "테스트유저", 1L, VisibilityType.PRIVATE, CollectionStatus.ACTIVE,
                 LocalDateTime.of(2026, 8, 1, 10, 0)
         );
         given(collectionQueryService.getChildren(10L, 1L)).willReturn(List.of(child));
@@ -106,6 +110,7 @@ class CollectionControllerTest {
                         .with(authentication(authenticationWithUserId(10L))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].collectionId").value(2))
+                .andExpect(jsonPath("$.data[0].ownerName").value("테스트유저"))
                 .andExpect(jsonPath("$.data[0].parentCollectionId").value(1));
     }
 
@@ -113,7 +118,7 @@ class CollectionControllerTest {
     @DisplayName("인증된 사용자가 읽을 수 있는 컬렉션을 페이지 조회한다")
     void getCollections_returnsReadableCollectionPage() throws Exception {
         CollectionResponse collection = new CollectionResponse(
-                1L, "인사팀", null, 10L, null, VisibilityType.PRIVATE, CollectionStatus.ACTIVE,
+                1L, "인사팀", null, 10L, "테스트유저", null, VisibilityType.PRIVATE, CollectionStatus.ACTIVE,
                 LocalDateTime.of(2026, 8, 1, 10, 0)
         );
         given(collectionQueryService.getCollections(10L, null, 0, 20))
@@ -123,6 +128,7 @@ class CollectionControllerTest {
                         .with(authentication(authenticationWithUserId(10L))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content[0].collectionId").value(1))
+                .andExpect(jsonPath("$.data.content[0].ownerName").value("테스트유저"))
                 .andExpect(jsonPath("$.data.totalElements").value(1));
     }
 

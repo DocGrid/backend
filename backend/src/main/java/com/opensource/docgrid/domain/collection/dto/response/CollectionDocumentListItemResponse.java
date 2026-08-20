@@ -15,6 +15,7 @@ public record CollectionDocumentListItemResponse(
     @Schema(description = "컬렉션 ID") Long collectionId,
     @Schema(description = "문서 Metadata와 현재 버전 요약") DocumentSummaryResponse document,
     @Schema(description = "컬렉션에 문서를 추가한 사용자 ID") Long addedBy,
+    @Schema(description = "컬렉션에 문서를 추가한 사용자 이름") String addedByName,
     @Schema(description = "컬렉션에 문서를 추가한 시각") LocalDateTime addedAt
 ) {
 }

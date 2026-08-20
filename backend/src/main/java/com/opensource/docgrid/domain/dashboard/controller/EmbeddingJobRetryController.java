@@ -75,8 +75,9 @@ public class EmbeddingJobRetryController {
     @Operation(
         summary = "FAILED Job 전체 재처리",
         description = "FAILED 상태인 모든 Embedding Job을 순차적으로 재처리합니다. "
-            + "개별 Job 재처리가 실패해도 나머지는 계속 진행하며, 성공한 건수만 반환합니다. "
-            + "FAILED 작업이 없으면 retriedCount 0으로 정상 응답합니다. "
+            + "개별 Job 재처리가 실패해도 나머지는 계속 진행합니다. "
+            + "현재 상태상 재처리할 수 없는 대상과 예상 밖 오류 건수를 분리해 반환합니다. "
+            + "FAILED 작업이 없으면 모든 건수 0으로 정상 응답합니다. "
             + "1건 이상 성공하면 최신 대시보드 집계를 WebSocket으로 즉시 push합니다."
     )
     @ApiResponses({

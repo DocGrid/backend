@@ -194,9 +194,17 @@ public interface EmbeddingJobRepository extends JpaRepository<EmbeddingJob, Long
     long countByStatus(EmbeddingJobStatus status);
 
     /**
-     * 관리자 전체 재처리 대상인 FAILED Job 전체를 조회한다.
+     * 관리자 전체 재처리 후보 ID를 오래된 순서로 조회한다.
+     *
+     * <p>실제 가능 여부는 각 Job을 잠근 Command에서 다시 판정하므로 여기서는 상태 Snapshot만 사용한다.
      */
-    List<EmbeddingJob> findAllByStatus(EmbeddingJobStatus status);
+    @Query("""
+        SELECT job.id
+        FROM EmbeddingJob job
+        WHERE job.status = :status
+        ORDER BY job.id ASC
+        """)
+    List<Long> findIdsByStatusOrderByIdAsc(@Param("status") EmbeddingJobStatus status);
 
     /**
      * 완료된 Job의 평균 처리 시간을 밀리초 단위로 계산한다.

@@ -369,6 +369,7 @@ class DocumentQueryServiceTest {
             DocumentStatus.INDEXED,
             VisibilityType.PRIVATE,
             USER_ID,
+            "테스트유저",
             1,
             DocumentVersionStatus.INDEXED,
             null,

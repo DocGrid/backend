@@ -85,7 +85,7 @@ class CollectionCommandServiceTest {
                 CollectionFixture.COLLECTION_NAME, CollectionFixture.COLLECTION_DESCRIPTION, null, VisibilityType.PRIVATE
         );
         given(userRepository.getReferenceById(CollectionFixture.USER_ID)).willReturn(owner);
-        given(collectionConverter.toResponse(any(DocumentCollection.class))).willReturn(expected);
+        given(collectionConverter.toResponse(any(DocumentCollection.class), any(String.class))).willReturn(expected);
 
         CollectionResponse result = collectionCommandService.createCollection(CollectionFixture.USER_ID, request);
 
@@ -107,7 +107,7 @@ class CollectionCommandServiceTest {
                 CollectionFixture.COLLECTION_NAME, null, null, null
         );
         given(userRepository.getReferenceById(CollectionFixture.USER_ID)).willReturn(owner);
-        given(collectionConverter.toResponse(any(DocumentCollection.class))).willReturn(expected);
+        given(collectionConverter.toResponse(any(DocumentCollection.class), any(String.class))).willReturn(expected);
 
         CollectionResponse result = collectionCommandService.createCollection(CollectionFixture.USER_ID, request);
 
@@ -126,7 +126,7 @@ class CollectionCommandServiceTest {
         given(userRepository.getReferenceById(CollectionFixture.USER_ID)).willReturn(owner);
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(parent));
         given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, parent)).willReturn(true);
-        given(collectionConverter.toResponse(any(DocumentCollection.class))).willReturn(expected);
+        given(collectionConverter.toResponse(any(DocumentCollection.class), any(String.class))).willReturn(expected);
 
         collectionCommandService.createCollection(CollectionFixture.USER_ID, request);
 

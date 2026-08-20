@@ -50,6 +50,9 @@ class PermissionControllerTest {
                 5L,
                 PermissionTargetType.USER,
                 20L,
+                "대상유저",
+                null,
+                null,
                 null,
                 null,
                 PermissionType.READ,
@@ -57,6 +60,7 @@ class PermissionControllerTest {
                 false,
                 false,
                 10L,
+                "테스트유저",
                 LocalDateTime.of(2026, 8, 1, 10, 0),
                 null
         );
@@ -78,13 +82,17 @@ class PermissionControllerTest {
                 1L,
                 PermissionTargetType.ROLE,
                 null,
+                null,
                 30L,
+                "ADMIN",
+                null,
                 null,
                 PermissionType.ADMIN,
                 true,
                 true,
                 true,
                 10L,
+                "테스트유저",
                 LocalDateTime.of(2026, 8, 1, 10, 0),
                 null
         );

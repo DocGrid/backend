@@ -97,6 +97,7 @@ public class CollectionFixture {
                 COLLECTION_NAME,
                 COLLECTION_DESCRIPTION,
                 USER_ID,
+                "테스트유저",
                 null,
                 VisibilityType.PRIVATE,
                 CollectionStatus.ACTIVE,

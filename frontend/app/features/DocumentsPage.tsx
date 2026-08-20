@@ -8,6 +8,7 @@ import { apiRequest, downloadBackendFile, errorMessage, previewBackendFile, toQu
 import type { DocumentContent, DocumentDetail, DocumentStatus, DocumentSummary, PageResponse, PermissionSummary, UpdateDocumentMetadataRequest } from "../lib/api-types";
 import { DOCUMENT_STATUS_POLL_INTERVAL_MS, isDocumentProcessing } from "../lib/document-status";
 import { EmptyState, ErrorState, LoadingState, Notice, PageHeading, StatusPill, formatBytes, formatDate } from "../components/ui";
+import { useAuth } from "../components/AuthProvider";
 
 const statuses = ["", "DRAFT", "UPLOADED", "INDEXING", "INDEXED", "FAILED", "ARCHIVED"];
 
@@ -56,6 +57,7 @@ export function DocumentsPage({ onUpload, refreshKey }: { onUpload: () => void; 
 }
 
 export function DocumentDetailPage({ documentId, onVersionUpload, notify, refreshKey }: { documentId: number; onVersionUpload: () => void; notify: (message: string) => void; refreshKey: number }) {
+  const { user } = useAuth();
   const [document, setDocument] = useState<DocumentDetail | null>(null);
   const [content, setContent] = useState<DocumentContent | null>(null);
   const [status, setStatus] = useState<DocumentStatus | null>(null);
@@ -181,6 +183,22 @@ export function DocumentDetailPage({ documentId, onVersionUpload, notify, refres
     }
   }
 
+  async function updateVisibility(next: "PRIVATE" | "PUBLIC") {
+    if (next === "PUBLIC" && !window.confirm("이 문서를 조직 전체에 공개할까요?")) return;
+
+    setMutation("update");
+    setMutationError("");
+    try {
+      await apiRequest<void>(`/api/documents/${documentId}/visibility`, { method: "PATCH", body: { visibility: next } });
+      await load();
+      notify(next === "PUBLIC" ? "문서를 전체공개로 전환했습니다." : "문서를 비공개로 전환했습니다.");
+    } catch (reason) {
+      setMutationError(errorMessage(reason));
+    } finally {
+      setMutation(null);
+    }
+  }
+
   async function deleteDocument() {
     const confirmed = window.confirm(`“${document?.title ?? `문서 #${documentId}`}” 문서를 삭제할까요?\n원본 파일과 버전 이력은 보존됩니다.`);
     if (!confirmed) return;
@@ -197,9 +215,11 @@ export function DocumentDetailPage({ documentId, onVersionUpload, notify, refres
     }
   }
 
+  const isOwner = document != null && user != null && user.userId === document.ownerUserId;
+
   return <section className="content page-view">
     <div className="detail-back"><a href="/documents" target="_top">← 문서 목록</a><span>documentId {documentId}</span></div>
-    <PageHeading kicker="DOCUMENT DETAIL" title={document?.title ?? `문서 #${documentId}`} description={document?.description ?? "검색 가능한 버전과 현재 처리 중인 버전을 분리해서 확인합니다."} actions={<><StatusPill value={status?.documentStatus ?? document?.status ?? "LOADING"} />{document?.currentVersion ? <><button className="secondary-button" disabled={fileAction !== null || mutation !== null} onClick={() => void accessFile("preview")}>{fileAction === "preview" ? "여는 중…" : "↗ 원본 미리보기"}</button><button className="secondary-button" disabled={fileAction !== null || mutation !== null} onClick={() => void accessFile("download")}>{fileAction === "download" ? "다운로드 중…" : "↓ 다운로드"}</button></> : null}{permission?.canWrite ? <button className="secondary-button" disabled={mutation !== null} onClick={() => { setMutationError(""); setEditing(true); }}>문서 정보 수정</button> : null}{permission?.canWrite ? <button className="primary-button" disabled={mutation !== null} onClick={onVersionUpload}>＋ 새 버전 업로드</button> : null}{permission?.canAdmin ? <button className="danger-button" disabled={mutation !== null} onClick={() => void deleteDocument()}>{mutation === "delete" ? "삭제 중…" : "문서 삭제"}</button> : null}</>} />
+    <PageHeading kicker="DOCUMENT DETAIL" title={document?.title ?? `문서 #${documentId}`} description={document?.description ?? "검색 가능한 버전과 현재 처리 중인 버전을 분리해서 확인합니다."} actions={<><StatusPill value={status?.documentStatus ?? document?.status ?? "LOADING"} />{document?.currentVersion ? <><button className="secondary-button" disabled={fileAction !== null || mutation !== null} onClick={() => void accessFile("preview")}>{fileAction === "preview" ? "여는 중…" : "↗ 원본 미리보기"}</button><button className="secondary-button" disabled={fileAction !== null || mutation !== null} onClick={() => void accessFile("download")}>{fileAction === "download" ? "다운로드 중…" : "↓ 다운로드"}</button></> : null}{permission?.canWrite ? <button className="secondary-button" disabled={mutation !== null} onClick={() => { setMutationError(""); setEditing(true); }}>문서 정보 수정</button> : null}{permission?.canWrite ? <button className="primary-button" disabled={mutation !== null} onClick={onVersionUpload}>＋ 새 버전 업로드</button> : null}{isOwner && document ? <button className="secondary-button" disabled={mutation !== null} onClick={() => void updateVisibility(document.visibility === "PUBLIC" ? "PRIVATE" : "PUBLIC")}>{document.visibility === "PUBLIC" ? "비공개로 전환" : "전체공개로 전환"}</button> : null}{permission?.canAdmin ? <button className="danger-button" disabled={mutation !== null} onClick={() => void deleteDocument()}>{mutation === "delete" ? "삭제 중…" : "문서 삭제"}</button> : null}</>} />
     {error ? document || status || permission ? <Notice>{error}</Notice> : <ErrorState message={error} onRetry={() => void load()} /> : null}
     {mutationError && !editing ? <Notice>{mutationError}</Notice> : null}
     {loading ? <LoadingState label="문서 상태를 확인하는 중입니다." /> : null}

@@ -21,11 +21,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.opensource.docgrid.domain.document.dto.request.UpdateDocumentMetadataRequest;
+import com.opensource.docgrid.domain.document.dto.request.UpdateDocumentVisibilityRequest;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
+import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
 import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.sync.service.command.SyncEventWriter;
+import com.opensource.docgrid.domain.user.entity.User;
+import com.opensource.docgrid.domain.user.enums.UserStatus;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
@@ -95,6 +99,56 @@ class DocumentCommandServiceTest {
     }
 
     @Test
+    @DisplayName("소유자면 공개 범위를 PUBLIC으로 변경한다")
+    void updateVisibility_updatesVisibility_whenUserIsOwner() {
+        Document document = activeDocument();
+        given(documentRepository.findByIdForUpdate(DOCUMENT_ID)).willReturn(Optional.of(document));
+
+        documentCommandService.updateVisibility(
+            USER_ID,
+            DOCUMENT_ID,
+            new UpdateDocumentVisibilityRequest(VisibilityType.PUBLIC)
+        );
+
+        assertThat(document.getVisibility()).isEqualTo(VisibilityType.PUBLIC);
+    }
+
+    @Test
+    @DisplayName("소유자가 아니면 공개 범위를 변경하지 않는다")
+    void updateVisibility_throws_whenUserIsNotOwner() {
+        Document document = activeDocument();
+        given(documentRepository.findByIdForUpdate(DOCUMENT_ID)).willReturn(Optional.of(document));
+        Long otherUserId = 999L;
+
+        assertThatThrownBy(() -> documentCommandService.updateVisibility(
+            otherUserId,
+            DOCUMENT_ID,
+            new UpdateDocumentVisibilityRequest(VisibilityType.PUBLIC)
+        ))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PERMISSION_DENIED);
+
+        assertThat(document.getVisibility()).isEqualTo(VisibilityType.PRIVATE);
+    }
+
+    @Test
+    @DisplayName("COLLECTION/DEPARTMENT로 변경을 요청하면 거부한다")
+    void updateVisibility_throws_whenValueNotSupported() {
+        Document document = activeDocument();
+        given(documentRepository.findByIdForUpdate(DOCUMENT_ID)).willReturn(Optional.of(document));
+
+        assertThatThrownBy(() -> documentCommandService.updateVisibility(
+            USER_ID,
+            DOCUMENT_ID,
+            new UpdateDocumentVisibilityRequest(VisibilityType.DEPARTMENT)
+        ))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DOCUMENT_VISIBILITY_NOT_SUPPORTED);
+
+        assertThat(document.getVisibility()).isEqualTo(VisibilityType.PRIVATE);
+    }
+
+    @Test
     @DisplayName("ADMIN 권한이 있으면 문서를 soft delete하고 Outbox Event를 기록한다")
     void deleteDocument_marksDeletedAndRecordsEvent_whenUserCanAdmin() {
         Document document = activeDocument();
@@ -139,10 +193,20 @@ class DocumentCommandServiceTest {
     }
 
     private Document activeDocument() {
+        User owner = User.builder()
+            .email("owner@test.com")
+            .passwordHash("hash")
+            .name("소유자")
+            .status(UserStatus.ACTIVE)
+            .build();
+        ReflectionTestUtils.setField(owner, "id", USER_ID);
+
         Document document = Document.builder()
+            .owner(owner)
             .title("기존 제목")
             .description("기존 설명")
             .status(DocumentStatus.INDEXED)
+            .visibility(VisibilityType.PRIVATE)
             .build();
         ReflectionTestUtils.setField(document, "id", DOCUMENT_ID);
         return document;

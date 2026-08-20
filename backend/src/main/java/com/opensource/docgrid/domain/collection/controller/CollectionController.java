@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.opensource.docgrid.domain.auth.annotation.CurrentUser;
 import com.opensource.docgrid.domain.collection.dto.request.AddDocumentRequest;
 import com.opensource.docgrid.domain.collection.dto.request.CreateCollectionRequest;
+import com.opensource.docgrid.domain.collection.dto.request.UpdateCollectionVisibilityRequest;
 import com.opensource.docgrid.domain.collection.dto.response.CollectionDocumentListItemResponse;
 import com.opensource.docgrid.domain.collection.dto.response.CollectionDocumentResponse;
 import com.opensource.docgrid.domain.collection.dto.response.CollectionResponse;
@@ -59,6 +61,20 @@ public class CollectionController {
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return ResponseUtils.ok(collectionQueryService.getCollections(userId, keyword, page, size));
+    }
+
+    @Operation(
+            summary = "컬렉션 공개 범위 수정",
+            description = "컬렉션의 공개 범위를 PRIVATE 또는 PUBLIC으로 변경합니다. 소유자만 가능하며(ADMIN 위임자는 제외), " +
+                    "COLLECTION/DEPARTMENT는 아직 지원하지 않아 요청하면 거부됩니다."
+    )
+    @PatchMapping("/{collectionId}/visibility")
+    public ResponseEntity<ApiResponse<Void>> updateVisibility(
+            @PathVariable Long collectionId,
+            @Parameter(hidden = true) @CurrentUser Long userId,
+            @RequestBody @Valid UpdateCollectionVisibilityRequest request) {
+        collectionCommandService.updateVisibility(collectionId, userId, request);
+        return ResponseUtils.noContent();
     }
 
     @Operation(

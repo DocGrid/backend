@@ -7,8 +7,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.opensource.docgrid.domain.document.dto.request.UpdateDocumentMetadataRequest;
+import com.opensource.docgrid.domain.document.dto.request.UpdateDocumentVisibilityRequest;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
+import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
 import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.sync.service.command.SyncEventWriter;
@@ -46,6 +48,29 @@ public class DocumentCommandService {
 
         // 3. 현재 Metadata만 갱신하고 과거 Version의 제목 Snapshot은 보존한다.
         document.updateMetadata(request.title(), request.description());
+    }
+
+    /**
+     * 문서 소유자만 공개 범위를 PRIVATE/PUBLIC 간에 변경한다.
+     *
+     * <p>ADMIN 권한 위임자에게는 열어주지 않는다 — 노출 범위를 전체공개로 바꾸는 결정은
+     * 위임받은 관리자가 아니라 원 소유자만 내리게 한다.
+     */
+    public void updateVisibility(Long userId, Long documentId, UpdateDocumentVisibilityRequest request) {
+        // 1. 삭제와 변경 경쟁을 문서 행에서 직렬화하고 이미 삭제된 문서는 존재하지 않는 것으로 처리한다.
+        Document document = findActiveDocumentForUpdate(documentId);
+
+        // 2. 소유자만 노출 범위를 변경할 수 있다.
+        if (!document.getOwner().getId().equals(userId)) {
+            throw new DocGridException(ErrorCode.PERMISSION_DENIED);
+        }
+
+        // 3. COLLECTION/DEPARTMENT는 아직 접근판정에 반영되지 않으므로 거부한다.
+        if (request.visibility() != VisibilityType.PRIVATE && request.visibility() != VisibilityType.PUBLIC) {
+            throw new DocGridException(ErrorCode.DOCUMENT_VISIBILITY_NOT_SUPPORTED);
+        }
+
+        document.updateVisibility(request.visibility());
     }
 
     /**

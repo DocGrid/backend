@@ -10,6 +10,7 @@ import com.opensource.docgrid.domain.collection.converter.CollectionConverter;
 import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.collection.dto.request.AddDocumentRequest;
 import com.opensource.docgrid.domain.collection.dto.request.CreateCollectionRequest;
+import com.opensource.docgrid.domain.collection.dto.request.UpdateCollectionVisibilityRequest;
 import com.opensource.docgrid.domain.collection.dto.response.CollectionDocumentResponse;
 import com.opensource.docgrid.domain.collection.dto.response.CollectionResponse;
 import com.opensource.docgrid.domain.collection.entity.CollectionDocument;
@@ -104,6 +105,23 @@ public class CollectionCommandService {
 
         collectionDocumentRepository.save(collectionDocument);
         return collectionConverter.toDocumentResponse(collectionDocument);
+    }
+
+    // 공개 범위 변경 — 소유자만 가능(ADMIN 위임자는 제외). PRIVATE/PUBLIC 간 토글만 지원한다.
+    public void updateVisibility(Long collectionId, Long userId, UpdateCollectionVisibilityRequest request) {
+        DocumentCollection collection = collectionRepository.findById(collectionId)
+                .filter(c -> c.getStatus() != CollectionStatus.DELETED)
+                .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
+
+        if (!collection.getOwner().getId().equals(userId)) {
+            throw new DocGridException(ErrorCode.PERMISSION_DENIED);
+        }
+
+        if (request.visibility() != VisibilityType.PRIVATE && request.visibility() != VisibilityType.PUBLIC) {
+            throw new DocGridException(ErrorCode.COLLECTION_VISIBILITY_NOT_SUPPORTED);
+        }
+
+        collection.updateVisibility(request.visibility());
     }
 
     // 컬렉션 soft delete — 소유자만 가능. 하위 컬렉션 전체와 그 안의 문서 매핑까지 cascade로 함께 삭제한다.

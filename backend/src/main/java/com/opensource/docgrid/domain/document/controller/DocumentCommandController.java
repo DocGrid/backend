@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.opensource.docgrid.domain.auth.annotation.CurrentUser;
 import com.opensource.docgrid.domain.document.dto.request.UpdateDocumentMetadataRequest;
+import com.opensource.docgrid.domain.document.dto.request.UpdateDocumentVisibilityRequest;
 import com.opensource.docgrid.domain.document.service.command.DocumentCommandService;
 import com.opensource.docgrid.global.common.response.ApiResponse;
 import com.opensource.docgrid.global.common.response.ResponseUtils;
@@ -43,6 +44,21 @@ public class DocumentCommandController {
         @Parameter(hidden = true) @CurrentUser Long userId
     ) {
         documentCommandService.updateMetadata(userId, documentId, request);
+        return ResponseUtils.noContent();
+    }
+
+    @Operation(
+        summary = "문서 공개 범위 수정",
+        description = "문서의 공개 범위를 PRIVATE 또는 PUBLIC으로 변경합니다. 문서 소유자만 가능하며(ADMIN 위임자는 제외), "
+            + "COLLECTION/DEPARTMENT는 아직 지원하지 않아 요청하면 거부됩니다."
+    )
+    @PatchMapping("/{documentId}/visibility")
+    public ResponseEntity<ApiResponse<Void>> updateDocumentVisibility(
+        @PathVariable Long documentId,
+        @Valid @RequestBody UpdateDocumentVisibilityRequest request,
+        @Parameter(hidden = true) @CurrentUser Long userId
+    ) {
+        documentCommandService.updateVisibility(userId, documentId, request);
         return ResponseUtils.noContent();
     }
 

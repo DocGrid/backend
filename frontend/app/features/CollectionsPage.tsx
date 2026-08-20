@@ -7,6 +7,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest, errorMessage, toQuery } from "../lib/api";
 import type { Collection, CollectionDocument, DocumentSummary, PageResponse } from "../lib/api-types";
 import { EmptyState, ErrorState, LoadingState, PageHeading, StatusPill, formatDate } from "../components/ui";
+import { useAuth } from "../components/AuthProvider";
 
 export function CollectionsPage({ notify }: { notify: (message: string) => void }) {
   const [collections, setCollections] = useState<PageResponse<Collection> | null>(null);
@@ -87,6 +88,7 @@ export function CollectionsPage({ notify }: { notify: (message: string) => void 
 }
 
 export function CollectionDetailPage({ collectionId, notify }: { collectionId: number; notify: (message: string) => void }) {
+  const { user } = useAuth();
   const [collection, setCollection] = useState<Collection | null>(null);
   const [children, setChildren] = useState<Collection[]>([]);
   const [availableDocuments, setAvailableDocuments] = useState<DocumentSummary[]>([]);
@@ -144,6 +146,19 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
     finally { setBusy(false); }
   }
 
+  async function updateVisibility(next: "PRIVATE" | "PUBLIC") {
+    if (next === "PUBLIC" && !window.confirm("이 컬렉션을 조직 전체에 공개할까요?")) return;
+
+    setBusy(true);
+    setError("");
+    try {
+      await apiRequest(`/collections/${collectionId}/visibility`, { method: "PATCH", body: { visibility: next } });
+      await load();
+      notify(next === "PUBLIC" ? "컬렉션을 전체공개로 전환했습니다." : "컬렉션을 비공개로 전환했습니다.");
+    } catch (reason) { setError(errorMessage(reason)); }
+    finally { setBusy(false); }
+  }
+
   async function removeCollection() {
     // children은 현재 사용자가 읽을 수 있는 직계 자식만 담고 있어 실제 하위 컬렉션 존재 여부의 기준이 될 수 없다
     // (읽기 권한이 없는 후손도 삭제 시엔 함께 cascade 삭제되므로 항상 경고한다).
@@ -156,9 +171,11 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
     } catch (reason) { setError(errorMessage(reason)); setBusy(false); }
   }
 
+  const isOwner = collection != null && user != null && user.userId === collection.ownerUserId;
+
   return <section className="content page-view">
     <div className="detail-back"><a href="/collections" target="_top">← 컬렉션 목록</a><span>collectionId {collectionId}</span></div>
-    <PageHeading kicker="COLLECTION DETAIL" title={collection?.name ?? `컬렉션 #${collectionId}`} description={collection?.description || "컬렉션 상세 정보를 확인하고 문서를 추가하거나 제거하세요."} actions={collection ? <><StatusPill value={collection.visibility} /><button className="secondary-button" disabled={busy} onClick={() => void removeCollection()}>컬렉션 삭제</button></> : null} />
+    <PageHeading kicker="COLLECTION DETAIL" title={collection?.name ?? `컬렉션 #${collectionId}`} description={collection?.description || "컬렉션 상세 정보를 확인하고 문서를 추가하거나 제거하세요."} actions={collection ? <><StatusPill value={collection.visibility} />{isOwner ? <button className="secondary-button" disabled={busy} onClick={() => void updateVisibility(collection.visibility === "PUBLIC" ? "PRIVATE" : "PUBLIC")}>{collection.visibility === "PUBLIC" ? "비공개로 전환" : "전체공개로 전환"}</button> : null}<button className="secondary-button" disabled={busy} onClick={() => void removeCollection()}>컬렉션 삭제</button></> : null} />
     {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
     {loading ? <LoadingState /> : null}
     {!loading && collection ? <>

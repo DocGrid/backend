@@ -15,14 +15,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import com.opensource.docgrid.domain.dashboard.controller.DashboardWebSocketController;
 import com.opensource.docgrid.domain.dashboard.dto.response.DashboardSummaryResponse;
 import com.opensource.docgrid.domain.dashboard.dto.response.RetryAllJobsResponse;
 import com.opensource.docgrid.domain.dashboard.service.query.DashboardQueryService;
 import com.opensource.docgrid.domain.embedding.dto.response.ManualRetriedIndexingJobResponse;
-import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobManualRetryService;
@@ -59,14 +57,11 @@ class EmbeddingJobRetryServiceTest {
     }
 
     @Test
-    @DisplayName("정상 케이스: 개별 Job 실패는 건너뛰고 성공 건수만 집계하며 1건 이상 성공하면 push한다")
-    void retryAllFailedJobs_countsOnlySuccesses_whenSomeJobsFail() {
+    @DisplayName("정상 케이스: 대상 제외와 성공 건수를 분리하고 1건 이상 성공하면 push한다")
+    void retryAllFailedJobs_separatesSkippedJobs_whenSomeJobsAreNotEligible() {
         // Given
-        EmbeddingJob succeedingJob1 = failedJobWithId(1L);
-        EmbeddingJob failingJob = failedJobWithId(2L);
-        EmbeddingJob succeedingJob2 = failedJobWithId(3L);
-        given(embeddingJobRepository.findAllByStatus(EmbeddingJobStatus.FAILED))
-            .willReturn(List.of(succeedingJob1, failingJob, succeedingJob2));
+        given(embeddingJobRepository.findIdsByStatusOrderByIdAsc(EmbeddingJobStatus.FAILED))
+            .willReturn(List.of(1L, 2L, 3L));
 
         willReturn(mock(ManualRetriedIndexingJobResponse.class))
             .given(embeddingJobManualRetryService).retry(1L);
@@ -82,8 +77,11 @@ class EmbeddingJobRetryServiceTest {
         RetryAllJobsResponse result = embeddingJobRetryService.retryAllFailedJobs();
 
         // Then
+        assertThat(result.scannedCount()).isEqualTo(3);
         assertThat(result.retriedCount()).isEqualTo(2);
-        assertThat(result.message()).isEqualTo("2개 작업 재처리 요청이 완료되었습니다.");
+        assertThat(result.skippedCount()).isEqualTo(1);
+        assertThat(result.failedCount()).isZero();
+        assertThat(result.message()).isEqualTo("재처리 2건, 대상 제외 1건, 오류 0건입니다.");
         then(embeddingJobManualRetryService).should().retry(1L);
         then(embeddingJobManualRetryService).should().retry(2L);
         then(embeddingJobManualRetryService).should().retry(3L);
@@ -94,14 +92,18 @@ class EmbeddingJobRetryServiceTest {
     @DisplayName("예외 케이스: FAILED 작업이 없으면 0건으로 정상 응답하고 push하지 않는다")
     void retryAllFailedJobs_returnsZero_whenNoFailedJobs() {
         // Given
-        given(embeddingJobRepository.findAllByStatus(EmbeddingJobStatus.FAILED)).willReturn(List.of());
+        given(embeddingJobRepository.findIdsByStatusOrderByIdAsc(EmbeddingJobStatus.FAILED))
+            .willReturn(List.of());
 
         // When
         RetryAllJobsResponse result = embeddingJobRetryService.retryAllFailedJobs();
 
         // Then
+        assertThat(result.scannedCount()).isZero();
         assertThat(result.retriedCount()).isZero();
-        assertThat(result.message()).isEqualTo("0개 작업 재처리 요청이 완료되었습니다.");
+        assertThat(result.skippedCount()).isZero();
+        assertThat(result.failedCount()).isZero();
+        assertThat(result.message()).isEqualTo("재처리 0건, 대상 제외 0건, 오류 0건입니다.");
         then(dashboardWebSocketController).shouldHaveNoInteractions();
     }
 
@@ -109,9 +111,8 @@ class EmbeddingJobRetryServiceTest {
     @DisplayName("예외 케이스: 모든 Job 재처리가 실패하면 push하지 않는다")
     void retryAllFailedJobs_doesNotPush_whenAllJobsFail() {
         // Given
-        EmbeddingJob failingJob = failedJobWithId(1L);
-        given(embeddingJobRepository.findAllByStatus(EmbeddingJobStatus.FAILED))
-            .willReturn(List.of(failingJob));
+        given(embeddingJobRepository.findIdsByStatusOrderByIdAsc(EmbeddingJobStatus.FAILED))
+            .willReturn(List.of(1L));
         willThrow(new DocGridException(ErrorCode.EMBEDDING_JOB_MANUAL_RETRY_TARGET_INVALID))
             .given(embeddingJobManualRetryService).retry(1L);
 
@@ -120,15 +121,27 @@ class EmbeddingJobRetryServiceTest {
 
         // Then
         assertThat(result.retriedCount()).isZero();
+        assertThat(result.skippedCount()).isEqualTo(1);
+        assertThat(result.failedCount()).isZero();
         then(dashboardWebSocketController).shouldHaveNoInteractions();
     }
 
-    private EmbeddingJob failedJobWithId(Long id) {
-        EmbeddingJob embeddingJob = EmbeddingJob.builder()
-            .status(EmbeddingJobStatus.FAILED)
-            .maxRetryCount(3)
-            .build();
-        ReflectionTestUtils.setField(embeddingJob, "id", id);
-        return embeddingJob;
+    @Test
+    @DisplayName("예외 케이스: 예상 밖 오류는 대상 제외와 분리하고 나머지 Job을 계속 처리한다")
+    void retryAllFailedJobs_countsUnexpectedErrorsSeparately() {
+        given(embeddingJobRepository.findIdsByStatusOrderByIdAsc(EmbeddingJobStatus.FAILED))
+            .willReturn(List.of(1L, 2L));
+        willThrow(new IllegalStateException("unexpected"))
+            .given(embeddingJobManualRetryService).retry(1L);
+        willReturn(mock(ManualRetriedIndexingJobResponse.class))
+            .given(embeddingJobManualRetryService).retry(2L);
+        given(dashboardQueryService.getSummary()).willReturn(mock(DashboardSummaryResponse.class));
+
+        RetryAllJobsResponse result = embeddingJobRetryService.retryAllFailedJobs();
+
+        assertThat(result.scannedCount()).isEqualTo(2);
+        assertThat(result.retriedCount()).isEqualTo(1);
+        assertThat(result.skippedCount()).isZero();
+        assertThat(result.failedCount()).isEqualTo(1);
     }
 }

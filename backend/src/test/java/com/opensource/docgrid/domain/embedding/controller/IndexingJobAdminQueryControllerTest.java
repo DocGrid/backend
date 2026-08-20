@@ -31,6 +31,7 @@ import com.opensource.docgrid.domain.document.service.DocumentParsingService;
 import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingEventResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingJobAttemptResponse;
 import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingJobResponse;
+import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobManualRetryEligibility;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.service.DocumentEmbeddingService;
 import com.opensource.docgrid.domain.embedding.service.command.DocumentIndexingCompletionService;
@@ -95,6 +96,7 @@ class IndexingJobAdminQueryControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.content[0].jobId").value(10))
             .andExpect(jsonPath("$.data.content[0].status").value("FAILED"))
+            .andExpect(jsonPath("$.data.content[0].manualRetryEligibility").value("ELIGIBLE"))
             .andExpect(jsonPath("$.data.totalElements").value(1))
             .andExpect(jsonPath("$.data.content[0].claimToken").doesNotExist())
             .andExpect(jsonPath("$.data.content[0].errorMessage").doesNotExist());
@@ -109,6 +111,7 @@ class IndexingJobAdminQueryControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.documentId").value(3))
             .andExpect(jsonPath("$.data.embeddingModelName").value("BAAI/bge-m3"))
+            .andExpect(jsonPath("$.data.manualRetryEligibility").value("ELIGIBLE"))
             .andExpect(jsonPath("$.data.claimToken").doesNotExist())
             .andExpect(jsonPath("$.data.errorMessage").doesNotExist());
     }
@@ -212,6 +215,7 @@ class IndexingJobAdminQueryControllerTest {
         return new AdminIndexingJobResponse(
             10L,
             EmbeddingJobStatus.FAILED,
+            EmbeddingJobManualRetryEligibility.ELIGIBLE,
             0,
             3,
             3,

@@ -8,6 +8,7 @@ import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingJobAtte
 import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingJobResponse;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingModel;
+import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobManualRetryEligibility;
 import com.opensource.docgrid.domain.worker.entity.EmbeddingJobAttempt;
 import com.opensource.docgrid.domain.worker.entity.IndexingEvent;
 import com.opensource.docgrid.domain.worker.entity.WorkerNode;
@@ -21,7 +22,10 @@ import com.opensource.docgrid.domain.worker.entity.WorkerNode;
 @Component
 public class IndexingJobAdminConverter {
 
-    public AdminIndexingJobResponse toJobResponse(EmbeddingJob job) {
+    public AdminIndexingJobResponse toJobResponse(
+        EmbeddingJob job,
+        EmbeddingJobManualRetryEligibility manualRetryEligibility
+    ) {
         DocumentVersion version = job.getDocumentVersion();
         EmbeddingModel model = job.getEmbeddingModel();
         WorkerNode worker = job.getLockedByWorker();
@@ -29,6 +33,7 @@ public class IndexingJobAdminConverter {
         return new AdminIndexingJobResponse(
             job.getId(),
             job.getStatus(),
+            manualRetryEligibility,
             job.getPriority(),
             job.getRetryCount(),
             job.getMaxRetryCount(),

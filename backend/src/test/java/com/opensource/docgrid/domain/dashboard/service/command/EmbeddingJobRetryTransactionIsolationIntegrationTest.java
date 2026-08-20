@@ -93,7 +93,10 @@ class EmbeddingJobRetryTransactionIsolationIntegrationTest {
         RetryAllJobsResponse result = embeddingJobRetryService.retryAllFailedJobs();
 
         // Then — 실패한 1건과 무관하게 성공한 2건은 실제 DB에 PENDING으로 커밋돼 있어야 한다.
+        assertThat(result.scannedCount()).isEqualTo(3);
         assertThat(result.retriedCount()).isEqualTo(2);
+        assertThat(result.skippedCount()).isEqualTo(1);
+        assertThat(result.failedCount()).isZero();
         assertThat(statusOf(succeedingJobId1)).isEqualTo("PENDING");
         assertThat(statusOf(succeedingJobId2)).isEqualTo("PENDING");
         assertThat(statusOf(failingJobId)).isEqualTo("FAILED");

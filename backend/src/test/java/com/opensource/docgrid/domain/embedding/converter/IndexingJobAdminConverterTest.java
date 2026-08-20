@@ -21,6 +21,7 @@ import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingJobAtte
 import com.opensource.docgrid.domain.embedding.dto.response.AdminIndexingJobResponse;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingModel;
+import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobManualRetryEligibility;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.worker.entity.EmbeddingJobAttempt;
 import com.opensource.docgrid.domain.worker.entity.IndexingEvent;
@@ -64,7 +65,10 @@ class IndexingJobAdminConverterTest {
         given(worker.getId()).willReturn(7L);
         given(worker.getWorkerName()).willReturn("indexing-worker");
 
-        AdminIndexingJobResponse response = converter.toJobResponse(job);
+        AdminIndexingJobResponse response = converter.toJobResponse(
+            job,
+            EmbeddingJobManualRetryEligibility.JOB_NOT_FAILED
+        );
 
         assertThat(response.jobId()).isEqualTo(10L);
         assertThat(response.documentId()).isEqualTo(3L);
@@ -82,7 +86,10 @@ class IndexingJobAdminConverterTest {
         given(job.getLockedByWorker()).willReturn(null);
         given(version.getDocument()).willReturn(document);
 
-        AdminIndexingJobResponse response = converter.toJobResponse(job);
+        AdminIndexingJobResponse response = converter.toJobResponse(
+            job,
+            EmbeddingJobManualRetryEligibility.JOB_NOT_FAILED
+        );
 
         assertThat(response.workerId()).isNull();
         assertThat(response.workerName()).isNull();

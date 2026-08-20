@@ -8,10 +8,10 @@ import com.opensource.docgrid.domain.dashboard.controller.DashboardWebSocketCont
 import com.opensource.docgrid.domain.dashboard.dto.response.RetryAllJobsResponse;
 import com.opensource.docgrid.domain.dashboard.service.query.DashboardQueryService;
 import com.opensource.docgrid.domain.embedding.dto.response.ManualRetriedIndexingJobResponse;
-import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.embedding.service.command.EmbeddingJobManualRetryService;
+import com.opensource.docgrid.global.exception.DocGridException;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,7 +37,8 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class EmbeddingJobRetryService {
 
-    private static final String RETRY_ALL_MESSAGE_FORMAT = "%d개 작업 재처리 요청이 완료되었습니다.";
+    private static final String RETRY_ALL_MESSAGE_FORMAT =
+        "재처리 %d건, 대상 제외 %d건, 오류 %d건입니다.";
 
     private final EmbeddingJobManualRetryService embeddingJobManualRetryService;
     private final EmbeddingJobRepository embeddingJobRepository;
@@ -53,17 +54,29 @@ public class EmbeddingJobRetryService {
     }
 
     public RetryAllJobsResponse retryAllFailedJobs() {
-        // 1. A의 REST 엔드포인트를 내부 호출하지 않고 Repository를 직접 읽는다(조회는 A/B 경계 밖).
-        List<EmbeddingJob> failedJobs = embeddingJobRepository.findAllByStatus(EmbeddingJobStatus.FAILED);
+        // 1. 전체 Entity 대신 FAILED Job ID Snapshot만 읽고 실제 조건은 각 잠금 Transaction에서 재검증한다.
+        List<Long> failedJobIds = embeddingJobRepository.findIdsByStatusOrderByIdAsc(
+            EmbeddingJobStatus.FAILED
+        );
 
-        // 2. 한 건씩 독립적으로 재처리한다. 개별 실패는 catch해서 건너뛰고 나머지를 계속 진행한다.
+        // 2. 한 건씩 독립적으로 재처리하고 대상 제외와 예상 밖 실행 오류를 분리한다.
         int retriedCount = 0;
-        for (EmbeddingJob failedJob : failedJobs) {
+        int skippedCount = 0;
+        int failedCount = 0;
+        for (Long failedJobId : failedJobIds) {
             try {
-                embeddingJobManualRetryService.retry(failedJob.getId());
+                embeddingJobManualRetryService.retry(failedJobId);
                 retriedCount++;
-            } catch (Exception e) {
-                log.warn("전체 재처리 중 Job 건너뜀: jobId={}, reason={}", failedJob.getId(), e.getMessage());
+            } catch (DocGridException exception) {
+                skippedCount++;
+                log.warn(
+                    "전체 재처리 대상 제외: jobId={}, errorCode={}",
+                    failedJobId,
+                    exception.getErrorCode()
+                );
+            } catch (RuntimeException exception) {
+                failedCount++;
+                log.error("전체 재처리 중 예상 밖 오류: jobId={}", failedJobId, exception);
             }
         }
 
@@ -72,6 +85,12 @@ public class EmbeddingJobRetryService {
             dashboardWebSocketController.sendDashboardUpdate(dashboardQueryService.getSummary());
         }
 
-        return new RetryAllJobsResponse(retriedCount, RETRY_ALL_MESSAGE_FORMAT.formatted(retriedCount));
+        return new RetryAllJobsResponse(
+            failedJobIds.size(),
+            retriedCount,
+            skippedCount,
+            failedCount,
+            RETRY_ALL_MESSAGE_FORMAT.formatted(retriedCount, skippedCount, failedCount)
+        );
     }
 }

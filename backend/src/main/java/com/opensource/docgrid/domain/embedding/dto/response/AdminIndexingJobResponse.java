@@ -3,6 +3,7 @@ package com.opensource.docgrid.domain.embedding.dto.response;
 import java.time.LocalDateTime;
 
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
+import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobManualRetryEligibility;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -19,6 +20,9 @@ public record AdminIndexingJobResponse(
 
     @Schema(description = "현재 Job 상태", example = "PROCESSING")
     EmbeddingJobStatus status,
+
+    @Schema(description = "관리자 수동 재처리 가능 여부와 차단 사유", example = "ELIGIBLE")
+    EmbeddingJobManualRetryEligibility manualRetryEligibility,
 
     @Schema(description = "Queue 우선순위", example = "0")
     int priority,

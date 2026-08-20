@@ -43,6 +43,23 @@ public interface DocumentVersionRepository extends JpaRepository<DocumentVersion
 
     Optional<DocumentVersion> findTopByDocumentIdOrderByVersionNoDesc(Long documentId);
 
+    /**
+     * 관리자 Job 목록에 포함된 문서들의 최신 Version 식별자를 문서별 한 건으로 조회한다.
+     */
+    @Query("""
+        SELECT version.document.id AS documentId, version.id AS versionId
+        FROM DocumentVersion version
+        WHERE version.document.id IN :documentIds
+          AND version.versionNo = (
+              SELECT MAX(candidate.versionNo)
+              FROM DocumentVersion candidate
+              WHERE candidate.document.id = version.document.id
+          )
+        """)
+    List<LatestDocumentVersionProjection> findLatestVersionIdsByDocumentIds(
+        @Param("documentIds") Collection<Long> documentIds
+    );
+
     @Query("SELECT COALESCE(MAX(dv.versionNo), 0) FROM DocumentVersion dv WHERE dv.document.id = :documentId")
     int findMaxVersionNo(@Param("documentId") Long documentId);
 

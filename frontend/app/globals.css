@@ -239,6 +239,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .danger-row { background: #fff0f0; }
 .danger-text { width: fit-content; padding: 5px 8px; color: var(--red); background: white; border: 1px solid #f2b8bb; border-radius: 7px; font-size: 8px; font-weight: 750; cursor: pointer; }
 .retry-button { width: fit-content; padding: 6px 8px; color: white; background: var(--violet); border: 0; border-radius: 7px; font-size: 8px; font-weight: 750; cursor: pointer; }
+.retry-blocked { color: #8a6470; font-size: 8px; font-weight: 750; text-align: center; }
 .pagination { min-height: 51px; padding: 0 15px; display: flex; align-items: center; justify-content: space-between; color: #9293a1; border-top: 1px solid var(--line); font-size: 8px; }
 .pagination div { display: flex; gap: 5px; }
 .pagination button { width: 28px; height: 27px; color: #666777; background: white; border: 1px solid var(--line); border-radius: 7px; font-size: 8px; }

@@ -16,6 +16,14 @@ public record SearchResponse(
     @Schema(description = "RAG로 생성된 답변, 아직 생성 전이면 null") String answer,
     @Schema(description = "답변의 근거 출처 목록") List<CitationResponse> citations
 ) {
+    /**
+     * 벡터 검색 + live check까지 끝난 직후의 응답을 만든다.
+     *
+     * <p>candidates는 이미 pgvector {@code ORDER BY}로 유사도 내림차순 정렬된 상태이므로,
+     * 리스트 인덱스(0-based)에 1을 더한 값을 그대로 rank(1-based)로 사용한다.
+     * 검색은 끝났지만 RAG 답변은 아직 시작 전인 시점이라 ragStatus는 항상 PROCESSING,
+     * answer/citations는 비워둔다 — 이후 {@link #withAnswer}로 덧씌워진다.
+     */
     public static SearchResponse of(Long queryId, List<VectorSearchCandidate> candidates) {
         List<SearchResultItem> items = new java.util.ArrayList<>();
         for (int i = 0; i < candidates.size(); i++) {
@@ -24,10 +32,25 @@ public record SearchResponse(
         return new SearchResponse(queryId, List.copyOf(items), ResultStatus.PROCESSING, null, List.of());
     }
 
+    /**
+     * 사용자가 읽을 수 있는 문서가 하나도 없어 벡터 검색 자체를 생략한 경우의 응답이다.
+     *
+     * <p>{@link #of}와 달리 ragStatus를 처음부터 SUCCESS로 확정한다 — 검색 대상이 없으니
+     * RAG도 애초에 태우지 않을 것이라 나중에 채워질 값이 없기 때문이다. 에러가 아닌
+     * 정상적인 빈 결과(200)로 취급된다.
+     */
     public static SearchResponse empty(Long queryId) {
         return new SearchResponse(queryId, List.of(), ResultStatus.SUCCESS, null, List.of());
     }
 
+    /**
+     * RAG 답변이 만들어진 뒤, 기존 검색 결과({@code queryId}/{@code results})는 그대로 두고
+     * ragStatus/answer/citations만 새 값으로 교체한 새 응답을 만든다.
+     *
+     * <p>record는 불변이라 필드를 직접 바꿀 수 없으므로 "새 객체로 대체"하는 방식을 쓴다.
+     * {@code SearchController}가 {@code RagFacade.enqueue()} 결과가 즉시 나왔을 때
+     * (PROCESSING 상태로 대기하지 않아도 될 때) 이 메서드로 {@link #of}의 결과를 덧씌운다.
+     */
     public SearchResponse withAnswer(ResultStatus ragStatus, String answer, List<CitationResponse> citations) {
         return new SearchResponse(queryId, results, ragStatus, answer, citations);
     }

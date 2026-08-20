@@ -22,6 +22,10 @@ public record VectorSearchCandidate(
     String documentTitle,
     BigDecimal similarityScore
 ) {
+    /**
+     * pgvector가 방금 계산한 raw 검색 결과(VectorSearchRow)에서 조립한다.
+     * POST /search로 새로 검색할 때 쓰이는 경로 — {@link #from(SearchResult)}와 구분할 것.
+     */
     public static VectorSearchCandidate from(VectorSearchRow row) {
         BigDecimal score = BigDecimal.ONE
             .subtract(BigDecimal.valueOf(row.getDistance()))
@@ -38,7 +42,11 @@ public record VectorSearchCandidate(
         );
     }
 
-    // RAG Worker가 비동기로 citation을 재구성할 때, 이미 저장된 SearchResult(+chunk)에서 다시 조립한다.
+    /**
+     * 이미 DB에 저장된 SearchResult(+chunk)에서 거꾸로 재조립한다. pgvector를 다시 조회하지 않고
+     * 저장된 similarityScore를 그대로 재사용한다. GET /search/{queryId} 재조회(SearchAnswerQueryService)와
+     * RAG Worker의 비동기 citation 재구성이 이 경로를 쓴다 — {@link #from(VectorSearchRow)}와 구분할 것.
+     */
     public static VectorSearchCandidate from(SearchResult result) {
         var chunk = result.getChunk();
         var document = chunk.getDocumentVersion().getDocument();

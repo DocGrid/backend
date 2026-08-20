@@ -40,7 +40,7 @@ public class SearchController {
         summary = "벡터 검색 + RAG 답변 생성 요청",
         description = "질문 텍스트를 임베딩 후 pgvector 코사인 유사도 기준 Top-K 문서 청크를 찾아 즉시 "
             + "반환합니다. AI 답변(answer)은 비동기로 생성되며, 응답 시점에는 ragStatus가 PROCESSING이고 "
-            + "answer 필드 자체가 응답 JSON에서 생략됩니다(null이 아니라 키가 없음) — 완성되면 "
+            + "answer 필드는 null로 반환됩니다(키 자체가 생략되지는 않습니다) — 완성되면 "
             + "WebSocket(/user/queue/rag-answer)으로 알림이 오며, 그 신호를 "
             + "받으면 GET /search/{queryId}로 최신 상태를 다시 조회하세요. 검색 결과가 없으면(NO_CONTEXT) "
             + "answer가 고정 안내 문구와 함께 즉시(ragStatus=SUCCESS) 반환됩니다. "

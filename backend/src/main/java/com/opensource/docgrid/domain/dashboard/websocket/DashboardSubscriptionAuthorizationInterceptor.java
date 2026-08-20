@@ -41,14 +41,27 @@ public class DashboardSubscriptionAuthorizationInterceptor implements ChannelInt
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
+        /*
+         * /topic/dashboard 목적지가 아니면 이 Interceptor는 그냥 통과시킨다 — 다른 목적지별로
+         * 전담 Interceptor가 따로 있는 게 아니라, 그 목적지들은 애초에 이 검사 대상이 아니다.
+         * 예를 들어 RAG 개인 알림(/user/queue/rag-answer)은 Spring의 user-destination 격리
+         * 자체가 안전을 보장해서 별도 Interceptor가 필요 없다.
+         */
         if (accessor == null || !DASHBOARD_TOPIC.equals(accessor.getDestination())) {
             return message;
         }
 
+        /*
+         * SEND는 ADMIN 여부와 무관하게 전부 차단한다 — SimpleBroker 구성상 클라이언트가 SEND
+         * 프레임을 보내면 그대로 구독자 전원에게 방송돼버려, 위조된 값을 퍼뜨릴 수 있는 경로이기
+         * 때문이다. 실제 push는 서버 쪽 SimpMessagingTemplate로만 이뤄지므로 클라이언트발 SEND는
+         * 정상 기능이 아니다.
+         */
         if (StompCommand.SEND.equals(accessor.getCommand())) {
             throw new AccessDeniedException("이 목적지로는 메시지를 보낼 수 없습니다.");
         }
 
+        /* SUBSCRIBE 시점에 세션에 부착된 Principal이 ADMIN 권한인지 검증한다. */
         if (StompCommand.SUBSCRIBE.equals(accessor.getCommand()) && !isAdmin(accessor.getUser())) {
             throw new AccessDeniedException("대시보드 구독 권한이 없습니다.");
         }

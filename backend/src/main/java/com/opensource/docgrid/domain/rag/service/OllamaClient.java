@@ -87,6 +87,17 @@ public class OllamaClient {
         this.restClient = restClient;
     }
 
+    /**
+     * 프롬프트를 Ollama에 스트리밍으로 전송하고, 청크를 누적하며 데드라인을 감시하다가 성공하면
+     * 정제된 답변을, 실패하면 예외를 던진다.
+     *
+     * <p>성공 판정 이후 처리 순서: ①한 청크도 못 받았으면 실패 ②{@code done} 없이 끝났으면
+     * 조기 종료로 기록(#210 PEG 파서 버그 추적용) ③언어 혼입 제거({@link #sanitizeAnswer}) ④
+     * 정제 후 텍스트가 비었으면 실패 ⑤토큰 상한 도달·조기 종료·혼입 대량 컷 중 하나라도 해당하면
+     * 문장 경계로 트리밍({@link #trimToSentenceBoundary}) + 잘림 안내 문구 부착. 이 순서가
+     * 뒤바뀌면 안 된다 — 예를 들어 트리밍을 언어 혼입 제거보다 먼저 하면 아직 안 지워진 외국어
+     * 글자를 문장 경계로 착각할 수 있다.
+     */
     public OllamaGenerateResult generate(String prompt) {
         long start = System.currentTimeMillis();
         long deadline = start + generateDeadline.toMillis();
@@ -95,6 +106,12 @@ public class OllamaClient {
         try {
             chunks = restClient.post()
                 .uri("/api/generate")
+                /*
+                 * 인자 순서 = model, prompt, stream, raw, keepAlive, options.
+                 * stream=true, raw=true는 설정값이 아니라 이 메서드가 항상 지켜야 하는 고정
+                 * 계약이라 하드코딩한다 — 아래 readStream()이 stream:true 응답을 전제로 짜여
+                 * 있고, raw:true는 채팅 템플릿 오인식 버그(#210)를 피하려면 항상 켜져 있어야 한다.
+                 */
                 .body(new OllamaGenerateRequest(
                     model, prompt, true, true, keepAlive,
                     new OllamaGenerateOptions(numPredict, temperature, topP, repeatPenalty, repeatLastN)
@@ -232,7 +249,11 @@ public class OllamaClient {
         return text;
     }
 
-    // 숫자 목록 마커("6.")나 경로 표기(".." 등 연속 마침표)의 마침표는 문장 끝이 아니다.
+    /**
+     * 이 위치의 마침표가 진짜 문장 끝인지 판별한다. 숫자 목록 마커("6.")나 경로 표기(".."
+     * 등 연속 마침표)의 마침표는 문장 끝이 아니므로, 앞 글자가 숫자·마침표이거나 뒤 글자도
+     * 마침표면 문장 끝 후보에서 제외한다.
+     */
     private static boolean isSentenceEndDot(String text, int i) {
         boolean precededOk = i == 0
             || (text.charAt(i - 1) != '.' && !Character.isDigit(text.charAt(i - 1)));
@@ -240,7 +261,11 @@ public class OllamaClient {
         return precededOk && followedOk;
     }
 
-    // 백틱 코드 스팬(`taskkill /PID <?` 등) 안의 문장 부호는 문장 끝이 아니다. 앞쪽 백틱 개수가 홀수면 스팬 내부다.
+    /**
+     * 이 위치가 백틱 코드 스팬(예: {@code `taskkill /PID <?`}) 안인지 판별한다 — 스팬 내부의
+     * 문장 부호는 문장 끝이 아니다. 판별 방법: 이 위치 이전에 나온 백틱 개수를 세어 홀수면
+     * "아직 닫는 백틱을 못 만난" 상태이므로 스팬 내부로 본다.
+     */
     private static boolean insideInlineCode(String text, int i) {
         int backticks = 0;
         for (int j = 0; j < i; j++) {

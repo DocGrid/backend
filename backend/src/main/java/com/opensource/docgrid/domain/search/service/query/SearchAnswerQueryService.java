@@ -50,7 +50,12 @@ public class SearchAnswerQueryService {
             items.add(SearchResultItem.of(i + 1, VectorSearchCandidate.from(savedResults.get(i))));
         }
 
-        // 3. RAG 상태 판별 — 아직 PROCESSING이면 answer/citations 없이 바로 반환한다.
+        /*
+         * 3. RAG 상태 판별 — 두 경우로 갈린다.
+         *    (A) ragResponse가 아직 없거나 PROCESSING이면 여기서 즉시 return하고 메서드가 끝난다.
+         *        answer/citations 없이 검색 결과만 담아 "아직 처리중"임을 알린다 — 아래 4번은 실행되지 않는다.
+         *    (B) SUCCESS/FAILED로 확정된 경우에만 이 if를 통과해 4번으로 이어진다.
+         */
         RagResponse ragResponse = ragResponseRepository.findByQuery_Id(query.getId()).orElse(null);
         if (ragResponse == null || ragResponse.getStatus() == ResultStatus.PROCESSING) {
             return new SearchResponse(queryId, items, ResultStatus.PROCESSING, null, List.of());

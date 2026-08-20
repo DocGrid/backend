@@ -58,6 +58,8 @@ public class VectorSearchQueryService {
         // 2. 관련성 미달과 한 문서의 과도한 청크를 제거한 뒤 요청한 Top-K에서 중단한다.
         BigDecimal minSimilarity = vectorSearchProperties.getMinSimilarity();
         int maxChunksPerDocument = vectorSearchProperties.getMaxChunksPerDocument();
+
+        // 3. 위 두 조건을 통과한 후보만 topK개가 채워질 때까지 순서대로 담는다.
         List<VectorSearchCandidate> selected = selectCandidates(
             candidates, topK, minSimilarity, maxChunksPerDocument);
 
@@ -77,10 +79,12 @@ public class VectorSearchQueryService {
         Map<Long, Integer> documentCounts = new HashMap<>();
 
         for (VectorSearchCandidate candidate : candidates) {
+            // 1) 유사도 기준 필터링 — minSimilarity 미만은 무조건 제외
             if (candidate.similarityScore().compareTo(minSimilarity) < 0) {
                 continue;
             }
 
+            // 2) 문서별 청크 상한 필터링 — maxChunksPerDocument개 이상이면 제외
             int documentCount = documentCounts.getOrDefault(candidate.documentId(), 0);
             if (documentCount >= maxChunksPerDocument) {
                 continue;

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.List;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -78,6 +79,42 @@ class PdfDocumentParserTest {
     @DisplayName("손상된 PDF면 제한된 파싱 실패 오류가 발생한다")
     void parseDocument_throwsWhenPdfIsCorrupted() {
         assertError(new byte[] {1, 2, 3}, ErrorCode.DOCUMENT_PARSING_FAILED);
+    }
+
+    @Test
+    @DisplayName("정상 Text로만 이루어진 PDF는 깨진 문자 검증에 걸리지 않는다")
+    void parseDocument_doesNotFlagCleanTextAsGarbled() throws IOException {
+        byte[] pdf = pdfWithPages("first page", "second page");
+
+        ParsedDocument result = parser.parseDocument(pdf);
+
+        assertThat(result.segments()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("깨진 문자 비율이 임계치 이하면 정상으로 판단한다")
+    void isGarbled_returnsFalse_whenRatioIsAtOrBelowThreshold() {
+        ParsedDocumentSegment segment = new ParsedDocumentSegment(
+            "�" + "a".repeat(19), 1, null, null
+        );
+
+        assertThat(PdfDocumentParser.isGarbled(List.of(segment))).isFalse();
+    }
+
+    @Test
+    @DisplayName("깨진 문자 비율이 임계치를 넘으면 손상으로 판단한다")
+    void isGarbled_returnsTrue_whenRatioExceedsThreshold() {
+        ParsedDocumentSegment segment = new ParsedDocumentSegment(
+            "�".repeat(2) + "a".repeat(19), 1, null, null
+        );
+
+        assertThat(PdfDocumentParser.isGarbled(List.of(segment))).isTrue();
+    }
+
+    @Test
+    @DisplayName("Segment가 없으면 손상으로 판단하지 않는다")
+    void isGarbled_returnsFalse_whenSegmentsAreEmpty() {
+        assertThat(PdfDocumentParser.isGarbled(List.of())).isFalse();
     }
 
     private byte[] pdfWithPages(String... pageTexts) throws IOException {

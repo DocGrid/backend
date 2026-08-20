@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
  * PDFBox로 텍스트 PDF를 Page별 Segment로 변환한다.
  *
  * <p>암호화 PDF와 검색 가능한 Text가 없는 PDF를 일반 손상 문서와 구분하며,
+ * 폰트 인코딩이 깨져 추출 Text에 대체 문자(�)가 과도하게 섞인 문서를 차단한다.
  * 이미지 OCR과 Chunk 계산은 담당하지 않는다.
  */
 @Slf4j
@@ -28,6 +29,8 @@ import lombok.extern.slf4j.Slf4j;
 public class PdfDocumentParser implements DocumentContentParser {
 
     private static final Set<DocumentType> SUPPORTED_TYPES = Set.of(DocumentType.PDF);
+    private static final char REPLACEMENT_CHARACTER = '�';
+    private static final double GARBLED_RATIO_THRESHOLD = 0.05;
 
     @Override
     public Set<DocumentType> supportedTypes() {
@@ -69,6 +72,10 @@ public class PdfDocumentParser implements DocumentContentParser {
             if (segments.isEmpty()) {
                 throw new DocGridException(ErrorCode.DOCUMENT_OCR_REQUIRED);
             }
+            // 4. 폰트 인코딩이 깨져 대체 문자(�)가 임계치를 넘으면 Chunk·Embedding 이전에 차단한다.
+            if (isGarbled(segments)) {
+                throw new DocGridException(ErrorCode.DOCUMENT_CONTENT_GARBLED);
+            }
             return new ParsedDocument(segments);
         } catch (InvalidPasswordException exception) {
             throw new DocGridException(ErrorCode.DOCUMENT_PDF_ENCRYPTED, exception);
@@ -82,5 +89,16 @@ public class PdfDocumentParser implements DocumentContentParser {
 
     private String canonicalize(String text) {
         return text.replace("\r\n", "\n").replace('\r', '\n').strip();
+    }
+
+    static boolean isGarbled(List<ParsedDocumentSegment> segments) {
+        long totalLength = 0;
+        long replacementCount = 0;
+        for (ParsedDocumentSegment segment : segments) {
+            String text = segment.text();
+            totalLength += text.length();
+            replacementCount += text.chars().filter(c -> c == REPLACEMENT_CHARACTER).count();
+        }
+        return totalLength > 0 && (double) replacementCount / totalLength > GARBLED_RATIO_THRESHOLD;
     }
 }

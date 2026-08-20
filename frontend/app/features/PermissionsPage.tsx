@@ -94,11 +94,14 @@ export function PermissionsPage({ notify }: { notify: (message: string) => void 
     finally { setBusy(false); }
   }
 
-  async function revoke(permissionId: number) {
+  async function revoke(permission: PermissionGrant) {
     if (!resourceId) return;
+    const resourceLabel = resources.find((item) => String(item.id) === resourceId)?.label ?? resourceId;
+    const message = `${resourceType === "documents" ? "문서" : "컬렉션"} “${resourceLabel}”에서 ${targetLabel(permission)}의 ${permission.permissionType} 권한을 회수할까요?`;
+    if (!window.confirm(message)) return;
     setBusy(true);
     try {
-      await apiRequest(`/permissions/${resourceType}/${resourceId}/${permissionId}`, { method: "DELETE" });
+      await apiRequest(`/permissions/${resourceType}/${resourceId}/${permission.permissionId}`, { method: "DELETE" });
       notify("권한을 회수했습니다.");
       await loadDirectPermissions();
     } catch (reason) { setError(errorMessage(reason)); }
@@ -132,7 +135,7 @@ export function PermissionsPage({ notify }: { notify: (message: string) => void 
         {permissionsLoading ? <LoadingState label="직접 권한을 불러오는 중입니다." /> : null}
         {!permissionsLoading && permissionsError ? <Notice>직접 권한 목록을 조회할 수 없습니다. {permissionsError}</Notice> : null}
         {!permissionsLoading && !permissionsError && !directPermissions.length ? <Notice>이 리소스에 직접 부여된 권한이 없습니다.</Notice> : null}
-        {!permissionsLoading && directPermissions.length ? <div className="mini-table permission-table"><div className="table-labels"><span>대상</span><span>권한</span><span>만료</span><span /></div>{directPermissions.map((permission) => <div key={permission.permissionId}><span><strong>{targetLabel(permission)}</strong><small>#{permission.permissionId} · user #{permission.grantedBy} · {formatDate(permission.grantedAt)}</small></span><StatusPill value={permission.permissionType} /><span>{permission.expiresAt ? formatDate(permission.expiresAt) : "제한 없음"}</span><button className="danger-text" disabled={busy} onClick={() => void revoke(permission.permissionId)}>회수</button></div>)}</div> : null}
+        {!permissionsLoading && directPermissions.length ? <div className="mini-table permission-table"><div className="table-labels"><span>대상</span><span>권한</span><span>만료</span><span /></div>{directPermissions.map((permission) => <div key={permission.permissionId}><span><strong>{targetLabel(permission)}</strong><small>#{permission.permissionId} · user #{permission.grantedBy} · {formatDate(permission.grantedAt)}</small></span><StatusPill value={permission.permissionType} /><span>{permission.expiresAt ? formatDate(permission.expiresAt) : "제한 없음"}</span><button className="danger-text" disabled={busy} onClick={() => void revoke(permission)}>회수</button></div>)}</div> : null}
       </div>
     </> : null}
   </section>;

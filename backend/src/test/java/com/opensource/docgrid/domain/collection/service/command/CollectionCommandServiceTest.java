@@ -22,6 +22,7 @@ import java.util.List;
 import com.opensource.docgrid.domain.collection.converter.CollectionConverter;
 import com.opensource.docgrid.domain.collection.dto.request.AddDocumentRequest;
 import com.opensource.docgrid.domain.collection.dto.request.CreateCollectionRequest;
+import com.opensource.docgrid.domain.collection.dto.request.UpdateCollectionVisibilityRequest;
 import com.opensource.docgrid.domain.collection.dto.response.CollectionDocumentResponse;
 import com.opensource.docgrid.domain.collection.dto.response.CollectionResponse;
 import com.opensource.docgrid.domain.collection.entity.CollectionDocument;
@@ -249,6 +250,67 @@ class CollectionCommandServiceTest {
                 CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID, new AddDocumentRequest(CollectionFixture.DOCUMENT_ID)))
                 .isInstanceOf(DocGridException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.COLLECTION_DOCUMENT_ALREADY_EXISTS);
+    }
+
+    // ==================== updateVisibility ====================
+
+    @Test
+    @DisplayName("소유자면 공개 범위를 PUBLIC으로 변경한다")
+    void updateVisibility_succeeds_whenUserIsOwner() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection collection = CollectionFixture.createCollection(owner);
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+
+        collectionCommandService.updateVisibility(
+                CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID,
+                new UpdateCollectionVisibilityRequest(VisibilityType.PUBLIC));
+
+        assertThat(collection.getVisibility()).isEqualTo(VisibilityType.PUBLIC);
+    }
+
+    @Test
+    @DisplayName("소유자가 아니면 PERMISSION_DENIED 예외가 발생한다")
+    void updateVisibility_throws_whenUserIsNotOwner() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection collection = CollectionFixture.createCollection(owner);
+        Long otherUserId = 99L;
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+
+        assertThatThrownBy(() -> collectionCommandService.updateVisibility(
+                CollectionFixture.COLLECTION_ID, otherUserId,
+                new UpdateCollectionVisibilityRequest(VisibilityType.PUBLIC)))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PERMISSION_DENIED);
+
+        assertThat(collection.getVisibility()).isEqualTo(VisibilityType.PRIVATE);
+    }
+
+    @Test
+    @DisplayName("COLLECTION/DEPARTMENT로 변경을 요청하면 거부한다")
+    void updateVisibility_throws_whenValueNotSupported() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection collection = CollectionFixture.createCollection(owner);
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+
+        assertThatThrownBy(() -> collectionCommandService.updateVisibility(
+                CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID,
+                new UpdateCollectionVisibilityRequest(VisibilityType.DEPARTMENT)))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.COLLECTION_VISIBILITY_NOT_SUPPORTED);
+
+        assertThat(collection.getVisibility()).isEqualTo(VisibilityType.PRIVATE);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 컬렉션이면 COLLECTION_NOT_FOUND 예외가 발생한다")
+    void updateVisibility_throws_whenCollectionNotFound() {
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> collectionCommandService.updateVisibility(
+                CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID,
+                new UpdateCollectionVisibilityRequest(VisibilityType.PUBLIC)))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.COLLECTION_NOT_FOUND);
     }
 
     // ==================== deleteCollection ====================

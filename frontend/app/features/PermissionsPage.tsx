@@ -103,6 +103,7 @@ export function PermissionsPage({ notify }: { notify: (message: string) => void 
     const resourceLabel = resourceName ?? `${resourceType === "documents" ? "문서" : "컬렉션"} #${resourceId}`;
     if (!window.confirm(`${resourceLabel}에서 ${target}의 ${permission.permissionType} 권한을 회수할까요?`)) return;
     setBusy(true);
+    setError("");
     try {
       await apiRequest(`/permissions/${resourceType}/${resourceId}/${permission.permissionId}`, { method: "DELETE" });
       notify("권한을 회수했습니다.");

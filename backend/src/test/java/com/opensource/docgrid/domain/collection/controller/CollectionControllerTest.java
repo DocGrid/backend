@@ -81,7 +81,9 @@ class CollectionControllerTest {
                 .andExpect(jsonPath("$.data.content[0].document.documentId").value(5))
                 .andExpect(jsonPath("$.data.content[0].document.title").value("운영 가이드"))
                 .andExpect(jsonPath("$.data.content[0].document.currentVersionNo").value(2))
+                .andExpect(jsonPath("$.data.content[0].document.ownerName").value("테스트유저"))
                 .andExpect(jsonPath("$.data.content[0].addedBy").value(10))
+                .andExpect(jsonPath("$.data.content[0].addedByName").value("테스트유저"))
                 .andExpect(jsonPath("$.data.totalElements").value(1));
     }
 
@@ -108,6 +110,7 @@ class CollectionControllerTest {
                         .with(authentication(authenticationWithUserId(10L))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].collectionId").value(2))
+                .andExpect(jsonPath("$.data[0].ownerName").value("테스트유저"))
                 .andExpect(jsonPath("$.data[0].parentCollectionId").value(1));
     }
 
@@ -125,6 +128,7 @@ class CollectionControllerTest {
                         .with(authentication(authenticationWithUserId(10L))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content[0].collectionId").value(1))
+                .andExpect(jsonPath("$.data.content[0].ownerName").value("테스트유저"))
                 .andExpect(jsonPath("$.data.totalElements").value(1));
     }
 

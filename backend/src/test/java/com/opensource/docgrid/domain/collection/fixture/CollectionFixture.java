@@ -24,6 +24,7 @@ public class CollectionFixture {
     public static final Long DOCUMENT_ID = 5L;
     public static final String COLLECTION_NAME = "테스트 컬렉션";
     public static final String COLLECTION_DESCRIPTION = "테스트 컬렉션 설명";
+    public static final String OWNER_NAME = "소유자";
 
     private CollectionFixture() {
     }
@@ -32,7 +33,7 @@ public class CollectionFixture {
         User user = User.builder()
                 .email("owner@test.com")
                 .passwordHash("hash")
-                .name("소유자")
+                .name(OWNER_NAME)
                 .status(UserStatus.ACTIVE)
                 .build();
         ReflectionTestUtils.setField(user, "id", USER_ID);
@@ -97,7 +98,7 @@ public class CollectionFixture {
                 COLLECTION_NAME,
                 COLLECTION_DESCRIPTION,
                 USER_ID,
-                "테스트유저",
+                OWNER_NAME,
                 null,
                 VisibilityType.PRIVATE,
                 CollectionStatus.ACTIVE,

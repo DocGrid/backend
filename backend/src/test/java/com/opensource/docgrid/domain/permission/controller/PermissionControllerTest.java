@@ -71,7 +71,9 @@ class PermissionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].permissionId").value(100))
                 .andExpect(jsonPath("$.data[0].targetType").value("USER"))
-                .andExpect(jsonPath("$.data[0].userId").value(20));
+                .andExpect(jsonPath("$.data[0].userId").value(20))
+                .andExpect(jsonPath("$.data[0].userName").value("대상유저"))
+                .andExpect(jsonPath("$.data[0].grantedByName").value("테스트유저"));
     }
 
     @Test
@@ -103,6 +105,8 @@ class PermissionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].permissionId").value(200))
                 .andExpect(jsonPath("$.data[0].roleId").value(30))
+                .andExpect(jsonPath("$.data[0].roleName").value("ADMIN"))
+                .andExpect(jsonPath("$.data[0].grantedByName").value("테스트유저"))
                 .andExpect(jsonPath("$.data[0].canAdmin").value(true));
     }
 

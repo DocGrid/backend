@@ -137,6 +137,11 @@ public enum ErrorCode {
         "DOCUMENT-PARSING-007",
         "문서 내용을 읽을 수 없습니다."
     ),
+    DOCUMENT_CONTENT_GARBLED(
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        "DOCUMENT-PARSING-008",
+        "문서 텍스트에 깨진 문자가 많아 처리할 수 없습니다."
+    ),
     DOCUMENT_CHUNKS_INCONSISTENT(
         HttpStatus.INTERNAL_SERVER_ERROR,
         "DOCUMENT-CHUNK-001",

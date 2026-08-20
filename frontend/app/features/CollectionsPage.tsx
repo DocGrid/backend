@@ -119,6 +119,10 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
       setChildren(childList);
       setAvailableDocuments(documentPage.content);
       setCollectionDocuments(memberPage);
+      // 현재 조회한 멤버십에 없는 선택값은 제거해 화면 밖 문서 ID로 DELETE하지 못하게 한다.
+      setRemoveDocumentId((current) => memberPage.content.some(
+        (item) => String(item.document.documentId) === current,
+      ) ? current : "");
     } catch (reason) {
       if (seq !== loadSeqRef.current) return;
       setError(errorMessage(reason));
@@ -173,6 +177,8 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
   }
 
   const isOwner = collection != null && user != null && user.userId === collection.ownerUserId;
+  const removableDocuments = collectionDocuments?.content ?? [];
+  const hasRemovableDocuments = removableDocuments.length > 0;
 
   return <section className="content page-view">
     <div className="detail-back"><a href="/collections" target="_top">← 컬렉션 목록</a><span>collectionId {collectionId}</span></div>
@@ -184,7 +190,7 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
       <div className="panel-card"><div className="panel-heading"><div><h2>하위 컬렉션</h2><p>클릭하면 해당 컬렉션을 엽니다.</p></div></div>{children.length ? <div className="collection-grid">{children.map((child, index) => <a className="collection-card" href={`/collections/${child.collectionId}`} target="_top" key={child.collectionId}><div className="collection-top"><span className="folder-shape" style={{ "--folder-color": collectionColor(index) } as React.CSSProperties}>▱</span><StatusPill value={child.status} /></div><div className="collection-badges"><StatusPill value={child.visibility} /></div><h2>{child.name}</h2><p>{child.description || "설명이 없습니다."}</p></a>)}</div> : <EmptyState symbol="▱" title="하위 컬렉션이 없습니다" description="이 컬렉션 안에 하위 컬렉션을 만들면 여기에 표시됩니다." />}</div>
       <div className="detail-grid collection-action-grid">
         <div className="panel-card"><div className="panel-heading"><div><h2>문서 추가</h2><p>내가 읽을 수 있는 문서 중 하나를 선택합니다.</p></div></div><label className="form-field">문서<select value={addDocumentId} onChange={(event) => setAddDocumentId(event.target.value)}><option value="">문서를 선택하세요</option>{availableDocuments.map((document) => <option key={document.documentId} value={document.documentId}>#{document.documentId} · {document.title}</option>)}</select></label><button className="primary-button full-button action-submit" disabled={!addDocumentId || busy} onClick={() => void mutate("add", Number(addDocumentId))}>컬렉션에 추가</button></div>
-        <div className="panel-card"><div className="panel-heading"><div><h2>문서 제거</h2><p>이 컬렉션에 포함된 문서 중 하나를 선택합니다.</p></div></div>{collectionDocuments?.content.length ? <><label className="form-field">문서<select value={removeDocumentId} onChange={(event) => setRemoveDocumentId(event.target.value)}><option value="">문서를 선택하세요</option>{collectionDocuments.content.map((item) => <option key={item.document.documentId} value={item.document.documentId}>#{item.document.documentId} · {item.document.title}</option>)}</select></label><button className="secondary-button full-button action-submit" disabled={!removeDocumentId || busy} onClick={() => void mutate("remove", Number(removeDocumentId))}>컬렉션에서 제거</button></> : <span className="auth-field-help">제거할 수 있는 문서가 없습니다.</span>}</div>
+        <div className="panel-card"><div className="panel-heading"><div><h2>문서 제거</h2><p>이 컬렉션에 포함된 문서 중 하나를 선택합니다.</p></div></div><label className="form-field">문서<select value={removeDocumentId} disabled={!hasRemovableDocuments || busy} onChange={(event) => setRemoveDocumentId(event.target.value)}><option value="">{hasRemovableDocuments ? "문서를 선택하세요" : "제거할 문서가 없습니다"}</option>{removableDocuments.map((item) => <option key={item.document.documentId} value={item.document.documentId}>#{item.document.documentId} · {item.document.title}</option>)}</select></label><button className="secondary-button full-button action-submit" disabled={!removeDocumentId || busy || !hasRemovableDocuments} onClick={() => void mutate("remove", Number(removeDocumentId))}>컬렉션에서 제거</button></div>
       </div>
       {collectionDocuments && !collectionDocuments.content.length ? <EmptyState symbol="▱" title="컬렉션에 문서가 없습니다" description="위에서 문서를 선택해 컬렉션에 추가해 보세요." /> : null}
       {collectionDocuments?.content.length ? <div className="data-table collection-documents-table">

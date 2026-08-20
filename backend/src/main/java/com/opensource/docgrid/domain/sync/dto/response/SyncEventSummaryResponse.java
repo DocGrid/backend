@@ -14,7 +14,7 @@ public record SyncEventSummaryResponse(
     long processedLast24hCount,
     long failedLast24hCount,
     long retriedLast24hCount,
-    double successRateLast24h,
+    Double successRateLast24h,
     UUID lastProcessedEventId,
     LocalDateTime lastProcessedAt
 ) {

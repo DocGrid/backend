@@ -313,7 +313,7 @@ export type SyncEventSummary = {
   processedLast24hCount: number;
   failedLast24hCount: number;
   retriedLast24hCount: number;
-  successRateLast24h: number;
+  successRateLast24h: number | null;
   lastProcessedEventId: string | null;
   lastProcessedAt: string | null;
 };

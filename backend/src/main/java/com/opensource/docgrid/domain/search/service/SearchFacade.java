@@ -81,7 +81,11 @@ public class SearchFacade {
             List<Long> permittedIds = accessibleDocumentQueryService
                 .findReadableDocumentIds(userId, request.collectionId());
 
-            // 볼 수 있는 문서가 하나도 없으면 벡터 검색 자체를 생략
+            /*
+             * 볼 수 있는 문서가 하나도 없으면 벡터 검색 자체를 생략한다.
+             * 권한 문제로 결과가 없는 것은 실패가 아니라 정상 케이스이므로 markFailed가 아닌
+             * markSuccess를 호출하고, 200 + 빈 결과로 응답한다.
+             */
             if (permittedIds.isEmpty()) {
                 log.info("[SEARCH] no accessible documents userId={}", userId);
                 int latency = latencyMs(start);

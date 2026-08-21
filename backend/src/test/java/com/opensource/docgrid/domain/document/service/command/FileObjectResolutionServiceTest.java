@@ -109,7 +109,7 @@ class FileObjectResolutionServiceTest {
     private void assertResolutionFailure(Runnable action) {
         assertThatThrownBy(action::run)
             .isInstanceOfSatisfying(DocGridException.class, exception ->
-                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.FILE_OBJECT_RESOLUTION_FAILED)
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH)
             );
     }
 }

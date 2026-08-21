@@ -29,10 +29,14 @@ class FileStoragePropertiesTest {
     }
 
     @Test
-    @DisplayName("구현되지 않은 S3 설정은 애플리케이션 시작 단계에서 거부된다")
-    void storageType_rejectsUnsupportedAdapter() {
+    @DisplayName("S3 Adapter가 구현되면 s3 설정이 바인딩된다")
+    void storageType_bindsS3Adapter() {
         contextRunner.withPropertyValues("storage.type=s3")
-            .run(context -> assertThat(context).hasFailed());
+            .run(context -> {
+                assertThat(context).hasNotFailed();
+                assertThat(context.getBean(FileStorageProperties.class).getType())
+                    .isEqualTo(FileStorageType.S3);
+            });
     }
 
     /**

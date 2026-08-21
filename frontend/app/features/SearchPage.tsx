@@ -5,7 +5,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest, errorMessage } from "../lib/api";
-import type { Collection, PageResponse, SearchResponse } from "../lib/api-types";
+import type { Collection, DocumentSummary, PageResponse, SearchResponse } from "../lib/api-types";
 import { groupSearchSources } from "../lib/search-sources";
 import { useRagAnswerSocket } from "../lib/useRagAnswerSocket";
 import { ErrorState, StatusPill } from "../components/ui";
@@ -22,7 +22,14 @@ async function loadAllCollections(): Promise<Collection[]> {
   }
 }
 
-const suggestions = ["배포 실패 시 롤백 절차", "법인카드 사용 기준", "보안 사고 보고 순서"];
+type SuggestedQuestion = { documentId: number; label: string };
+
+// 실제 검색 가능한(INDEXED) 문서가 없는 하드코딩 질문은 관련 문서를 찾지 못하는 경험으로 이어지므로,
+// 최근 인덱싱된 문서 제목에서 직접 질문을 만든다 — 문서가 바뀌어도 항상 결과가 나오는 질문만 보여준다.
+async function loadSuggestedQuestions(): Promise<SuggestedQuestion[]> {
+  const result = await apiRequest<PageResponse<DocumentSummary>>("/api/documents?status=INDEXED&page=0&size=3");
+  return result.content.map((document) => ({ documentId: document.documentId, label: `${document.title}에 대해 알려줘` }));
+}
 const SEARCH_TIMEOUT_MS = 29_000;
 // WebSocket push가 유실돼도(연결 끊김 등) 답변이 영원히 "생성 중"으로 멈춰 보이지 않도록 하는 안전망.
 const ANSWER_POLL_INTERVAL_MS = 3_000;
@@ -32,6 +39,7 @@ export function SearchPage() {
   const [topK, setTopK] = useState(5);
   const [collectionId, setCollectionId] = useState("");
   const [collections, setCollections] = useState<Collection[]>([]);
+  const [suggestions, setSuggestions] = useState<SuggestedQuestion[]>([]);
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
@@ -42,6 +50,7 @@ export function SearchPage() {
 
   useEffect(() => {
     void loadAllCollections().then(setCollections).catch(() => setCollections([]));
+    void loadSuggestedQuestions().then(setSuggestions).catch(() => setSuggestions([]));
   }, []);
 
   // AI 답변이 아직 생성 중일 때만 true — WebSocket과 폴백 폴링을 이때만 연다.
@@ -134,7 +143,7 @@ export function SearchPage() {
         <p className="hero-copy">벡터 검색과 권한 검증을 거쳐, 출처가 명확한 답변을 제공합니다.</p>
         <form className="hero-search" onSubmit={submit}><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="문서 검색" placeholder="질문을 입력하세요" /><button aria-label="검색">↑</button></form>
         <div className="search-options"><label>검색 범위<select value={collectionId} onChange={(event) => setCollectionId(event.target.value)}><option value="">전체 컬렉션</option>{collections.map((collection) => <option value={collection.collectionId} key={collection.collectionId}>{collection.name}</option>)}</select></label><label>결과 수<select value={topK} onChange={(event) => setTopK(Number(event.target.value))}><option value={5}>Top-K 5</option><option value={10}>Top-K 10</option><option value={20}>Top-K 20</option></select></label></div>
-        <div className="suggestions"><span>추천 질문</span>{suggestions.map((item) => <button key={item} onClick={() => void search(item)}>{item}<b>↗</b></button>)}</div>
+        {suggestions.length ? <div className="suggestions"><span>추천 질문</span>{suggestions.map((item) => <button key={item.documentId} onClick={() => void search(item.label)}>{item.label}<b>↗</b></button>)}</div> : null}
         <div className="feature-links"><a href="/documents" target="_top"><span>▤</span><div><strong>문서 탐색</strong><small>문서와 인덱싱 상태 확인</small></div><b>→</b></a><a href="/collections" target="_top"><span>▱</span><div><strong>컬렉션</strong><small>주제별 검색 범위 관리</small></div><b>→</b></a><a href="/mcp-tokens" target="_top"><span>⌁</span><div><strong>MCP 연동</strong><small>AI 클라이언트 연결</small></div><b>→</b></a></div>
       </div> : <div className="results-page">
         <form className="results-search" onSubmit={submit}><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="문서 검색" /><select value={collectionId} onChange={(event) => setCollectionId(event.target.value)}><option value="">전체 컬렉션</option>{collections.map((collection) => <option value={collection.collectionId} key={collection.collectionId}>{collection.name}</option>)}</select><select value={topK} onChange={(event) => setTopK(Number(event.target.value))}><option value={5}>Top-K 5</option><option value={10}>Top-K 10</option><option value={20}>Top-K 20</option></select><button disabled={searching}>{searching ? "검색 중" : "검색"}</button></form>

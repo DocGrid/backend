@@ -57,7 +57,7 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform {
-		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency', 'local-e2e', 'real-pdf-version-e2e', 'vector-search-performance', 'vector-storage-performance', 'worker-indexing-throughput', 'worker-horizontal-scaling', 'worker-queue-backpressure', 'document-indexing-e2e-load', 'chunk-quality-performance'
+		excludeTags 'benchmark', 'minio-integration', 'claim-concurrency', 'local-e2e', 'storage-worker-e2e', 'real-pdf-version-e2e', 'vector-search-performance', 'vector-storage-performance', 'worker-indexing-throughput', 'worker-horizontal-scaling', 'worker-queue-backpressure', 'document-indexing-e2e-load', 'chunk-quality-performance'
 	}
 }
 
@@ -75,6 +75,19 @@ tasks.register('localE2eTest', Test) {
 		includeTags 'local-e2e'
 	}
 	// 실제 Worker와 공유 인프라를 쓰는 두 Context가 서로의 Schema·Bucket을 침범하지 않게 직렬 실행한다.
+	maxParallelForks = 1
+	outputs.upToDateWhen { false }
+}
+
+tasks.register('storageWorkerE2eTest', Test) {
+	group = 'verification'
+	description = 'Local Filesystem, MinIO, S3 Adapter와 실제 인덱싱 Worker 전체 관통 E2E를 실행합니다.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'storage-worker-e2e'
+	}
+	// Provider별 Spring Context와 격리 Schema가 외부 BGE-M3 자원을 순차 사용하게 한다.
 	maxParallelForks = 1
 	outputs.upToDateWhen { false }
 }

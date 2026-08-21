@@ -33,10 +33,10 @@ import io.minio.RemoveBucketArgs;
 import io.minio.RemoveObjectArgs;
 
 /**
- * 실제 MinIO에서 Object 전체 읽기와 전달된 Bucket 선택 및 파일 없음 오류를 검증한다.
+ * 실제 MinIO에서 Object 전체 읽기와 Bucket 설정 불일치 및 파일 없음 오류를 검증한다.
  *
- * <p>기본 Bucket과 별도 Bucket을 모두 사용해 {@link FileStorageService#read(StoredFile)}가
- * 전역 설정이 아닌 Snapshot의 위치를 따르고 실제 응답 Stream Resource를 정상 종료하는지 확인한다.
+ * <p>설정 Bucket에서는 실제 응답 Byte를 읽고, 별도 Bucket에 Object가 있어도 현재 환경과 다른
+ * Snapshot은 원격 조회 전에 거부하는지 확인한다.
  */
 @Tag("integration")
 @Tag("minio-integration")
@@ -88,8 +88,8 @@ class MinioDocumentReadIntegrationTest {
     }
 
     @Test
-    @DisplayName("전역 기본값 대신 StoredFile이 전달한 다른 Bucket에서 읽는다")
-    void read_usesBucketFromStoredFile() throws Exception {
+    @DisplayName("Object가 있어도 현재 설정과 다른 Bucket Snapshot은 거부한다")
+    void read_rejectsStoredFileFromDifferentBucket() throws Exception {
         byte[] content = "다른 Bucket 원본".getBytes(StandardCharsets.UTF_8);
         minioClient.putObject(PutObjectArgs.builder()
             .bucket(OTHER_BUCKET)
@@ -98,8 +98,12 @@ class MinioDocumentReadIntegrationTest {
             .contentType("text/plain")
             .build());
 
-        assertThat(fileStorageService.read(new StoredFile(StorageProvider.MINIO, OTHER_BUCKET, "other.txt")))
-            .isEqualTo(content);
+        assertThatThrownBy(() -> fileStorageService.read(
+            new StoredFile(StorageProvider.MINIO, OTHER_BUCKET, "other.txt")
+        ))
+            .isInstanceOfSatisfying(DocGridException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH));
     }
 
     @Test

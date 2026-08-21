@@ -169,7 +169,7 @@ class WorkerQueueBackpressureBenchmark {
     static void configureEnvironment(DynamicPropertyRegistry registry) {
         registry.add("TEST_DB_SCHEMA", () -> TEST_SCHEMA);
         registry.add("jwt.secret", () -> "docgrid-worker-backpressure-test-secret-key-2026");
-        registry.add("minio.bucket", () -> TEST_BUCKET);
+        registry.add("storage.bucket", () -> TEST_BUCKET);
         registry.add("indexing.worker.enabled", () -> "true");
         registry.add("indexing.worker.name", () -> "worker-queue-backpressure-benchmark");
         registry.add("indexing.worker.polling-interval", () -> "25ms");

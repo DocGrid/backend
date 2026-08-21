@@ -35,6 +35,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.opensource.docgrid.domain.document.dto.request.DocumentUploadRequest;
 import com.opensource.docgrid.domain.document.dto.response.DocumentUploadResponse;
+import com.opensource.docgrid.domain.document.enums.StorageProvider;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.service.DocumentUploadFacade;
 import com.opensource.docgrid.domain.document.service.FileHashService;
@@ -94,10 +95,10 @@ class DocumentUploadIntegrationTest {
     }
 
     @Test
-    @DisplayName("정상 TXT 업로드 시 네 테이블과 연관관계를 생성한다")
+    @DisplayName("정상 TXT 업로드 시 실제 Adapter Provider와 네 테이블의 연관관계를 저장한다")
     void upload_createsAllReceptionData() {
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
-            .willReturn(new StoredFile("test-bucket", "documents/test/file.txt"));
+            .willReturn(new StoredFile(StorageProvider.LOCAL, "test-bucket", "documents/test/file.txt"));
         DocumentUploadRequest request = request("normal-" + testSuffix, "정상 업로드 " + testSuffix);
 
         DocumentUploadResponse response = documentUploadFacade.upload(userId, request);
@@ -113,6 +114,9 @@ class DocumentUploadIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
             "SELECT file_object_id FROM document_versions WHERE id = ?", Long.class, response.documentVersionId()
         )).isEqualTo(response.fileObjectId());
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT storage_provider FROM file_objects WHERE id = ?", String.class, response.fileObjectId()
+        )).isEqualTo("LOCAL");
         assertThat(jdbcTemplate.queryForObject(
             "SELECT status FROM embedding_jobs WHERE id = ?", String.class, response.embeddingJobId()
         )).isEqualTo("PENDING");
@@ -142,7 +146,9 @@ class DocumentUploadIntegrationTest {
     @DisplayName("같은 파일을 순차 업로드하면 기존 FileObject를 재사용한다")
     void upload_reusesFileObject_when_sameFileIsUploadedSequentially() {
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
-            .willReturn(new StoredFile("test-bucket", "documents/test/sequential.txt"));
+            .willReturn(new StoredFile(
+                StorageProvider.MINIO, "test-bucket", "documents/test/sequential.txt"
+            ));
         String content = "sequential-" + testSuffix;
 
         DocumentUploadResponse first = documentUploadFacade.upload(
@@ -170,7 +176,11 @@ class DocumentUploadIntegrationTest {
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
             .willAnswer(invocation -> {
                 storageBarrier.await(10, TimeUnit.SECONDS);
-                return new StoredFile("test-bucket", "documents/test/candidate-" + objectSequence.incrementAndGet());
+                return new StoredFile(
+                    StorageProvider.MINIO,
+                    "test-bucket",
+                    "documents/test/candidate-" + objectSequence.incrementAndGet()
+                );
             });
         String content = "concurrent-" + testSuffix;
 
@@ -201,7 +211,9 @@ class DocumentUploadIntegrationTest {
     @Test
     @DisplayName("active EmbeddingModel이 없으면 DB를 롤백하고 후보 Object를 삭제한다")
     void upload_rollsBackAndDeletesCandidate_when_activeModelDoesNotExist() {
-        StoredFile candidate = new StoredFile("test-bucket", "documents/test/rollback-candidate");
+        StoredFile candidate = new StoredFile(
+            StorageProvider.MINIO, "test-bucket", "documents/test/rollback-candidate"
+        );
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
             .willReturn(candidate);
         DocumentUploadRequest request = request("rollback-" + testSuffix, "롤백 검증 " + testSuffix);

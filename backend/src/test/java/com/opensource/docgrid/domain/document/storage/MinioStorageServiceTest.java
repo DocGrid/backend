@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
 
 import java.io.ByteArrayInputStream;
@@ -15,13 +16,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-import com.opensource.docgrid.global.config.MinioProperties;
+import com.opensource.docgrid.domain.document.config.FileStorageProperties;
+import com.opensource.docgrid.domain.document.enums.StorageProvider;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
 import io.minio.GetObjectArgs;
 import io.minio.GetObjectResponse;
 import io.minio.MinioClient;
+import io.minio.PutObjectArgs;
 import io.minio.errors.ErrorResponseException;
 import io.minio.messages.ErrorResponse;
 import okhttp3.Headers;
@@ -35,7 +38,9 @@ import okhttp3.Headers;
 @DisplayName("MinioStorageService 테스트")
 class MinioStorageServiceTest {
 
-    private static final StoredFile STORED_FILE = new StoredFile("source-bucket", "documents/source.txt");
+    private static final StoredFile STORED_FILE = new StoredFile(
+        StorageProvider.MINIO, "source-bucket", "documents/source.txt"
+    );
 
     private MinioClient minioClient;
     private MinioStorageService storageService;
@@ -43,7 +48,34 @@ class MinioStorageServiceTest {
     @BeforeEach
     void setUp() {
         minioClient = mock(MinioClient.class);
-        storageService = new MinioStorageService(minioClient, mock(MinioProperties.class));
+        FileStorageProperties fileStorageProperties = new FileStorageProperties();
+        fileStorageProperties.setBucket(STORED_FILE.bucketName());
+        storageService = new MinioStorageService(
+            minioClient,
+            fileStorageProperties
+        );
+    }
+
+    @Test
+    @DisplayName("공통 Bucket에 저장하고 MinIO Provider 위치를 반환한다")
+    void store_returnsMinioLocation() throws Exception {
+        byte[] content = "DocGrid MinIO 원본".getBytes(StandardCharsets.UTF_8);
+        given(minioClient.bucketExists(any())).willReturn(true);
+        ArgumentCaptor<PutObjectArgs> argsCaptor = ArgumentCaptor.forClass(PutObjectArgs.class);
+
+        StoredFile result = storageService.store(
+            new ByteArrayInputStream(content),
+            content.length,
+            "text/plain",
+            "documents/new.txt"
+        );
+
+        then(minioClient).should().putObject(argsCaptor.capture());
+        assertThat(result).isEqualTo(
+            new StoredFile(StorageProvider.MINIO, STORED_FILE.bucketName(), "documents/new.txt")
+        );
+        assertThat(argsCaptor.getValue().bucket()).isEqualTo(STORED_FILE.bucketName());
+        assertThat(argsCaptor.getValue().object()).isEqualTo("documents/new.txt");
     }
 
     @Test

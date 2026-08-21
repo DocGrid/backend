@@ -138,7 +138,7 @@ class DocumentIndexingE2ELoadBenchmark {
     static void configureEnvironment(DynamicPropertyRegistry registry) {
         registry.add("TEST_DB_SCHEMA", () -> TEST_SCHEMA);
         registry.add("jwt.secret", () -> "docgrid-document-e2e-load-test-secret-key-2026");
-        registry.add("minio.bucket", () -> TEST_BUCKET);
+        registry.add("storage.bucket", () -> TEST_BUCKET);
         registry.add("indexing.worker.enabled", () -> "true");
         registry.add("indexing.worker.name", () -> "document-indexing-e2e-load-benchmark");
         registry.add("indexing.worker.polling-interval", () -> "50ms");

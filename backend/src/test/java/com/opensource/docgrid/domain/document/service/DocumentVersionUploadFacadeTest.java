@@ -23,6 +23,7 @@ import org.springframework.mock.web.MockMultipartFile;
 
 import com.opensource.docgrid.domain.document.dto.request.DocumentVersionUploadRequest;
 import com.opensource.docgrid.domain.document.dto.response.DocumentVersionUploadResponse;
+import com.opensource.docgrid.domain.document.enums.StorageProvider;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
 import com.opensource.docgrid.domain.document.enums.DocumentType;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
@@ -159,7 +160,7 @@ class DocumentVersionUploadFacadeTest {
     }
 
     private StoredFile candidate() {
-        return new StoredFile("bucket", "object-key");
+        return new StoredFile(StorageProvider.MINIO, "bucket", "object-key");
     }
 
     private DocumentVersionUploadResponse response() {

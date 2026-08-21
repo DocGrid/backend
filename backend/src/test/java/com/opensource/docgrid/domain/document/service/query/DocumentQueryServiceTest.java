@@ -37,6 +37,7 @@ import com.opensource.docgrid.domain.document.entity.FileObject;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
 import com.opensource.docgrid.domain.document.enums.DocumentType;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
+import com.opensource.docgrid.domain.document.enums.StorageProvider;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
 import com.opensource.docgrid.domain.document.repository.DocumentStatusProjection;
@@ -181,13 +182,16 @@ class DocumentQueryServiceTest {
         given(currentVersion.getFileObject()).willReturn(fileObject);
         given(currentVersion.getOriginalFilename()).willReturn("guide.pdf");
         given(currentVersion.getContentType()).willReturn("application/pdf");
+        given(fileObject.getStorageProvider()).willReturn(StorageProvider.MINIO);
         given(fileObject.getBucketName()).willReturn("documents");
         given(fileObject.getObjectKey()).willReturn("objects/guide.pdf");
         given(fileObject.getFileSize()).willReturn(100L);
 
         DocumentFileSnapshot result = service.getDocumentFileSnapshot(USER_ID, DOCUMENT_ID);
 
-        assertThat(result.storedFile()).isEqualTo(new StoredFile("documents", "objects/guide.pdf"));
+        assertThat(result.storedFile()).isEqualTo(
+            new StoredFile(StorageProvider.MINIO, "documents", "objects/guide.pdf")
+        );
         assertThat(result.originalFilename()).isEqualTo("guide.pdf");
         assertThat(result.contentType()).isEqualTo("application/pdf");
         assertThat(result.fileSize()).isEqualTo(100L);

@@ -62,7 +62,7 @@ class LocalEmbeddingProviderOutageE2ETest {
     static void configureEnvironment(DynamicPropertyRegistry registry) {
         registry.add("TEST_DB_SCHEMA", () -> TEST_SCHEMA);
         registry.add("jwt.secret", () -> "docgrid-local-embedding-outage-e2e-secret-key-2026");
-        registry.add("minio.bucket", () -> TEST_BUCKET);
+        registry.add("storage.bucket", () -> TEST_BUCKET);
         registry.add("embedding.server.base-url", () -> "http://127.0.0.1:65534");
         registry.add("indexing.worker.enabled", () -> "true");
         registry.add("indexing.worker.name", () -> "local-embedding-outage-e2e-worker");

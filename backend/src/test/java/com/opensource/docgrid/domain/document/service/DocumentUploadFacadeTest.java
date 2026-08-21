@@ -21,6 +21,7 @@ import org.springframework.mock.web.MockMultipartFile;
 
 import com.opensource.docgrid.domain.document.dto.request.DocumentUploadRequest;
 import com.opensource.docgrid.domain.document.dto.response.DocumentUploadResponse;
+import com.opensource.docgrid.domain.document.enums.StorageProvider;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
 import com.opensource.docgrid.domain.document.enums.DocumentType;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
@@ -76,7 +77,7 @@ class DocumentUploadFacadeTest {
     @Test
     @DisplayName("MinIO 저장 후 DB 작업이 실패하면 후보 Object를 삭제한다")
     void upload_deletesCandidate_when_databaseFails() {
-        StoredFile candidate = new StoredFile("bucket", "object-key");
+        StoredFile candidate = new StoredFile(StorageProvider.MINIO, "bucket", "object-key");
         RuntimeException databaseFailure = new RuntimeException("db failure");
         given(documentUploadService.findReusableFileObjectId(FILE_HASH, 4L)).willReturn(Optional.empty());
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
@@ -91,7 +92,7 @@ class DocumentUploadFacadeTest {
     @Test
     @DisplayName("동시 경합에서 후보가 채택되지 않으면 후보 Object를 삭제한다")
     void upload_deletesCandidate_when_raceIsLost() {
-        StoredFile candidate = new StoredFile("bucket", "object-key");
+        StoredFile candidate = new StoredFile(StorageProvider.MINIO, "bucket", "object-key");
         given(documentUploadService.findReusableFileObjectId(FILE_HASH, 4L)).willReturn(Optional.empty());
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
             .willReturn(candidate);
@@ -106,7 +107,7 @@ class DocumentUploadFacadeTest {
     @Test
     @DisplayName("보상 삭제 실패가 원래 DB 예외를 덮어쓰지 않는다")
     void upload_preservesOriginalException_when_cleanupFails() {
-        StoredFile candidate = new StoredFile("bucket", "object-key");
+        StoredFile candidate = new StoredFile(StorageProvider.MINIO, "bucket", "object-key");
         RuntimeException databaseFailure = new RuntimeException("db failure");
         given(documentUploadService.findReusableFileObjectId(FILE_HASH, 4L)).willReturn(Optional.empty());
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))

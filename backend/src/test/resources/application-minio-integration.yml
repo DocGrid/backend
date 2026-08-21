@@ -3,6 +3,10 @@ spring:
     activate:
       on-profile: minio-integration
 
+storage:
+  type: minio
+  bucket: ${STORAGE_BUCKET:${MINIO_BUCKET:docgrid-test}}
+
 minio:
   endpoint: ${MINIO_ENDPOINT}
   access-key: ${MINIO_ACCESS_KEY}

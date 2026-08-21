@@ -21,6 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.opensource.docgrid.domain.document.enums.DocumentType;
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
+import com.opensource.docgrid.domain.document.enums.StorageProvider;
 import com.opensource.docgrid.domain.document.service.command.DocumentChunkTransactionService;
 import com.opensource.docgrid.domain.document.service.command.DocumentChunkTransactionService.ChunkResult;
 import com.opensource.docgrid.domain.document.service.command.DocumentChunkTransactionService.FileSnapshot;
@@ -44,7 +45,9 @@ class DocumentParsingServiceTest {
     private static final Long VERSION_ID = 5L;
     private static final Long WORKER_ID = 1L;
     private static final String CLAIM_TOKEN = "34c19d16-6ae1-4f6a-a35d-0123456789ab";
-    private static final StoredFile STORED_FILE = new StoredFile("bucket", "source.txt");
+    private static final StoredFile STORED_FILE = new StoredFile(
+        StorageProvider.MINIO, "bucket", "source.txt"
+    );
 
     @Mock private DocumentChunkTransactionService transactionService;
     @Mock private FileStorageService fileStorageService;

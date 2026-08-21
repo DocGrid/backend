@@ -23,7 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * 설정된 Local Root 아래에서 문서 원본을 저장·조회·삭제하는 파일 저장소 Adapter다.
- * DB에는 Host 절대 경로 대신 논리 Bucket과 Object Key만 전달하며 Root 밖 경로 접근을 차단한다.
+ * DB에는 Host 절대 경로 대신 논리 Bucket과 Object Key만 전달하며 Root 밖 경로와 설정 불일치를 차단한다.
  */
 @Slf4j
 @Service
@@ -178,11 +178,9 @@ public class LocalFileStorageService implements FileStorageService {
             return;
         }
         log.error(
-            "현재 Local 저장소 설정과 파일 위치가 일치하지 않습니다. storedProvider={}, storedBucket={}",
-            storedFile.storageProvider(),
-            storedFile.bucketName()
+            "현재 Local 저장소 설정과 파일 위치가 일치하지 않습니다."
         );
-        throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED);
+        throw new DocGridException(ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH);
     }
 
     private void moveAtomically(Path source, Path target) throws IOException {

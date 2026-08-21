@@ -22,7 +22,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 
 /**
  * AWS SDK v2를 사용해 문서 원본을 저장·조회·삭제하는 파일 저장소 Adapter다.
- * Bucket 생성과 권한 관리는 인프라 경계에 두고 애플리케이션은 Object 작업만 수행한다.
+ * Bucket 생성과 권한 관리는 인프라 경계에 두고 설정과 일치하는 Object 작업만 수행한다.
  */
 @Slf4j
 @Service
@@ -111,12 +111,12 @@ public class S3StorageService implements FileStorageService {
     }
 
     private void validateLocation(StoredFile storedFile) {
-        if (storedFile.storageProvider() == StorageProvider.S3) {
+        if (storedFile.storageProvider() == StorageProvider.S3
+            && bucketName.equals(storedFile.bucketName())) {
             return;
         }
-        log.error("현재 S3 Adapter와 파일 Provider가 일치하지 않습니다. storedProvider={}",
-            storedFile.storageProvider());
-        throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED);
+        log.error("현재 S3 저장소 설정과 파일 위치가 일치하지 않습니다.");
+        throw new DocGridException(ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH);
     }
 
     private void logStorageReadFailure(Exception exception) {

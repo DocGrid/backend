@@ -140,14 +140,28 @@ class S3StorageServiceTest {
     }
 
     @Test
-    @DisplayName("S3가 아닌 Provider 위치를 읽으면 저장소 사용 불가 오류가 발생한다")
-    void read_throwsStorageFailure_when_providerDoesNotMatch() {
+    @DisplayName("S3가 아닌 Provider 위치를 읽으면 설정 불일치 오류가 발생한다")
+    void read_throwsConfigurationMismatch_when_providerDoesNotMatch() {
         StoredFile localFile = new StoredFile(
             StorageProvider.LOCAL, STORED_FILE.bucketName(), STORED_FILE.objectKey()
         );
 
         assertThatThrownBy(() -> storageService.read(localFile))
             .isInstanceOfSatisfying(DocGridException.class,
-                exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.FILE_STORAGE_FAILED));
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH));
+    }
+
+    @Test
+    @DisplayName("현재 설정과 다른 Bucket 위치를 읽으면 설정 불일치 오류가 발생한다")
+    void read_throwsConfigurationMismatch_when_bucketDoesNotMatch() {
+        StoredFile otherBucketFile = new StoredFile(
+            StorageProvider.S3, "other-bucket", STORED_FILE.objectKey()
+        );
+
+        assertThatThrownBy(() -> storageService.read(otherBucketFile))
+            .isInstanceOfSatisfying(DocGridException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH));
     }
 }

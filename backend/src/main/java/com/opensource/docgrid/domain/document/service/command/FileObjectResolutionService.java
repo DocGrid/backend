@@ -69,7 +69,7 @@ public class FileObjectResolutionService {
             && fileStorageProperties.getBucket().equals(fileObject.getBucketName())) {
             return fileObject;
         }
-        throw new DocGridException(ErrorCode.FILE_OBJECT_RESOLUTION_FAILED);
+        throw new DocGridException(ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH);
     }
 
     private void requireStoredLocation(FileObject fileObject, StoredFile storedFile) {
@@ -77,7 +77,7 @@ public class FileObjectResolutionService {
             && fileObject.getBucketName().equals(storedFile.bucketName())) {
             return;
         }
-        throw new DocGridException(ErrorCode.FILE_OBJECT_RESOLUTION_FAILED);
+        throw new DocGridException(ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH);
     }
 
     /**

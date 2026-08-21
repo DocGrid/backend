@@ -89,6 +89,25 @@ API와 Worker는 반드시 동일한 `STORAGE_TYPE`과 저장소 Endpoint·Bucke
 Schema를 사용하면서 서로 다른 Local Directory나 개발자별 MinIO를 바라보면 DB의 Object Key는
 존재하지만 실제 파일을 찾지 못합니다.
 
+같은 DB Schema를 사용하는 모든 API와 Worker는 아래 설정을 하나의 환경 단위로 배포합니다.
+
+| 저장소 | 반드시 같은 값 |
+|---|---|
+| Local Filesystem | `STORAGE_TYPE`, `STORAGE_BUCKET`, 공유 가능한 `STORAGE_LOCAL_ROOT` |
+| MinIO | `STORAGE_TYPE`, `STORAGE_BUCKET`, `MINIO_ENDPOINT` |
+| AWS S3 | `STORAGE_TYPE`, `STORAGE_BUCKET`, `AWS_REGION`, 동일 Object 권한 |
+
+DB에 저장된 Provider 또는 Bucket이 현재 설정과 다르면 요청을 원격 저장소로 보내기 전에
+`DOCUMENT-STORAGE-003` 설정 불일치로 중단합니다. Provider·Bucket은 같지만 Endpoint가 다른 경우는
+DB만으로 구분할 수 없으므로 Object 조회 시 `DOCUMENT-STORAGE-002` 파일 누락으로 보일 수 있습니다.
+이때 실제 파일 삭제 여부와 API·Worker의 Endpoint를 함께 확인합니다.
+
+| 진단 코드 | 의미 | Worker 자동 Retry |
+|---|---|---|
+| `DOCUMENT-STORAGE-001` | Network·인증·저장소 서비스 장애 | 대상 |
+| `DOCUMENT-STORAGE-002` | Metadata가 가리키는 Object 누락 | 대상 아님 |
+| `DOCUMENT-STORAGE-003` | 현재 Provider 또는 Bucket 설정 불일치 | 대상 아님 |
+
 `STORAGE_TYPE` 변경은 기존 파일을 자동으로 옮기지 않습니다. 파일이 들어 있는 DB Schema의 Provider를
 바꾸려면 Object와 DB Metadata를 함께 이전하는 별도 Migration이 필요합니다.
 

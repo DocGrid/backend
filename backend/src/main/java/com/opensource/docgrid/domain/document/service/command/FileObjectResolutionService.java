@@ -42,7 +42,8 @@ public class FileObjectResolutionService {
 
         int inserted = fileObjectRepository.insertIfAbsent(
             storedFile.bucketName(), storedFile.objectKey(), validatedFile.originalFilename(),
-            validatedFile.contentType(), validatedFile.fileSize(), fileHash, userId
+            validatedFile.contentType(), validatedFile.fileSize(), fileHash,
+            storedFile.storageProvider().name(), userId
         );
         FileObject fileObject = fileObjectRepository.findByFileHashAndFileSize(fileHash, validatedFile.fileSize())
             .orElseThrow(() -> new DocGridException(ErrorCode.FILE_OBJECT_RESOLUTION_FAILED));

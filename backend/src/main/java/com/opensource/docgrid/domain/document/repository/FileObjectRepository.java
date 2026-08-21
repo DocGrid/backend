@@ -21,7 +21,7 @@ public interface FileObjectRepository extends JpaRepository<FileObject, Long> {
             created_at, updated_at
         ) VALUES (
             :bucketName, :objectKey, :originalFilename, :contentType,
-            :fileSize, :fileHash, 'MINIO', :uploadedBy, CURRENT_TIMESTAMP,
+            :fileSize, :fileHash, :storageProvider, :uploadedBy, CURRENT_TIMESTAMP,
             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )
         ON CONFLICT (file_hash, file_size) DO NOTHING
@@ -33,6 +33,7 @@ public interface FileObjectRepository extends JpaRepository<FileObject, Long> {
         @Param("contentType") String contentType,
         @Param("fileSize") Long fileSize,
         @Param("fileHash") String fileHash,
+        @Param("storageProvider") String storageProvider,
         @Param("uploadedBy") Long uploadedBy
     );
 }

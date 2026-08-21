@@ -17,7 +17,7 @@ import lombok.RequiredArgsConstructor;
 /**
  * 두 개의 짧은 DB Transaction 사이에서 원본 읽기, 형식별 파싱과 Chunk 계산을 조정한다.
  *
- * <p>이 Service 자체에는 Transaction을 적용하지 않아 MinIO I/O와 CPU 계산 중 DB 행 잠금이
+ * <p>이 Service 자체에는 Transaction을 적용하지 않아 파일 저장소 I/O와 CPU 계산 중 DB 행 잠금이
  * 유지되지 않게 한다. 외부 구간에는 불변 Snapshot과 Draft만 전달하고 JPA Entity는 전달하지 않는다.
  */
 @Service

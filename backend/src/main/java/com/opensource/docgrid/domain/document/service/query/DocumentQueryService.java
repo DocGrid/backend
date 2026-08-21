@@ -157,7 +157,11 @@ public class DocumentQueryService {
 
         // 2. JPA Entity 대신 외부 저장소 조회에 필요한 불변 값만 Transaction 밖으로 전달한다.
         return new DocumentFileSnapshot(
-            new StoredFile(fileObject.getBucketName(), fileObject.getObjectKey()),
+            new StoredFile(
+                fileObject.getStorageProvider(),
+                fileObject.getBucketName(),
+                fileObject.getObjectKey()
+            ),
             currentVersion.getOriginalFilename() != null
                 ? currentVersion.getOriginalFilename()
                 : fileObject.getOriginalFilename(),

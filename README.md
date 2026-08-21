@@ -382,7 +382,7 @@ DB_HOST=127.0.0.1 DB_PORT=55432 \
 ```
 
 이 검증은 실행마다 별도 DB Schema·Bucket·Local Root를 사용하고 종료 시 Test가 만든 위치만 정리합니다.
-실행 결과는 [파일 저장소·Worker E2E 결과](docs/test-results/Gimini-3-#284-file-storage-worker-e2e.md)를
+실행 결과는 [파일 저장소·Worker E2E 결과](docs/test-results/Gimini-3-%23284-file-storage-worker-e2e.md)를
 참고하세요.
 
 ## 라이선스

@@ -92,6 +92,11 @@ public enum ErrorCode {
         "DOCUMENT-STORAGE-002",
         "저장된 파일을 찾을 수 없습니다."
     ),
+    FILE_STORAGE_CONFIGURATION_MISMATCH(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "DOCUMENT-STORAGE-003",
+        "파일 저장소 설정이 저장된 파일 위치와 일치하지 않습니다."
+    ),
     FILE_OBJECT_RESOLUTION_FAILED(
         HttpStatus.INTERNAL_SERVER_ERROR,
         "DOCUMENT-UPLOAD-001",

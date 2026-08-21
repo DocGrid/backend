@@ -22,7 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * MinIO SDK를 사용해 문서 원본을 저장·조회·삭제하는 파일 저장소 Adapter다.
- * MinIO가 선택된 환경에서만 등록되며 공통 Bucket과 Object Key를 저장 위치로 반환한다.
+ * MinIO가 선택된 환경에서만 등록되며 공통 Bucket과 Object Key를 저장 위치로 반환하고 검증한다.
  */
 @Slf4j
 @Service
@@ -121,12 +121,12 @@ public class MinioStorageService implements FileStorageService {
     }
 
     private void validateLocation(StoredFile storedFile) {
-        if (storedFile.storageProvider() == StorageProvider.MINIO) {
+        if (storedFile.storageProvider() == StorageProvider.MINIO
+            && fileStorageProperties.getBucket().equals(storedFile.bucketName())) {
             return;
         }
-        log.error("현재 MinIO Adapter와 파일 Provider가 일치하지 않습니다. storedProvider={}",
-            storedFile.storageProvider());
-        throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED);
+        log.error("현재 MinIO 저장소 설정과 파일 위치가 일치하지 않습니다.");
+        throw new DocGridException(ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH);
     }
 
     private void logStorageReadFailure(Exception exception) {

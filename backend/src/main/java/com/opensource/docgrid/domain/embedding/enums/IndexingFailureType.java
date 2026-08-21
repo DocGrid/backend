@@ -9,6 +9,8 @@ package com.opensource.docgrid.domain.embedding.enums;
 public enum IndexingFailureType {
 
     STORAGE_UNAVAILABLE(true),
+    STORAGE_CONFIGURATION_INVALID(false),
+    STORAGE_OBJECT_MISSING(false),
     DOCUMENT_CONTENT_INVALID(false),
     EMBEDDING_PROVIDER_UNAVAILABLE(true),
     EMBEDDING_PROVIDER_OVERLOADED(true),

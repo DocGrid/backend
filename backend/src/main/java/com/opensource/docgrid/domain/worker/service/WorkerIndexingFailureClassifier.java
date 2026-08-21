@@ -15,7 +15,8 @@ import com.opensource.docgrid.global.exception.ErrorCode;
  * Worker Pipeline 예외를 공개된 인덱싱 실패 정책과 안전한 고정 메시지로 분류한다.
  *
  * <p>예외 원문과 Stack Trace는 문서 내용이나 외부 연결 정보를 포함할 수 있으므로 DB 실패 메시지로
- * 전달하지 않는다. 소유권 상실 오류는 과거 Claim으로 상태를 덮어쓰지 않도록 보고 대상에서 제외한다.
+ * 전달하지 않는다. 저장소 설정·Object 누락은 영구 실패로 분리하고, 소유권 상실 오류는 과거 Claim으로
+ * 상태를 덮어쓰지 않도록 보고 대상에서 제외한다.
  */
 @Component
 public class WorkerIndexingFailureClassifier {
@@ -72,6 +73,20 @@ public class WorkerIndexingFailureClassifier {
         ErrorCode errorCode = docGridException.getErrorCode();
         if (OWNERSHIP_LOST_ERRORS.contains(errorCode)) {
             return WorkerIndexingFailure.ownershipLost(errorCode.getCode());
+        }
+        if (errorCode == ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH) {
+            return WorkerIndexingFailure.reportable(
+                IndexingFailureType.STORAGE_CONFIGURATION_INVALID,
+                errorCode.getCode(),
+                "Worker 파일 저장소 설정이 원본 저장 위치와 일치하지 않습니다."
+            );
+        }
+        if (errorCode == ErrorCode.FILE_OBJECT_NOT_FOUND) {
+            return WorkerIndexingFailure.reportable(
+                IndexingFailureType.STORAGE_OBJECT_MISSING,
+                errorCode.getCode(),
+                "파일 Metadata가 가리키는 원본 Object를 찾을 수 없습니다."
+            );
         }
         if (errorCode == ErrorCode.FILE_STORAGE_FAILED) {
             return WorkerIndexingFailure.reportable(

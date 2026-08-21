@@ -369,6 +369,22 @@ docker compose up -d --wait --wait-timeout 60 postgres
 npm --prefix frontend test
 ```
 
+Local Filesystem·MinIO·S3 Adapter와 실제 자동 Worker 전체 흐름은 일반 테스트와 분리해 실행합니다.
+PostgreSQL, MinIO, BGE-M3가 준비되어 있어야 하며 S3 Adapter는 로컬 MinIO의 S3-compatible API를
+사용하므로 AWS 계정이나 실제 Credential이 필요하지 않습니다.
+
+```bash
+docker compose up -d --wait postgres minio embedding-server
+
+# Docker Compose의 PostgreSQL Host Port가 다르면 DB_PORT를 맞춰 변경합니다.
+DB_HOST=127.0.0.1 DB_PORT=55432 \
+  ./backend/gradlew -p backend storageWorkerE2eTest
+```
+
+이 검증은 실행마다 별도 DB Schema·Bucket·Local Root를 사용하고 종료 시 Test가 만든 위치만 정리합니다.
+실행 결과는 [파일 저장소·Worker E2E 결과](docs/test-results/Gimini-3-%23284-file-storage-worker-e2e.md)를
+참고하세요.
+
 ## 라이선스
 
 DocGrid의 자체 소스코드와 문서는 [Apache License 2.0](LICENSE)에 따라 배포합니다. 외부

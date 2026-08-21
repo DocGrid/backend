@@ -5,8 +5,6 @@ import java.nio.file.Path;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-import com.opensource.docgrid.domain.document.enums.StorageProvider;
-
 import lombok.Getter;
 import lombok.Setter;
 
@@ -20,7 +18,7 @@ import lombok.Setter;
 @ConfigurationProperties(prefix = "storage")
 public class FileStorageProperties {
 
-    private StorageProvider type = StorageProvider.LOCAL;
+    private FileStorageType type = FileStorageType.LOCAL;
     private String bucket = "docgrid";
     private Local local = new Local();
 

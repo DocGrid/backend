@@ -147,7 +147,7 @@ class DocumentUploadIntegrationTest {
     void upload_reusesFileObject_when_sameFileIsUploadedSequentially() {
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
             .willReturn(new StoredFile(
-                StorageProvider.MINIO, "test-bucket", "documents/test/sequential.txt"
+                StorageProvider.LOCAL, "test-bucket", "documents/test/sequential.txt"
             ));
         String content = "sequential-" + testSuffix;
 
@@ -177,7 +177,7 @@ class DocumentUploadIntegrationTest {
             .willAnswer(invocation -> {
                 storageBarrier.await(10, TimeUnit.SECONDS);
                 return new StoredFile(
-                    StorageProvider.MINIO,
+                    StorageProvider.LOCAL,
                     "test-bucket",
                     "documents/test/candidate-" + objectSequence.incrementAndGet()
                 );
@@ -212,7 +212,7 @@ class DocumentUploadIntegrationTest {
     @DisplayName("active EmbeddingModel이 없으면 DB를 롤백하고 후보 Object를 삭제한다")
     void upload_rollsBackAndDeletesCandidate_when_activeModelDoesNotExist() {
         StoredFile candidate = new StoredFile(
-            StorageProvider.MINIO, "test-bucket", "documents/test/rollback-candidate"
+            StorageProvider.LOCAL, "test-bucket", "documents/test/rollback-candidate"
         );
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
             .willReturn(candidate);

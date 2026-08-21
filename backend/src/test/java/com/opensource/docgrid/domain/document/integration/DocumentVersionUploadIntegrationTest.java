@@ -101,7 +101,7 @@ class DocumentVersionUploadIntegrationTest {
     void upload_createsVersion_when_sameSizeButContentDiffers() {
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
             .willAnswer(invocation -> new StoredFile(
-                StorageProvider.MINIO, "test-bucket", "documents/test/" + UUID.randomUUID()
+                StorageProvider.LOCAL, "test-bucket", "documents/test/" + UUID.randomUUID()
             ));
         DocumentUploadResponse initial = createIndexedDocument("AAAA");
 
@@ -140,7 +140,7 @@ class DocumentVersionUploadIntegrationTest {
     void upload_rejectsSameCurrentFile_beforeStorage() {
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
             .willAnswer(invocation -> new StoredFile(
-                StorageProvider.MINIO, "test-bucket", "documents/test/" + UUID.randomUUID()
+                StorageProvider.LOCAL, "test-bucket", "documents/test/" + UUID.randomUUID()
             ));
         DocumentUploadResponse initial = createIndexedDocument("same-content");
         reset(fileStorageService);
@@ -167,7 +167,7 @@ class DocumentVersionUploadIntegrationTest {
     void upload_reusesHistoricalFileObject_when_revertingContent() {
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
             .willAnswer(invocation -> new StoredFile(
-                StorageProvider.MINIO, "test-bucket", "documents/test/" + UUID.randomUUID()
+                StorageProvider.LOCAL, "test-bucket", "documents/test/" + UUID.randomUUID()
             ));
         DocumentUploadResponse initial = createIndexedDocument("version-A");
         DocumentVersionUploadResponse second = documentVersionUploadFacade.upload(
@@ -207,7 +207,7 @@ class DocumentVersionUploadIntegrationTest {
         String suffix = UUID.randomUUID().toString();
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
             .willAnswer(invocation -> new StoredFile(
-                StorageProvider.MINIO, "test-bucket", "documents/test/" + UUID.randomUUID()
+                StorageProvider.LOCAL, "test-bucket", "documents/test/" + UUID.randomUUID()
             ));
         DocumentUploadResponse initial = createIndexedDocument("concurrent-base-" + suffix);
         // v1은 인덱싱을 마친 상태이므로 이전 Job을 종료 상태로 두고 새 Job만 살아 있게 만든다.
@@ -224,7 +224,7 @@ class DocumentVersionUploadIntegrationTest {
             .willAnswer(invocation -> {
                 storageBarrier.await(10, TimeUnit.SECONDS);
                 return new StoredFile(
-                    StorageProvider.MINIO, "test-bucket", "documents/test/" + UUID.randomUUID()
+                    StorageProvider.LOCAL, "test-bucket", "documents/test/" + UUID.randomUUID()
                 );
             });
         ExecutorService executor = Executors.newFixedThreadPool(2);

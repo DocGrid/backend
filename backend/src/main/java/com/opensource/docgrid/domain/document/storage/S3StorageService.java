@@ -4,6 +4,7 @@ import java.io.InputStream;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import com.opensource.docgrid.domain.document.config.FileStorageProperties;
 import com.opensource.docgrid.domain.document.enums.StorageProvider;
@@ -29,23 +30,23 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 public class S3StorageService implements FileStorageService {
 
     private final S3Client s3Client;
-    private final FileStorageProperties fileStorageProperties;
+    private final String bucketName;
 
     public S3StorageService(S3Client s3Client, FileStorageProperties fileStorageProperties) {
         this.s3Client = s3Client;
-        this.fileStorageProperties = fileStorageProperties;
+        this.bucketName = requireBucket(fileStorageProperties.getBucket());
     }
 
     @Override
     public StoredFile store(InputStream inputStream, long fileSize, String contentType, String objectKey) {
         try {
             PutObjectRequest request = PutObjectRequest.builder()
-                .bucket(fileStorageProperties.getBucket())
+                .bucket(bucketName)
                 .key(objectKey)
                 .contentType(contentType)
                 .build();
             s3Client.putObject(request, RequestBody.fromInputStream(inputStream, fileSize));
-            return new StoredFile(StorageProvider.S3, fileStorageProperties.getBucket(), objectKey);
+            return new StoredFile(StorageProvider.S3, bucketName, objectKey);
         } catch (Exception exception) {
             log.error("S3 파일 저장에 실패했습니다.", exception);
             throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED, exception);
@@ -102,9 +103,16 @@ public class S3StorageService implements FileStorageService {
         return "NoSuchKey".equals(errorCode) || "NoSuchObject".equals(errorCode);
     }
 
+    private String requireBucket(String configuredBucket) {
+        if (!StringUtils.hasText(configuredBucket)) {
+            throw new IllegalStateException("S3 Adapter에는 STORAGE_BUCKET 설정이 필요합니다.");
+        }
+        return configuredBucket;
+    }
+
     private void validateLocation(StoredFile storedFile) {
         if (storedFile.storageProvider() == StorageProvider.S3
-            && fileStorageProperties.getBucket().equals(storedFile.bucketName())) {
+            && bucketName.equals(storedFile.bucketName())) {
             return;
         }
         log.error("현재 S3 저장소 설정과 파일 위치가 일치하지 않습니다.");

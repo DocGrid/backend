@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import com.opensource.docgrid.domain.document.config.FileStorageProperties;
+import com.opensource.docgrid.domain.document.config.FileStorageType;
 import com.opensource.docgrid.domain.document.enums.StorageProvider;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
@@ -48,8 +49,20 @@ class S3StorageServiceTest {
     void setUp() {
         s3Client = mock(S3Client.class);
         FileStorageProperties properties = new FileStorageProperties();
+        properties.setType(FileStorageType.S3);
         properties.setBucket(STORED_FILE.bucketName());
         storageService = new S3StorageService(s3Client, properties);
+    }
+
+    @Test
+    @DisplayName("S3 Bucket 설정이 없으면 Adapter 생성 단계에서 거부한다")
+    void constructor_rejectsMissingBucket() {
+        FileStorageProperties properties = new FileStorageProperties();
+        properties.setType(FileStorageType.S3);
+
+        assertThatThrownBy(() -> new S3StorageService(s3Client, properties))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("STORAGE_BUCKET");
     }
 
     @Test

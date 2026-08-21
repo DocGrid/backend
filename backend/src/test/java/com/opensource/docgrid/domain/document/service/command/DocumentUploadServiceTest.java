@@ -18,6 +18,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.opensource.docgrid.domain.document.config.FileStorageProperties;
+import com.opensource.docgrid.domain.document.config.FileStorageType;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.entity.DocumentVersion;
 import com.opensource.docgrid.domain.document.entity.FileObject;
@@ -68,9 +70,12 @@ class DocumentUploadServiceTest {
 
     @BeforeEach
     void setUp() {
+        FileStorageProperties fileStorageProperties = new FileStorageProperties();
+        fileStorageProperties.setType(FileStorageType.MINIO);
+        fileStorageProperties.setBucket("bucket");
         documentUploadService = new DocumentUploadService(
             userRepository,
-            new FileObjectResolutionService(fileObjectRepository),
+            new FileObjectResolutionService(fileObjectRepository, fileStorageProperties),
             documentRepository,
             documentVersionRepository,
             embeddingJobRepository,

@@ -101,8 +101,7 @@ public class DocumentUploadFacade {
         try {
             fileStorageService.delete(candidate);
         } catch (RuntimeException cleanupException) {
-            log.error("사용되지 않은 저장소 Object 정리에 실패했습니다. bucket={}, objectKey={}",
-                candidate.bucketName(), candidate.objectKey(), cleanupException);
+            log.error("사용되지 않은 저장소 Object 정리에 실패했습니다.", cleanupException);
         }
     }
 }

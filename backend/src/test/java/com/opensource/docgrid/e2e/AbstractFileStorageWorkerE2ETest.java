@@ -108,19 +108,48 @@ abstract class AbstractFileStorageWorkerE2ETest {
 
     @AfterAll
     void cleanUpInfrastructure() throws Exception {
-        // 1. Worker Thread를 먼저 닫아 격리 Schema 정리 뒤 DB 접근이 재개되지 않게 한다.
-        pollingScheduler.stopPolling();
-        executionLifecycleManager.shutdown();
-        workerLifecycleManager.stopWorker();
+        Exception cleanupFailure = null;
 
-        // 2. 이 Test 전용 외부 Bucket 또는 Local Root만 정리한다.
-        if (remoteBucket != null) {
-            remoteBucket.close();
+        // 1. Worker 종료 단계가 하나 실패해도 나머지 Thread와 등록 정보를 계속 정리한다.
+        try {
+            pollingScheduler.stopPolling();
+        } catch (Exception exception) {
+            cleanupFailure = appendCleanupFailure(cleanupFailure, exception);
         }
-        deleteLocalRoot();
+        try {
+            executionLifecycleManager.shutdown();
+        } catch (Exception exception) {
+            cleanupFailure = appendCleanupFailure(cleanupFailure, exception);
+        }
+        try {
+            workerLifecycleManager.stopWorker();
+        } catch (Exception exception) {
+            cleanupFailure = appendCleanupFailure(cleanupFailure, exception);
+        }
 
-        // 3. 마지막으로 이 Provider 전용 Schema를 제거한다.
-        jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + schema() + " CASCADE");
+        // 2. 외부 Bucket 정리에 실패해도 Local Root와 DB Schema 정리를 독립적으로 시도한다.
+        try {
+            if (remoteBucket != null) {
+                remoteBucket.close();
+            }
+        } catch (Exception exception) {
+            cleanupFailure = appendCleanupFailure(cleanupFailure, exception);
+        }
+        try {
+            deleteLocalRoot();
+        } catch (Exception exception) {
+            cleanupFailure = appendCleanupFailure(cleanupFailure, exception);
+        }
+
+        // 3. 마지막 Schema 제거도 항상 시도하고, 누적된 첫 실패에 나머지 원인을 보존한다.
+        try {
+            jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + schema() + " CASCADE");
+        } catch (Exception exception) {
+            cleanupFailure = appendCleanupFailure(cleanupFailure, exception);
+        }
+        if (cleanupFailure != null) {
+            throw cleanupFailure;
+        }
     }
 
     @Test
@@ -215,6 +244,14 @@ abstract class AbstractFileStorageWorkerE2ETest {
                 Files.deleteIfExists(path);
             }
         }
+    }
+
+    private Exception appendCleanupFailure(Exception currentFailure, Exception nextFailure) {
+        if (currentFailure == null) {
+            return nextFailure;
+        }
+        currentFailure.addSuppressed(nextFailure);
+        return currentFailure;
     }
 
     private void awaitCondition(String failureMessage, CheckedCondition condition) throws Exception {

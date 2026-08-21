@@ -27,7 +27,7 @@ import com.opensource.docgrid.domain.document.enums.StorageProvider;
 class MinioFileStorageWorkerE2ETest extends AbstractFileStorageWorkerE2ETest {
 
     private static final String RUN_ID = UUID.randomUUID().toString().replace("-", "");
-    private static final String TEST_SCHEMA = "docgrid_minio_storage_worker_e2e";
+    private static final String TEST_SCHEMA = "docgrid_minio_storage_worker_e2e_" + RUN_ID.substring(0, 12);
     private static final String TEST_BUCKET = "docgrid-minio-worker-" + RUN_ID;
 
     @DynamicPropertySource

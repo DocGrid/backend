@@ -52,9 +52,20 @@ storage:
   # 별도 설정이 없으면 외부 Object Storage 없이 실행할 수 있는 Local Filesystem을 사용한다.
   type: ${STORAGE_TYPE:local}
   # MinIO/S3에서는 Bucket, Local Filesystem에서는 DB에 기록할 논리 Namespace다.
-  bucket: ${STORAGE_BUCKET:${MINIO_BUCKET:docgrid}}
+  # Local만 docgrid 기본 Namespace를 사용하며 외부 저장소는 STORAGE_BUCKET을 반드시 명시한다.
+  bucket: ${STORAGE_BUCKET:}
   local:
     root: ${STORAGE_LOCAL_ROOT:./data/docgrid}
+
+s3:
+  region: ${AWS_REGION:ap-northeast-2}
+  # AWS S3는 빈 값으로 두고 LocalStack·VPC Endpoint 등 명시적 Override가 필요할 때만 설정한다.
+  endpoint: ${S3_ENDPOINT:}
+  path-style-access-enabled: ${S3_PATH_STYLE_ACCESS_ENABLED:false}
+  # 값이 없으면 AWS SDK 기본 Credential Chain(Profile, EC2 Role 등)을 사용한다.
+  access-key: ${AWS_ACCESS_KEY_ID:}
+  secret-key: ${AWS_SECRET_ACCESS_KEY:}
+  session-token: ${AWS_SESSION_TOKEN:}
 
 indexing:
   worker:

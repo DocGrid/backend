@@ -12,6 +12,7 @@ import com.opensource.docgrid.domain.document.storage.FileStorageService;
 import com.opensource.docgrid.domain.document.storage.LocalFileStorageService;
 
 import io.minio.MinioClient;
+import software.amazon.awssdk.services.s3.S3Client;
 
 @ActiveProfiles("test")
 @SpringBootTest
@@ -24,6 +25,7 @@ class DocgridApplicationTests {
 		assertThat(applicationContext.getBean(FileStorageService.class))
 			.isInstanceOf(LocalFileStorageService.class);
 		assertThat(applicationContext.getBeansOfType(MinioClient.class)).isEmpty();
+		assertThat(applicationContext.getBeansOfType(S3Client.class)).isEmpty();
 	}
 
 }

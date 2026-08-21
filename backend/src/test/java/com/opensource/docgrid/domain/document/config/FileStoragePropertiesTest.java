@@ -18,6 +18,17 @@ class FileStoragePropertiesTest {
         .withUserConfiguration(TestConfig.class);
 
     @Test
+    @DisplayName("Local Adapter는 Bucket 설정이 없으면 docgrid Namespace를 사용한다")
+    void storageBucket_defaultsOnlyForLocalAdapter() {
+        contextRunner.withPropertyValues("storage.type=local")
+            .run(context -> {
+                assertThat(context).hasNotFailed();
+                assertThat(context.getBean(FileStorageProperties.class).getBucket())
+                    .isEqualTo("docgrid");
+            });
+    }
+
+    @Test
     @DisplayName("local과 minio 설정은 해당 Adapter 종류로 바인딩된다")
     void storageType_bindsSupportedAdapters() {
         contextRunner.withPropertyValues("storage.type=minio")
@@ -29,10 +40,15 @@ class FileStoragePropertiesTest {
     }
 
     @Test
-    @DisplayName("구현되지 않은 S3 설정은 애플리케이션 시작 단계에서 거부된다")
-    void storageType_rejectsUnsupportedAdapter() {
+    @DisplayName("S3 Adapter가 구현되면 s3 설정이 바인딩된다")
+    void storageType_bindsS3Adapter() {
         contextRunner.withPropertyValues("storage.type=s3")
-            .run(context -> assertThat(context).hasFailed());
+            .run(context -> {
+                assertThat(context).hasNotFailed();
+                FileStorageProperties properties = context.getBean(FileStorageProperties.class);
+                assertThat(properties.getType()).isEqualTo(FileStorageType.S3);
+                assertThat(properties.getBucket()).isNull();
+            });
     }
 
     /**

@@ -38,12 +38,13 @@ cd docgrid
 ## 파일 저장소 선택
 
 DocGrid의 API와 인덱싱 Worker는 특정 Cloud SDK가 아니라 공통 파일 저장소 Port를 사용합니다. 현재
-Local Filesystem과 MinIO Adapter를 지원하며 `STORAGE_TYPE`으로 하나만 선택합니다.
+Local Filesystem, MinIO, AWS S3 Adapter를 지원하며 `STORAGE_TYPE`으로 하나만 선택합니다.
 
 | `STORAGE_TYPE` | 용도 | 추가 설정 |
 |---|---|---|
 | `local` | 별도 Object Storage 없이 실행하는 기본값 | `STORAGE_LOCAL_ROOT`, `STORAGE_BUCKET` |
 | `minio` | Docker 또는 외부 MinIO 사용 | `STORAGE_BUCKET`, `MINIO_ENDPOINT`, Credential |
+| `s3` | AWS S3를 사용하는 공용 개발·배포 환경 | `STORAGE_BUCKET`, `AWS_REGION`, AWS Credential |
 
 Local Filesystem은 `STORAGE_TYPE`을 설정하지 않았을 때의 애플리케이션 기본값입니다. 실제 절대 경로는
 DB에 저장하지 않고, DB에는 `LOCAL` Provider와 논리 Bucket·Object Key만 저장합니다.
@@ -63,6 +64,26 @@ MINIO_ENDPOINT=http://localhost:9000
 MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin1234
 ```
+
+AWS S3는 미리 생성된 Bucket을 사용하며 애플리케이션이 Bucket을 생성하거나 삭제하지 않습니다. 로컬에서
+실행할 때는 AWS Profile 또는 환경 변수를 사용하고, EC2에서 실행할 때는 Access Key보다 IAM Role을
+권장합니다.
+
+```dotenv
+STORAGE_TYPE=s3
+STORAGE_BUCKET=<s3-bucket-name>
+AWS_REGION=ap-northeast-2
+
+# IAM Role이나 ~/.aws/credentials를 사용하지 않을 때만 설정합니다.
+AWS_ACCESS_KEY_ID=<access-key>
+AWS_SECRET_ACCESS_KEY=<secret-key>
+# 임시 Credential인 경우에만 설정합니다.
+AWS_SESSION_TOKEN=<session-token>
+```
+
+일반 AWS S3에서는 `S3_ENDPOINT`를 설정하지 않습니다. LocalStack이나 별도 VPC Endpoint를 명시적으로
+사용할 때만 `S3_ENDPOINT`를 설정하고, Path-style 주소가 필요한 호환 Endpoint에서만
+`S3_PATH_STYLE_ACCESS_ENABLED=true`를 사용합니다.
 
 API와 Worker는 반드시 동일한 `STORAGE_TYPE`과 저장소 Endpoint·Bucket을 사용해야 합니다. 같은 DB
 Schema를 사용하면서 서로 다른 Local Directory나 개발자별 MinIO를 바라보면 DB의 Object Key는
@@ -116,6 +137,20 @@ OLLAMA_MODEL=qwen2.5:7b
 EC2 OpenSQL과 개발자별 Local MinIO를 함께 사용할 때는 개발자마다 DB Schema와 Bucket을 분리해야
 합니다. 팀 공용 Schema를 사용하려면 모든 API와 Worker가 접근할 수 있는 공용 저장소가 필요합니다.
 `.env`는 Git에 추가하지 않습니다.
+
+팀 공용 Schema와 AWS S3를 한 환경으로 사용할 때는 위 MinIO 항목 대신 다음처럼 설정합니다. OpenSQL은
+SSH Tunnel을 사용하지만 S3 요청은 AWS Endpoint로 직접 전송하므로 S3용 SSH Port Forwarding은 만들지
+않습니다. API와 Worker에는 동일한 Bucket·Region·Credential 권한이 필요합니다.
+
+```dotenv
+STORAGE_TYPE=s3
+STORAGE_BUCKET=<shared-s3-bucket>
+AWS_REGION=ap-northeast-2
+```
+
+EC2에서 API와 Worker를 실행한다면 인스턴스 IAM Role에 해당 Bucket의 Object 읽기·쓰기·삭제 권한을
+부여합니다. 로컬 실행에서는 AWS Profile 또는 환경 변수를 사용하며 실제 Key는 README, Issue,
+Commit에 기록하지 않습니다.
 
 ### 2. OpenSQL SSH Tunnel 열기
 

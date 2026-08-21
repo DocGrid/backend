@@ -94,7 +94,7 @@ class MinioUploadConcurrencyIntegrationTest {
 
     @DynamicPropertySource
     static void minioProperties(DynamicPropertyRegistry registry) {
-        registry.add("minio.bucket", () -> TEST_BUCKET);
+        registry.add("storage.bucket", () -> TEST_BUCKET);
     }
 
     @BeforeEach

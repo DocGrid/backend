@@ -11,6 +11,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.opensource.docgrid.domain.document.enums.StorageProvider;
 import com.opensource.docgrid.domain.document.service.query.DocumentFileSnapshot;
 import com.opensource.docgrid.domain.document.service.query.DocumentQueryService;
 import com.opensource.docgrid.domain.document.storage.FileStorageService;
@@ -27,7 +28,9 @@ class DocumentFileServiceTest {
 
     private static final Long USER_ID = 10L;
     private static final Long DOCUMENT_ID = 20L;
-    private static final StoredFile STORED_FILE = new StoredFile("documents", "objects/guide.pdf");
+    private static final StoredFile STORED_FILE = new StoredFile(
+        StorageProvider.MINIO, "documents", "objects/guide.pdf"
+    );
 
     @InjectMocks
     private DocumentFileService service;

@@ -19,6 +19,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import com.opensource.docgrid.domain.document.enums.StorageProvider;
 import com.opensource.docgrid.domain.document.storage.FileStorageService;
 import com.opensource.docgrid.domain.document.storage.StoredFile;
 import com.opensource.docgrid.global.exception.DocGridException;
@@ -54,7 +55,7 @@ class MinioDocumentReadIntegrationTest {
 
     @DynamicPropertySource
     static void configureBucket(DynamicPropertyRegistry registry) {
-        registry.add("minio.bucket", () -> DEFAULT_BUCKET);
+        registry.add("storage.bucket", () -> DEFAULT_BUCKET);
         registry.add("jwt.secret", () -> "docgrid-minio-read-integration-test-secret-key-2026");
     }
 
@@ -97,14 +98,16 @@ class MinioDocumentReadIntegrationTest {
             .contentType("text/plain")
             .build());
 
-        assertThat(fileStorageService.read(new StoredFile(OTHER_BUCKET, "other.txt")))
+        assertThat(fileStorageService.read(new StoredFile(StorageProvider.MINIO, OTHER_BUCKET, "other.txt")))
             .isEqualTo(content);
     }
 
     @Test
     @DisplayName("실제 MinIO에 없는 Object는 파일 없음 오류다")
     void read_throwsNotFoundForMissingObject() {
-        assertThatThrownBy(() -> fileStorageService.read(new StoredFile(DEFAULT_BUCKET, "missing.txt")))
+        assertThatThrownBy(() -> fileStorageService.read(
+            new StoredFile(StorageProvider.MINIO, DEFAULT_BUCKET, "missing.txt")
+        ))
             .isInstanceOfSatisfying(DocGridException.class,
                 exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.FILE_OBJECT_NOT_FOUND));
     }

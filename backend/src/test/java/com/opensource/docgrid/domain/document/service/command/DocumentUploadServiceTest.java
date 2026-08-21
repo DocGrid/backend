@@ -18,6 +18,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.opensource.docgrid.domain.document.config.FileStorageProperties;
+import com.opensource.docgrid.domain.document.config.FileStorageType;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.entity.DocumentVersion;
 import com.opensource.docgrid.domain.document.entity.FileObject;
@@ -68,9 +70,12 @@ class DocumentUploadServiceTest {
 
     @BeforeEach
     void setUp() {
+        FileStorageProperties fileStorageProperties = new FileStorageProperties();
+        fileStorageProperties.setType(FileStorageType.MINIO);
+        fileStorageProperties.setBucket("bucket");
         documentUploadService = new DocumentUploadService(
             userRepository,
-            new FileObjectResolutionService(fileObjectRepository),
+            new FileObjectResolutionService(fileObjectRepository, fileStorageProperties),
             documentRepository,
             documentVersionRepository,
             embeddingJobRepository,
@@ -148,7 +153,7 @@ class DocumentUploadServiceTest {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
         given(userRepository.getReferenceById(USER_ID)).willReturn(user);
         given(fileObjectRepository.insertIfAbsent(
-            "bucket", "candidate-key", "sample.txt", "text/plain", 4L, FILE_HASH, USER_ID
+            "bucket", "candidate-key", "sample.txt", "text/plain", 4L, FILE_HASH, "MINIO", USER_ID
         )).willReturn(0);
         given(fileObjectRepository.findByFileHashAndFileSize(FILE_HASH, 4L)).willReturn(Optional.of(fileObject));
         given(documentRepository.save(any(Document.class))).willAnswer(invocation -> withId(invocation.getArgument(0), 10L));
@@ -160,7 +165,7 @@ class DocumentUploadServiceTest {
             .willAnswer(invocation -> withId(invocation.getArgument(0), 12L));
 
         DocumentUploadTransactionResult result = documentUploadService.upload(
-            command(null, new StoredFile("bucket", "candidate-key"))
+            command(null, new StoredFile(StorageProvider.MINIO, "bucket", "candidate-key"))
         );
 
         assertThat(result.candidateClaimed()).isFalse();

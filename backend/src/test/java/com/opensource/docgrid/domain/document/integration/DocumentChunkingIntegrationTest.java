@@ -44,6 +44,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
+import com.opensource.docgrid.domain.document.enums.StorageProvider;
 import com.opensource.docgrid.domain.document.service.DocumentParsingService;
 import com.opensource.docgrid.domain.document.service.command.DocumentChunkTransactionService.ChunkResult;
 import com.opensource.docgrid.domain.document.storage.FileStorageService;
@@ -297,6 +298,7 @@ class DocumentChunkingIntegrationTest {
             RETURNING id
             """, Long.class, suffix);
         StoredFile storedFile = new StoredFile(
+            StorageProvider.MINIO,
             "chunk-test-bucket",
             "source-" + suffix + "." + extension
         );

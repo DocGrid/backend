@@ -33,6 +33,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.opensource.docgrid.domain.document.dto.request.DocumentUploadRequest;
 import com.opensource.docgrid.domain.document.dto.response.DocumentUploadResponse;
+import com.opensource.docgrid.domain.document.enums.StorageProvider;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.service.DocumentUploadFacade;
 import com.opensource.docgrid.domain.document.storage.FileStorageService;
@@ -117,6 +118,7 @@ class SyncDispatchFailureRecoveryIntegrationTest {
         userId = userRepository.findByEmail("kcw130502@gmail.com").orElseThrow().getId();
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
             .willAnswer(invocation -> new StoredFile(
+                StorageProvider.MINIO,
                 "test-bucket",
                 "documents/sync-failure/" + UUID.randomUUID()
             ));

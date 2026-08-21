@@ -149,7 +149,7 @@ class WorkerHorizontalScalingBenchmark {
     static void configureCoordinatorEnvironment(DynamicPropertyRegistry registry) {
         registry.add("TEST_DB_SCHEMA", () -> TEST_SCHEMA);
         registry.add("jwt.secret", () -> TEST_JWT_SECRET);
-        registry.add("minio.bucket", () -> TEST_BUCKET);
+        registry.add("storage.bucket", () -> TEST_BUCKET);
         // Coordinator는 HTTP 접수와 검증만 담당하고 Job Claim 경쟁에는 참여하지 않는다.
         registry.add("indexing.worker.enabled", () -> "false");
         registry.add("embedding.document.read-timeout", () -> "2m");
@@ -293,7 +293,7 @@ class WorkerHorizontalScalingBenchmark {
                         "TEST_DB_SCHEMA=" + TEST_SCHEMA,
                         "spring.datasource.url=" + coordinatorJdbcUrl,
                         "jwt.secret=" + TEST_JWT_SECRET,
-                        "minio.bucket=" + TEST_BUCKET,
+                        "storage.bucket=" + TEST_BUCKET,
                         "indexing.worker.enabled=true",
                         "indexing.worker.name=" + workerName,
                         "indexing.worker.polling-interval=50ms",

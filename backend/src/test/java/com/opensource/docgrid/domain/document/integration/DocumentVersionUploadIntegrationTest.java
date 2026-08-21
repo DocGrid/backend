@@ -36,6 +36,7 @@ import com.opensource.docgrid.domain.document.dto.request.DocumentUploadRequest;
 import com.opensource.docgrid.domain.document.dto.request.DocumentVersionUploadRequest;
 import com.opensource.docgrid.domain.document.dto.response.DocumentUploadResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentVersionUploadResponse;
+import com.opensource.docgrid.domain.document.enums.StorageProvider;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.service.DocumentUploadFacade;
 import com.opensource.docgrid.domain.document.service.DocumentVersionUploadFacade;
@@ -99,7 +100,9 @@ class DocumentVersionUploadIntegrationTest {
     @DisplayName("길이가 같아도 내용이 다르면 v2를 만들고 current version은 유지한다")
     void upload_createsVersion_when_sameSizeButContentDiffers() {
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
-            .willAnswer(invocation -> new StoredFile("test-bucket", "documents/test/" + UUID.randomUUID()));
+            .willAnswer(invocation -> new StoredFile(
+                StorageProvider.LOCAL, "test-bucket", "documents/test/" + UUID.randomUUID()
+            ));
         DocumentUploadResponse initial = createIndexedDocument("AAAA");
 
         DocumentVersionUploadResponse response = documentVersionUploadFacade.upload(
@@ -136,7 +139,9 @@ class DocumentVersionUploadIntegrationTest {
     @DisplayName("현재 버전과 같은 파일이면 저장소 업로드 없이 409 예외를 반환한다")
     void upload_rejectsSameCurrentFile_beforeStorage() {
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
-            .willAnswer(invocation -> new StoredFile("test-bucket", "documents/test/" + UUID.randomUUID()));
+            .willAnswer(invocation -> new StoredFile(
+                StorageProvider.LOCAL, "test-bucket", "documents/test/" + UUID.randomUUID()
+            ));
         DocumentUploadResponse initial = createIndexedDocument("same-content");
         reset(fileStorageService);
 
@@ -161,7 +166,9 @@ class DocumentVersionUploadIntegrationTest {
     @DisplayName("과거 버전 파일로 되돌리면 기존 FileObject를 재사용해 새 버전을 만든다")
     void upload_reusesHistoricalFileObject_when_revertingContent() {
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
-            .willAnswer(invocation -> new StoredFile("test-bucket", "documents/test/" + UUID.randomUUID()));
+            .willAnswer(invocation -> new StoredFile(
+                StorageProvider.LOCAL, "test-bucket", "documents/test/" + UUID.randomUUID()
+            ));
         DocumentUploadResponse initial = createIndexedDocument("version-A");
         DocumentVersionUploadResponse second = documentVersionUploadFacade.upload(
             userId, initial.documentId(), versionRequest("version-B", "second.txt")
@@ -199,7 +206,9 @@ class DocumentVersionUploadIntegrationTest {
     void upload_createsSingleLiveJob_when_twoVersionsUploadedConcurrently() throws Exception {
         String suffix = UUID.randomUUID().toString();
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
-            .willAnswer(invocation -> new StoredFile("test-bucket", "documents/test/" + UUID.randomUUID()));
+            .willAnswer(invocation -> new StoredFile(
+                StorageProvider.LOCAL, "test-bucket", "documents/test/" + UUID.randomUUID()
+            ));
         DocumentUploadResponse initial = createIndexedDocument("concurrent-base-" + suffix);
         // v1은 인덱싱을 마친 상태이므로 이전 Job을 종료 상태로 두고 새 Job만 살아 있게 만든다.
         jdbcTemplate.update(
@@ -214,7 +223,9 @@ class DocumentVersionUploadIntegrationTest {
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
             .willAnswer(invocation -> {
                 storageBarrier.await(10, TimeUnit.SECONDS);
-                return new StoredFile("test-bucket", "documents/test/" + UUID.randomUUID());
+                return new StoredFile(
+                    StorageProvider.LOCAL, "test-bucket", "documents/test/" + UUID.randomUUID()
+                );
             });
         ExecutorService executor = Executors.newFixedThreadPool(2);
 

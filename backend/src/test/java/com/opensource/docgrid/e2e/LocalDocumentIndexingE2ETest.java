@@ -70,7 +70,7 @@ class LocalDocumentIndexingE2ETest {
     static void configureEnvironment(DynamicPropertyRegistry registry) {
         registry.add("TEST_DB_SCHEMA", () -> TEST_SCHEMA);
         registry.add("jwt.secret", () -> "docgrid-local-document-indexing-e2e-secret-key-2026");
-        registry.add("minio.bucket", () -> TEST_BUCKET);
+        registry.add("storage.bucket", () -> TEST_BUCKET);
         registry.add("indexing.worker.enabled", () -> "true");
         registry.add("indexing.worker.name", () -> "local-document-indexing-e2e-worker");
         registry.add("indexing.worker.polling-interval", () -> "100ms");

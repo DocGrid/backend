@@ -72,7 +72,7 @@ public class DocumentVersionUploadFacade {
                 inputStream, validatedFile.fileSize(), validatedFile.contentType(), objectKey
             );
         } catch (IOException exception) {
-            log.error("MinIO 업로드용 파일 스트림을 열지 못했습니다.", exception);
+            log.error("파일 저장소 업로드용 원본 Stream을 열지 못했습니다.", exception);
             throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED, exception);
         }
     }
@@ -94,8 +94,7 @@ public class DocumentVersionUploadFacade {
         try {
             fileStorageService.delete(candidate);
         } catch (RuntimeException cleanupException) {
-            log.error("사용되지 않은 MinIO Object 정리에 실패했습니다. bucket={}, objectKey={}",
-                candidate.bucketName(), candidate.objectKey(), cleanupException);
+            log.error("사용되지 않은 저장소 Object 정리에 실패했습니다.", cleanupException);
         }
     }
 }

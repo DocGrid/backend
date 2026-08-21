@@ -44,6 +44,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import com.opensource.docgrid.domain.document.dto.request.DocumentUploadRequest;
 import com.opensource.docgrid.domain.document.dto.response.DocumentUploadResponse;
 import com.opensource.docgrid.domain.document.entity.DocumentVersion;
+import com.opensource.docgrid.domain.document.enums.StorageProvider;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.repository.DocumentVersionRepository;
 import com.opensource.docgrid.domain.document.service.DocumentUploadFacade;
@@ -132,6 +133,7 @@ class SyncIdempotencyConcurrencyIntegrationTest {
         userId = userRepository.findByEmail("kcw130502@gmail.com").orElseThrow().getId();
         given(fileStorageService.store(any(InputStream.class), anyLong(), anyString(), anyString()))
             .willAnswer(invocation -> new StoredFile(
+                StorageProvider.MINIO,
                 "test-bucket",
                 "documents/sync-idempotency/" + UUID.randomUUID()
             ));

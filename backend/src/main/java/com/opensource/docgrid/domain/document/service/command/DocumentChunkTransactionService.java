@@ -118,7 +118,11 @@ public class DocumentChunkTransactionService {
         return PreparationResult.work(new FileSnapshot(
             documentVersion.getId(),
             documentVersion.getDocument().getDocumentType(),
-            new StoredFile(fileObject.getBucketName(), fileObject.getObjectKey())
+            new StoredFile(
+                fileObject.getStorageProvider(),
+                fileObject.getBucketName(),
+                fileObject.getObjectKey()
+            )
         ));
     }
 
@@ -231,6 +235,7 @@ public class DocumentChunkTransactionService {
 
         FileObject fileObject = documentVersion.getFileObject();
         if (fileObject == null
+            || fileObject.getStorageProvider() == null
             || !StringUtils.hasText(fileObject.getBucketName())
             || !StringUtils.hasText(fileObject.getObjectKey())) {
             throw new DocGridException(ErrorCode.DOCUMENT_FILE_REFERENCE_MISSING);

@@ -2,9 +2,11 @@ package com.opensource.docgrid.domain.document.storage;
 
 import java.io.InputStream;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
-import com.opensource.docgrid.global.config.MinioProperties;
+import com.opensource.docgrid.domain.document.config.FileStorageProperties;
+import com.opensource.docgrid.domain.document.enums.StorageProvider;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
@@ -18,13 +20,18 @@ import io.minio.errors.ErrorResponseException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * MinIO SDK를 사용해 문서 원본을 저장·조회·삭제하는 파일 저장소 Adapter다.
+ * MinIO가 선택된 환경에서만 등록되며 공통 Bucket과 Object Key를 저장 위치로 반환한다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "storage", name = "type", havingValue = "minio")
 public class MinioStorageService implements FileStorageService {
 
     private final MinioClient minioClient;
-    private final MinioProperties minioProperties;
+    private final FileStorageProperties fileStorageProperties;
 
     @Override
     public StoredFile store(InputStream inputStream, long fileSize, String contentType, String objectKey) {
@@ -32,22 +39,22 @@ public class MinioStorageService implements FileStorageService {
             ensureBucketExists();
             minioClient.putObject(
                 PutObjectArgs.builder()
-                    .bucket(minioProperties.getBucket())
+                    .bucket(fileStorageProperties.getBucket())
                     .object(objectKey)
                     .stream(inputStream, fileSize, -1)
                     .contentType(contentType)
                     .build()
             );
-            return new StoredFile(minioProperties.getBucket(), objectKey);
+            return new StoredFile(StorageProvider.MINIO, fileStorageProperties.getBucket(), objectKey);
         } catch (Exception e) {
-            log.error("MinIO 파일 저장에 실패했습니다. bucket={}, objectKey={}",
-                minioProperties.getBucket(), objectKey, e);
+            log.error("MinIO 파일 저장에 실패했습니다.", e);
             throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED, e);
         }
     }
 
     @Override
     public byte[] read(StoredFile storedFile) {
+        validateLocation(storedFile);
         try (InputStream inputStream = minioClient.getObject(
             GetObjectArgs.builder()
                 .bucket(storedFile.bucketName())
@@ -70,6 +77,7 @@ public class MinioStorageService implements FileStorageService {
 
     @Override
     public void delete(StoredFile storedFile) {
+        validateLocation(storedFile);
         try {
             minioClient.removeObject(
                 RemoveObjectArgs.builder()
@@ -78,15 +86,14 @@ public class MinioStorageService implements FileStorageService {
                     .build()
             );
         } catch (Exception e) {
-            log.error("MinIO 파일 삭제에 실패했습니다. bucket={}, objectKey={}",
-                storedFile.bucketName(), storedFile.objectKey(), e);
+            log.error("MinIO 파일 삭제에 실패했습니다.", e);
             throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED, e);
         }
     }
 
     private void ensureBucketExists() throws Exception {
         BucketExistsArgs existsArgs = BucketExistsArgs.builder()
-            .bucket(minioProperties.getBucket())
+            .bucket(fileStorageProperties.getBucket())
             .build();
 
         if (minioClient.bucketExists(existsArgs)) {
@@ -96,7 +103,7 @@ public class MinioStorageService implements FileStorageService {
         try {
             minioClient.makeBucket(
                 MakeBucketArgs.builder()
-                    .bucket(minioProperties.getBucket())
+                    .bucket(fileStorageProperties.getBucket())
                     .build()
             );
         } catch (Exception e) {
@@ -109,6 +116,15 @@ public class MinioStorageService implements FileStorageService {
     private boolean isObjectNotFound(ErrorResponseException exception) {
         String errorCode = exception.errorResponse().code();
         return "NoSuchKey".equals(errorCode) || "NoSuchObject".equals(errorCode);
+    }
+
+    private void validateLocation(StoredFile storedFile) {
+        if (storedFile.storageProvider() == StorageProvider.MINIO) {
+            return;
+        }
+        log.error("현재 MinIO Adapter와 파일 Provider가 일치하지 않습니다. storedProvider={}",
+            storedFile.storageProvider());
+        throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED);
     }
 
     private void logStorageReadFailure(Exception exception) {

@@ -35,6 +35,42 @@ cd docgrid
 
 이후 명령은 별도 안내가 없는 한 저장소 루트에서 실행합니다.
 
+## 파일 저장소 선택
+
+DocGrid의 API와 인덱싱 Worker는 특정 Cloud SDK가 아니라 공통 파일 저장소 Port를 사용합니다. 현재
+Local Filesystem과 MinIO Adapter를 지원하며 `STORAGE_TYPE`으로 하나만 선택합니다.
+
+| `STORAGE_TYPE` | 용도 | 추가 설정 |
+|---|---|---|
+| `local` | 별도 Object Storage 없이 실행하는 기본값 | `STORAGE_LOCAL_ROOT`, `STORAGE_BUCKET` |
+| `minio` | Docker 또는 외부 MinIO 사용 | `STORAGE_BUCKET`, `MINIO_ENDPOINT`, Credential |
+
+Local Filesystem은 `STORAGE_TYPE`을 설정하지 않았을 때의 애플리케이션 기본값입니다. 실제 절대 경로는
+DB에 저장하지 않고, DB에는 `LOCAL` Provider와 논리 Bucket·Object Key만 저장합니다.
+
+```dotenv
+STORAGE_TYPE=local
+STORAGE_BUCKET=docgrid
+STORAGE_LOCAL_ROOT=./data/docgrid
+```
+
+현재 `.env.example`은 팀의 Docker MinIO 개발 방식을 바로 실행할 수 있도록 `minio`를 명시합니다.
+
+```dotenv
+STORAGE_TYPE=minio
+STORAGE_BUCKET=docgrid
+MINIO_ENDPOINT=http://localhost:9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin1234
+```
+
+API와 Worker는 반드시 동일한 `STORAGE_TYPE`과 저장소 Endpoint·Bucket을 사용해야 합니다. 같은 DB
+Schema를 사용하면서 서로 다른 Local Directory나 개발자별 MinIO를 바라보면 DB의 Object Key는
+존재하지만 실제 파일을 찾지 못합니다.
+
+`STORAGE_TYPE` 변경은 기존 파일을 자동으로 옮기지 않습니다. 파일이 들어 있는 DB Schema의 Provider를
+바꾸려면 Object와 DB Metadata를 함께 이전하는 별도 Migration이 필요합니다.
+
 ## EC2 OpenSQL을 사용하는 로컬 실행
 
 프론트엔드와 Spring Boot는 로컬에서 실행하고, DB만 SSH Tunnel을 통해 EC2 OpenSQL에 연결합니다.
@@ -55,9 +91,16 @@ DB_PORT=55433
 DB_NAME=<development-database>
 DB_USER=<development-user>
 DB_PASSWORD=<development-password>
-DB_SCHEMA=public
+DB_SCHEMA=<development-schema>
 DB_SSLMODE=disable
 SPRING_PROFILES_ACTIVE=local
+
+# EC2 OpenSQL의 개발자별 Schema와 한 환경으로 묶을 Local Docker MinIO입니다.
+STORAGE_TYPE=minio
+STORAGE_BUCKET=docgrid-<developer>
+MINIO_ENDPOINT=http://localhost:9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin1234
 
 # 자동 인덱싱 Worker를 로컬에서 실행합니다.
 INDEXING_WORKER_ENABLED=true
@@ -70,8 +113,9 @@ OLLAMA_MODEL=qwen2.5:7b
 `DB_SSLMODE=disable`은 DB 자체 TLS가 비활성화되어 있고 아래 SSH Tunnel로 전송 구간을 암호화하는
 환경의 설정입니다. OpenSQL 서버가 TLS를 제공하면 서버 정책에 맞는 SSL Mode를 사용합니다.
 
-MinIO 설정은 `.env.example`의 로컬 기본값을 그대로 사용할 수 있습니다. `.env`는 Git에 추가하지
-않습니다.
+EC2 OpenSQL과 개발자별 Local MinIO를 함께 사용할 때는 개발자마다 DB Schema와 Bucket을 분리해야
+합니다. 팀 공용 Schema를 사용하려면 모든 API와 Worker가 접근할 수 있는 공용 저장소가 필요합니다.
+`.env`는 Git에 추가하지 않습니다.
 
 ### 2. OpenSQL SSH Tunnel 열기
 
@@ -104,6 +148,12 @@ Docker Desktop을 실행한 뒤 로컬 인프라를 기동합니다. 이 구성�
 docker compose up -d --build minio embedding-server
 ```
 
+`STORAGE_TYPE=local`을 선택했다면 MinIO는 실행하지 않고 BGE-M3만 기동합니다.
+
+```bash
+docker compose up -d --build embedding-server
+```
+
 BGE-M3는 첫 실행 시 약 3GB 모델을 내려받으므로 준비까지 10~15분 정도 걸릴 수 있습니다. 모델이
 준비되기 전에 Spring Boot의 인덱싱 Worker를 실행하지 마세요.
 
@@ -116,6 +166,7 @@ docker compose logs -f embedding-server
 
 ```bash
 curl -f http://localhost:8000/health
+# STORAGE_TYPE=minio인 경우에만 확인합니다.
 curl -f http://localhost:9000/minio/health/live
 ```
 
@@ -188,7 +239,7 @@ npm --prefix frontend run dev
 4. 문서 내용으로 검색
 5. RAG 질문에 Ollama 답변과 인용 근거가 표시되는지 확인
 
-인덱싱은 BGE-M3와 MinIO가 필요하고, 최종 RAG 답변 생성은 Ollama가 필요합니다.
+인덱싱은 BGE-M3와 선택한 파일 저장소가 필요하고, 최종 RAG 답변 생성은 Ollama가 필요합니다.
 
 ## 사용 포트
 
@@ -199,8 +250,8 @@ npm --prefix frontend run dev
 | `55433` | 로컬 | EC2 OpenSQL로 연결되는 SSH Tunnel |
 | `5432` | EC2 | OpenSQL 실제 포트 |
 | `8000` | 로컬 Docker | BGE-M3 임베딩 서버 |
-| `9000` | 로컬 Docker | MinIO API |
-| `9001` | 로컬 Docker | MinIO Console |
+| `9000` | 로컬 Docker | MinIO API(`STORAGE_TYPE=minio`) |
+| `9001` | 로컬 Docker | MinIO Console(`STORAGE_TYPE=minio`) |
 | `11434` | 로컬 (네이티브) | Ollama RAG LLM 서버 |
 
 ## 종료
@@ -210,6 +261,13 @@ Docker Service는 다음 명령으로 중지합니다.
 
 ```bash
 docker compose stop minio embedding-server
+```
+
+Local Filesystem을 사용했다면 `embedding-server`만 중지합니다. `STORAGE_LOCAL_ROOT`의 원본 파일은
+애플리케이션 종료 후에도 유지되며 Git에 포함되지 않습니다.
+
+```bash
+docker compose stop embedding-server
 ```
 
 로컬 PostgreSQL 구성까지 실행했다면 `postgres`도 함께 중지합니다.

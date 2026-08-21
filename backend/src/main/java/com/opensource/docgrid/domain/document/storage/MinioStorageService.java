@@ -47,8 +47,7 @@ public class MinioStorageService implements FileStorageService {
             );
             return new StoredFile(StorageProvider.MINIO, fileStorageProperties.getBucket(), objectKey);
         } catch (Exception e) {
-            log.error("MinIO 파일 저장에 실패했습니다. bucket={}, objectKey={}",
-                fileStorageProperties.getBucket(), objectKey, e);
+            log.error("MinIO 파일 저장에 실패했습니다.", e);
             throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED, e);
         }
     }
@@ -87,8 +86,7 @@ public class MinioStorageService implements FileStorageService {
                     .build()
             );
         } catch (Exception e) {
-            log.error("MinIO 파일 삭제에 실패했습니다. bucket={}, objectKey={}",
-                storedFile.bucketName(), storedFile.objectKey(), e);
+            log.error("MinIO 파일 삭제에 실패했습니다.", e);
             throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED, e);
         }
     }

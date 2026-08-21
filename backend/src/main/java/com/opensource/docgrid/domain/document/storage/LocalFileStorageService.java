@@ -3,7 +3,9 @@ package com.opensource.docgrid.domain.document.storage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -54,7 +56,7 @@ public class LocalFileStorageService implements FileStorageService {
             return new StoredFile(StorageProvider.LOCAL, bucketName, objectKey);
         } catch (Exception exception) {
             deleteTemporaryFile(temporaryFile);
-            log.error("Local 파일 저장에 실패했습니다. objectKey={}", objectKey, exception);
+            log.error("Local 파일 저장에 실패했습니다.", exception);
             throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED, exception);
         }
     }
@@ -78,13 +80,13 @@ public class LocalFileStorageService implements FileStorageService {
         validateLocation(storedFile);
         try {
             Path target = resolvePath(storedFile.objectKey());
-            if (!Files.exists(target)) {
+            if (Files.notExists(target, LinkOption.NOFOLLOW_LINKS)) {
                 return;
             }
             validateExistingPath(target);
             Files.deleteIfExists(target);
         } catch (Exception exception) {
-            log.error("Local 파일 삭제에 실패했습니다. objectKey={}", storedFile.objectKey(), exception);
+            log.error("Local 파일 삭제에 실패했습니다.", exception);
             throw new DocGridException(ErrorCode.FILE_STORAGE_FAILED, exception);
         }
     }
@@ -115,21 +117,34 @@ public class LocalFileStorageService implements FileStorageService {
         if (parent == null) {
             throw new IOException("Object Key의 부모 경로를 확인할 수 없습니다.");
         }
-        Files.createDirectories(parent);
-        Path realParent = parent.toRealPath();
-        if (!realParent.startsWith(rootPath)) {
-            throw new IOException("Object Key가 Local 파일 저장소 Root를 벗어났습니다.");
-        }
-        return realParent.resolve(target.getFileName());
+        Path safeParent = createDirectoriesWithoutFollowingLinks(parent);
+        return safeParent.resolve(target.getFileName());
     }
 
     private Path resolveExistingPath(String objectKey) throws IOException {
         Path target = resolvePath(objectKey);
-        if (!Files.exists(target)) {
+        if (Files.notExists(target, LinkOption.NOFOLLOW_LINKS)) {
             throw new NoSuchFileException(target.toString());
         }
         validateExistingPath(target);
         return target;
+    }
+
+    private Path createDirectoriesWithoutFollowingLinks(Path parent) throws IOException {
+        Path current = rootPath;
+        for (Path segment : rootPath.relativize(parent)) {
+            current = current.resolve(segment);
+            try {
+                Files.createDirectory(current);
+            } catch (FileAlreadyExistsException ignored) {
+                // 동시에 생성됐거나 이미 존재하는 경로도 아래의 no-follow 검증을 반드시 통과해야 한다.
+            }
+            if (Files.isSymbolicLink(current)
+                || !Files.isDirectory(current, LinkOption.NOFOLLOW_LINKS)) {
+                throw new IOException("Object Key의 부모 경로에 안전하지 않은 항목이 있습니다.");
+            }
+        }
+        return current;
     }
 
     private Path resolvePath(String objectKey) throws IOException {
@@ -185,7 +200,7 @@ public class LocalFileStorageService implements FileStorageService {
         try {
             Files.deleteIfExists(temporaryFile);
         } catch (IOException cleanupException) {
-            log.warn("Local 임시 파일 정리에 실패했습니다. path={}", temporaryFile, cleanupException);
+            log.warn("Local 임시 파일 정리에 실패했습니다.", cleanupException);
         }
     }
 }

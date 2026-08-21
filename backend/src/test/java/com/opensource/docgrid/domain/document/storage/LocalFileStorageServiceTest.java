@@ -29,6 +29,9 @@ class LocalFileStorageServiceTest {
     @TempDir
     private Path temporaryRoot;
 
+    @TempDir
+    private Path outsideRoot;
+
     private LocalFileStorageService storageService;
 
     @BeforeEach
@@ -86,6 +89,24 @@ class LocalFileStorageServiceTest {
             ErrorCode.FILE_STORAGE_FAILED
         );
         assertThat(outsidePath).doesNotExist();
+    }
+
+    @Test
+    @DisplayName("부모 경로의 Symbolic Link를 따라 Root 밖에 Directory를 만들지 않는다")
+    void store_rejectsSymlinkParent_beforeCreatingOutsideDirectory() throws Exception {
+        Files.createSymbolicLink(temporaryRoot.resolve("link"), outsideRoot);
+        byte[] content = "blocked".getBytes(StandardCharsets.UTF_8);
+
+        assertStorageError(
+            () -> storageService.store(
+                new ByteArrayInputStream(content),
+                content.length,
+                "text/plain",
+                "link/new/source.txt"
+            ),
+            ErrorCode.FILE_STORAGE_FAILED
+        );
+        assertThat(outsideRoot.resolve("new")).doesNotExist();
     }
 
     @Test

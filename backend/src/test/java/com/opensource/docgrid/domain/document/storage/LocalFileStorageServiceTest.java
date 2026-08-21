@@ -89,13 +89,29 @@ class LocalFileStorageServiceTest {
     }
 
     @Test
-    @DisplayName("현재 Adapter와 다른 Provider의 저장 위치는 읽지 않는다")
+    @DisplayName("현재 Adapter와 다른 Provider의 저장 위치는 설정 불일치로 거부한다")
     void read_rejectsDifferentProvider() throws Exception {
         Files.createDirectories(temporaryRoot.resolve("documents"));
         Files.writeString(temporaryRoot.resolve("documents/source.txt"), "source");
         StoredFile storedFile = new StoredFile(StorageProvider.MINIO, BUCKET, "documents/source.txt");
 
-        assertStorageError(() -> storageService.read(storedFile), ErrorCode.FILE_STORAGE_FAILED);
+        assertStorageError(
+            () -> storageService.read(storedFile),
+            ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH
+        );
+    }
+
+    @Test
+    @DisplayName("현재 설정과 다른 Bucket의 저장 위치는 설정 불일치로 거부한다")
+    void read_rejectsDifferentBucket() {
+        StoredFile storedFile = new StoredFile(
+            StorageProvider.LOCAL, "other-bucket", "documents/source.txt"
+        );
+
+        assertStorageError(
+            () -> storageService.read(storedFile),
+            ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH
+        );
     }
 
     private void assertStorageError(ThrowingAction action, ErrorCode errorCode) {

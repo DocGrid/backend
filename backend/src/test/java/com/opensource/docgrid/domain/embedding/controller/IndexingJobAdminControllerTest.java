@@ -850,6 +850,11 @@ class IndexingJobAdminControllerTest {
             Arguments.of(ErrorCode.DOCUMENT_TEXT_DECODING_FAILED, 422, "DOCUMENT-PARSING-003"),
             Arguments.of(ErrorCode.DOCUMENT_FILE_REFERENCE_MISSING, 500, "DOCUMENT-PARSING-004"),
             Arguments.of(ErrorCode.DOCUMENT_CHUNKS_INCONSISTENT, 500, "DOCUMENT-CHUNK-001"),
+            Arguments.of(
+                ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH,
+                500,
+                "DOCUMENT-STORAGE-003"
+            ),
             Arguments.of(ErrorCode.FILE_STORAGE_FAILED, 503, "DOCUMENT-STORAGE-001")
         );
     }

@@ -84,6 +84,27 @@ class WorkerIndexingFailureClassifierTest {
     }
 
     @Test
+    @DisplayName("저장소 설정 불일치와 Object 누락은 서로 다른 영구 실패로 분류한다")
+    void classify_mapsNonRetryableStorageFailures() {
+        WorkerIndexingFailure mismatch = classifier.classify(
+            new DocGridException(ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH, "sensitive endpoint")
+        );
+        WorkerIndexingFailure missing = classifier.classify(
+            new DocGridException(ErrorCode.FILE_OBJECT_NOT_FOUND, "sensitive object key")
+        );
+
+        assertThat(mismatch.failureType())
+            .isEqualTo(IndexingFailureType.STORAGE_CONFIGURATION_INVALID);
+        assertThat(mismatch.failureType().isRetryable()).isFalse();
+        assertThat(mismatch.diagnosticCode()).isEqualTo("DOCUMENT-STORAGE-003");
+        assertThat(mismatch.safeMessage()).doesNotContain("sensitive");
+        assertThat(missing.failureType()).isEqualTo(IndexingFailureType.STORAGE_OBJECT_MISSING);
+        assertThat(missing.failureType().isRetryable()).isFalse();
+        assertThat(missing.diagnosticCode()).isEqualTo("DOCUMENT-STORAGE-002");
+        assertThat(missing.safeMessage()).doesNotContain("sensitive");
+    }
+
+    @Test
     @DisplayName("소유권과 Lease 오류는 과거 Claim 실패 보고에서 제외한다")
     void classify_skipsOwnershipLostFailures() {
         WorkerIndexingFailure failure = classifier.classify(

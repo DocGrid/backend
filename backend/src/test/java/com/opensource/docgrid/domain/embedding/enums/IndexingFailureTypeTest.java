@@ -25,8 +25,8 @@ class IndexingFailureTypeTest {
 
     @ParameterizedTest
     @EnumSource(value = IndexingFailureType.class, names = {
-        "DOCUMENT_CONTENT_INVALID", "EMBEDDING_REQUEST_INVALID", "EMBEDDING_RESULT_INVALID",
-        "INDEXING_STATE_INCONSISTENT"
+        "STORAGE_CONFIGURATION_INVALID", "STORAGE_OBJECT_MISSING", "DOCUMENT_CONTENT_INVALID",
+        "EMBEDDING_REQUEST_INVALID", "EMBEDDING_RESULT_INVALID", "INDEXING_STATE_INCONSISTENT"
     })
     @DisplayName("데이터와 상태 불변식 오류는 Retry하지 않는다")
     void permanentTypes_returnFalse(IndexingFailureType failureType) {

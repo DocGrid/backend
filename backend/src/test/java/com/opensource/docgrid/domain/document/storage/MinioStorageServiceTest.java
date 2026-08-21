@@ -128,6 +128,32 @@ class MinioStorageServiceTest {
         assertReadError(ErrorCode.FILE_STORAGE_FAILED);
     }
 
+    @Test
+    @DisplayName("현재 Adapter와 다른 Provider의 저장 위치는 설정 불일치로 거부한다")
+    void read_rejectsDifferentProvider() {
+        StoredFile localFile = new StoredFile(
+            StorageProvider.LOCAL, STORED_FILE.bucketName(), STORED_FILE.objectKey()
+        );
+
+        assertThatThrownBy(() -> storageService.read(localFile))
+            .isInstanceOfSatisfying(DocGridException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH));
+    }
+
+    @Test
+    @DisplayName("현재 설정과 다른 Bucket의 저장 위치는 설정 불일치로 거부한다")
+    void read_rejectsDifferentBucket() {
+        StoredFile otherBucketFile = new StoredFile(
+            StorageProvider.MINIO, "other-bucket", STORED_FILE.objectKey()
+        );
+
+        assertThatThrownBy(() -> storageService.read(otherBucketFile))
+            .isInstanceOfSatisfying(DocGridException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH));
+    }
+
     private void assertReadError(ErrorCode errorCode) {
         assertThatThrownBy(() -> storageService.read(STORED_FILE))
             .isInstanceOfSatisfying(DocGridException.class,

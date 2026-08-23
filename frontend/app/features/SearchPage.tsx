@@ -33,6 +33,8 @@ async function loadSuggestedQuestions(): Promise<SuggestedQuestion[]> {
 const SEARCH_TIMEOUT_MS = 29_000;
 // WebSocket push가 유실돼도(연결 끊김 등) 답변이 영원히 "생성 중"으로 멈춰 보이지 않도록 하는 안전망.
 const ANSWER_POLL_INTERVAL_MS = 3_000;
+// 이 시간 넘게 대기 중이면 로딩 문구를 바꿔 "멈춘 것처럼 보이는" 느낌을 줄인다(QA-P0-01).
+const LONG_WAIT_NOTICE_MS = 30_000;
 
 export function SearchPage() {
   const [query, setQuery] = useState("");
@@ -86,6 +88,18 @@ export function SearchPage() {
       pollTimer.current = null;
     };
   }, [awaitingAnswer, refreshAnswer]);
+
+  // 대기가 길어지고 있다는 걸 사용자에게 알려주는 용도일 뿐, 실제 재조회/타임아웃 로직과는
+  // 무관하다 — 답변이 오면(awaitingAnswer가 false가 되면) 자동으로 꺼진다.
+  const [longWait, setLongWait] = useState(false);
+  useEffect(() => {
+    if (!awaitingAnswer) return;
+    const timer = window.setTimeout(() => setLongWait(true), LONG_WAIT_NOTICE_MS);
+    return () => {
+      window.clearTimeout(timer);
+      setLongWait(false);
+    };
+  }, [awaitingAnswer]);
 
   async function search(searchText = query) {
     const trimmed = searchText.trim();
@@ -153,7 +167,10 @@ export function SearchPage() {
           <div className="results-meta"><span>AI 답변</span><small>{result.results.length}개의 검색 결과 · queryId {result.queryId}{awaitingAnswer ? ` · ${socketStatus === "LIVE" ? "실시간 대기 중" : "잠시 후 자동 갱신"}` : ""}</small></div>
           <article className="answer-card"><div className="answer-icon">✦</div><div className="answer-content"><h2>{query}</h2>
             {awaitingAnswer
-              ? <p className="answer-loading"><span className="thinking-orb"><span /><span /><span /></span> AI가 답변을 정리하고 있어요…</p>
+              ? <p className="answer-loading">
+                  <span className="thinking-orb"><span /><span /><span /></span>
+                  {longWait ? "생각보다 오래 걸리고 있어요. 조금만 더 기다려 주세요…" : "AI가 답변을 정리하고 있어요…"}
+                </p>
               : <p>{result.answer || "접근 가능한 문서에서 답을 생성하지 못했습니다."}</p>}
           </div></article>
           <div className="source-heading"><h2>검색 결과와 근거 문서</h2><span>유사도 높은 순</span></div>

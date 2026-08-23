@@ -18,7 +18,7 @@ LLM 생성을 마치고 결과를 저장하는 경로)는 여전히 조건 없�
 
 ## 문제 시나리오
 
-```
+```text
 t=0s    job 생성, PROCESSING. 큐에 밀려있어 Worker가 아직 못 집음
 t=85s   Worker가 이 job을 집어 처리 시작 (Ollama 호출, 오래 걸림)
 t=90s   RagJobTimeoutSweeper가 "90초 지남" 판단 → forceFailIfProcessing()으로
@@ -79,10 +79,23 @@ public boolean completeFailed(RagResponse ragResponse, String fallbackAnswerText
 호출하는 방식으로 바뀌었다. 영향받은 행 수(0/1건)를 그대로 boolean으로 반환해, 호출자가
 "내가 실제로 확정시켰는지, 이미 다른 경로가 먼저 끝냈는지"를 알 수 있게 했다.
 
-### 3. `RagFacade.processJob()` — 반환 타입 `void` → `boolean`, 경합 시 citation 저장 스킵
+### 3. `RagFacade.processJob()` — 반환 타입 `void` → `boolean`, 경합 시 citation 저장 스킵 + Ollama 호출 전 조기 확인
+
+> **PR #289에 대한 CodeRabbit 2차 리뷰 반영**: 최초 구현은 `findById` 직후 곧바로 Ollama를
+> 호출했다 — RagJobWorker가 이 job을 집어든 뒤, `processJob()`이 `findById`로 다시 읽기
+> 전에 RagJobTimeoutSweeper가 먼저 강제 종료했더라도 그 사실을 모른 채 Ollama 호출(수십 초)을
+> 그대로 낭비하고, 그제서야(완료 시점의 조건부 UPDATE에서) 뒤늦게 걸러졌다. `#288`이 원래
+> 지적한 "이미 아무도 안 볼 답을 계산하느라 뒤 큐가 더 밀린다"는 문제를 조건부 UPDATE만으로는
+> 절반만 막고 있었던 셈이다. `findById` 직후 `status != PROCESSING`이면 Ollama를 아예 부르지
+> 않고 즉시 `false`를 반환하도록 고쳤다 — 완료 시점의 조건부 UPDATE는 이 조기 체크 "이후"에
+> 벌어지는(더 좁아진) 경합까지 막는 최종 방어선으로 그대로 남긴다.
 
 ```java
 public boolean processJob(Long jobId) {
+    RagResponse job = ragResponseRepository.findById(jobId).orElseThrow(...);
+    if (job.getStatus() != ResultStatus.PROCESSING) {
+        return false;   // Ollama 호출 전에 조기 종료
+    }
     ...
     } catch (DocGridException e) {
         ...
@@ -144,9 +157,10 @@ SUCCESS로 커밋한 상황"을 재현하도록 바꿨다(프로덕션이 실제
 - `RagResponseCommandServiceTest`: `completeSuccess`/`completeFailed` 각각 "조건부 UPDATE가
   반영되면 true" / "영향받은 행 0건이면 false" 케이스로 재작성.
 - `RagFacadeTest`: 기존 `processJob` 성공/실패 케이스에 `completeSuccess`/`completeFailed`
-  mock의 `willReturn(true)` 스텁을 추가하고, **새 경합 케이스 2개** 추가 — `completeSuccess`가
+  mock의 `willReturn(true)` 스텁을 추가하고, **새 경합 케이스 3개** 추가 — `completeSuccess`가
   false를 반환하면 citation 저장을 건너뛰고 `processJob`도 false를 반환 / `completeFailed`가
-  false를 반환해도 동일.
+  false를 반환해도 동일 / **`findById` 시점에 이미 PROCESSING이 아니면 `ollamaClient.generate()`가
+  아예 호출되지 않고 즉시 false를 반환**(2차 리뷰 반영, Ollama 호출 낭비 방지).
 - `RagJobWorkerTest`: 기존 성공 케이스에 `processJob`/`markUnexpectedFailure`의
   `willReturn(true)` 스텁 추가, **새 케이스** 추가 — `processJob`이 false를 반환하면
   `notifyAnswerReady`를 호출하지 않는다.
@@ -161,7 +175,7 @@ BUILD SUCCESSFUL in 4m 56s
 전체 스위트(단위 + integration, 실제 Ollama 호출 포함) 통과. 흥미롭게도 실제 integration
 테스트 실행 중에 이번에 고친 경합이 **실사용 시나리오로 실제 발생**해서 로그로 확인됐다:
 
-```
+```text
 [RAG] job이 이미 timeout으로 종료됨(경합), 완료 결과 반영 안 함 queryId=41 responseId=41
 [RAG] job이 이미 timeout으로 종료됨(경합), 완료 결과 반영 안 함 queryId=51 responseId=51
 ```

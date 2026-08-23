@@ -184,6 +184,18 @@ BUILD SUCCESSFUL in 4m 56s
 UPDATE가 그걸 정확히 거부했다는 뜻이다 — 목(mock)이 아니라 실제 스케줄러 두 개가 동시에
 돌아가는 환경에서 이 수정이 의도대로 동작함을 우연히 실증했다.
 
+## 코드리뷰 반영 (CodeRabbit)
+
+PR #289에 자동 코드리뷰 코멘트 4건(actionable 3 + nitpick 1)이 달렸고, 각각 다음과 같이
+처리했다.
+
+| # | 코멘트 요지 | 처리 | 근거 |
+|---|---|---|---|
+| 1 | `RagResponse.answerText` 필드 주석이 "Worker가 채운다"고만 돼 있어, `RagJobTimeoutSweeper.forceFailIfProcessing`도 값을 채울 수 있다는 사실을 반영 못 함(Minor) | **반영함** | 두 경로(Worker 정상 완료, 스위퍼 강제 종료) 모두 언급하도록 주석 수정 |
+| 2 | `RagFacade.processJob()`: `findById` 직후 곧바로 Ollama를 호출해, 스위퍼가 이미 이 job을 확정해놨어도 완료 시점(조건부 UPDATE)에서야 뒤늦게 걸러짐 — 그사이 Ollama 호출(GPU 시간)이 그대로 낭비됨(Major) | **반영함** | `findById` 직후 `status != PROCESSING`이면 Ollama 호출 전에 즉시 `false` 반환하도록 조기 종료 추가. 완료 시점의 조건부 UPDATE는 이 체크 이후의(더 좁아진) 경합을 막는 최종 방어선으로 유지 |
+| 3 | 설계 문서(`kangcheolung-#288-...md`)의 fenced code block 2곳에 language 식별자가 없어 markdownlint MD040 경고 발생(Minor) | **반영함** | 해당 code block에 `text` 언어 식별자 추가 |
+| 4 | `RagFacade.processJob()`/`RagJobWorker.processNext()`의 순차 실행 단계에 번호 주석(`1.`, `2.`, `3.`) 추가 권장(Nitpick) | **반영 안 함** | 가치가 낮다고 판단 |
+
 ## 설계 결정 요약
 
 - **엔티티 mutation + dirty checking → 조건부 벌크 UPDATE로 완전히 전환**: `#286`에서는

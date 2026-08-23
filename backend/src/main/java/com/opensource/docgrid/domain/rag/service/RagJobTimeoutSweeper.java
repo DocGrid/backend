@@ -44,8 +44,10 @@ public class RagJobTimeoutSweeper {
 
     /**
      * stale-threshold 이상 PROCESSING으로 남아있는 job을 전부 찾아 하나씩 강제 종료한다.
-     * 이 메서드 자체는 트랜잭션이 아니다 — {@link RagFacade#failIfStillProcessing}이 job마다
-     * 독립된 트랜잭션으로 실행되므로, 하나가 실패해도 나머지 job 처리에 영향을 주지 않는다.
+     * {@link RagFacade#failIfStillProcessing}이 job마다 독립된 트랜잭션으로 실행되므로 DB
+     * 반영은 job 단위로 원자적이지만, 그것만으로는 "하나가 예외를 던지면 나머지 job이 이번
+     * sweep 주기에서 통째로 건너뛰어지는" 문제까지 막아주지 않는다 — 그래서 job 하나하나를
+     * try/catch로 격리해, 하나가 실패해도 나머지 stale job은 계속 처리한다.
      */
     @Scheduled(fixedDelayString = "${rag.worker.timeout-sweep-interval:15s}")
     public void sweep() {
@@ -54,12 +56,17 @@ public class RagJobTimeoutSweeper {
             ragResponseRepository.findByStatusAndCreatedAtBefore(ResultStatus.PROCESSING, cutoff);
 
         for (RagResponse job : staleJobs) {
-            Long queryId = job.getQuery().getId();
-            String userEmail = job.getQuery().getUser().getEmail();
+            try {
+                Long queryId = job.getQuery().getId();
+                String userEmail = job.getQuery().getUser().getEmail();
 
-            if (ragFacade.failIfStillProcessing(job.getId(), queryId)) {
-                log.warn("[RAG-SWEEP] stale job force-failed queryId={} responseId={}", queryId, job.getId());
-                ragWebSocketController.notifyAnswerReady(userEmail, queryId);
+                if (ragFacade.failIfStillProcessing(job.getId(), queryId)) {
+                    log.warn("[RAG-SWEEP] stale job force-failed queryId={} responseId={}", queryId, job.getId());
+                    ragWebSocketController.notifyAnswerReady(userEmail, queryId);
+                }
+            } catch (Exception e) {
+                log.error("[RAG-SWEEP] stale job 처리 중 예외 발생, 다음 job으로 계속 진행 responseId={}",
+                    job.getId(), e);
             }
         }
     }

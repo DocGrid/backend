@@ -160,12 +160,32 @@ class RagFacadeTest {
 
         SearchResult searchResult = deepStubSearchResult(100L, 10L, "청크 내용", 12, "인사규정", new BigDecimal("0.9"));
         given(searchResultRepository.findByQuery_IdOrderByRankNo(QUERY_ID)).willReturn(List.of(searchResult));
+        given(ragResponseCommandService.completeSuccess(eq(job), any())).willReturn(true);
 
-        ragFacade.processJob(JOB_ID);
+        boolean completed = ragFacade.processJob(JOB_ID);
 
+        assertThat(completed).isTrue();
         then(ragResponseCommandService).should(times(1)).completeSuccess(eq(job), any());
         then(responseCitationCommandService).should(times(1)).saveAll(eq(job), any(), eq(List.of(searchResult)));
         then(ragResponseCommandService).should(never()).completeFailed(any(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("processJob 경합(#288): completeSuccess가 false를 반환하면(스위퍼가 이미 확정함) citation을 저장하지 않고 false를 반환한다")
+    void processJob_completeSuccessLosesRace_skipsCitationsAndReturnsFalse() {
+        SearchQuery queryRef = mock(SearchQuery.class);
+        given(queryRef.getId()).willReturn(QUERY_ID);
+        RagResponse job = RagResponse.builder().query(queryRef).promptText("조립된 프롬프트").status(ResultStatus.PROCESSING).build();
+        given(ragResponseRepository.findById(JOB_ID)).willReturn(Optional.of(job));
+
+        OllamaGenerateResult ollamaResult = new OllamaGenerateResult("qwen2.5:7b", "연차는 15일입니다.", 100, 20, 900);
+        given(ollamaClient.generate("조립된 프롬프트")).willReturn(ollamaResult);
+        given(ragResponseCommandService.completeSuccess(eq(job), any())).willReturn(false);
+
+        boolean completed = ragFacade.processJob(JOB_ID);
+
+        assertThat(completed).isFalse();
+        then(responseCitationCommandService).should(never()).saveAll(any(), any(), any());
     }
 
     @Test
@@ -181,13 +201,31 @@ class RagFacadeTest {
 
         SearchResult searchResult = deepStubSearchResult(100L, 10L, "청크 내용", 12, "인사규정", new BigDecimal("0.9"));
         given(searchResultRepository.findByQuery_IdOrderByRankNo(QUERY_ID)).willReturn(List.of(searchResult));
+        given(ragResponseCommandService.completeFailed(eq(job), anyString(), anyString())).willReturn(true);
 
-        ragFacade.processJob(JOB_ID);
+        boolean completed = ragFacade.processJob(JOB_ID);
 
+        assertThat(completed).isTrue();
         then(ragResponseCommandService).should(times(1)).completeFailed(
             eq(job), argThatFallbackContains("AI 답변 생성이 지연", "청크 내용", "인사규정"), anyString()
         );
         then(responseCitationCommandService).should(never()).saveAll(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("processJob 경합(#288): Ollama 실패 시에도 completeFailed가 false면(스위퍼가 이미 확정함) processJob도 false를 반환한다")
+    void processJob_completeFailedLosesRace_returnsFalse() {
+        SearchQuery queryRef = mock(SearchQuery.class);
+        given(queryRef.getId()).willReturn(QUERY_ID);
+        RagResponse job = RagResponse.builder().query(queryRef).promptText("조립된 프롬프트").status(ResultStatus.PROCESSING).build();
+        given(ragResponseRepository.findById(JOB_ID)).willReturn(Optional.of(job));
+        given(ollamaClient.generate("조립된 프롬프트"))
+            .willThrow(new DocGridException(ErrorCode.RAG_SERVICE_UNAVAILABLE));
+        given(ragResponseCommandService.completeFailed(eq(job), anyString(), anyString())).willReturn(false);
+
+        boolean completed = ragFacade.processJob(JOB_ID);
+
+        assertThat(completed).isFalse();
     }
 
     @Test
@@ -203,6 +241,7 @@ class RagFacadeTest {
         given(ollamaClient.generate("조립된 프롬프트")).willReturn(ollamaResult);
         SearchResult searchResult = deepStubSearchResult(100L, 10L, "청크 내용", 12, "인사규정", new BigDecimal("0.9"));
         given(searchResultRepository.findByQuery_IdOrderByRankNo(QUERY_ID)).willReturn(List.of(searchResult));
+        given(ragResponseCommandService.completeSuccess(eq(job), any())).willReturn(true);
 
         ragFacade.processJob(JOB_ID);
 
@@ -224,6 +263,7 @@ class RagFacadeTest {
         given(ollamaClient.generate("조립된 프롬프트")).willReturn(ollamaResult);
         SearchResult searchResult = deepStubSearchResult(100L, 10L, "청크 내용", 12, "디렉토리 명령어", new BigDecimal("0.9"));
         given(searchResultRepository.findByQuery_IdOrderByRankNo(QUERY_ID)).willReturn(List.of(searchResult));
+        given(ragResponseCommandService.completeSuccess(eq(job), any())).willReturn(true);
 
         ragFacade.processJob(JOB_ID);
 

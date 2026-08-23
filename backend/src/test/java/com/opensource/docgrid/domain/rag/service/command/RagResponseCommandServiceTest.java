@@ -2,6 +2,7 @@ package com.opensource.docgrid.domain.rag.service.command;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.times;
@@ -50,35 +51,57 @@ class RagResponseCommandServiceTest {
     }
 
     @Test
-    @DisplayName("completeSuccess: PROCESSING row를 SUCCESS로 채운다(dirty checking, save 재호출 없음)")
-    void completeSuccess_fillsProcessingRowWithSuccessStatus() {
+    @DisplayName("completeSuccess: 조건부 UPDATE(completeSuccessIfProcessing)로 확정을 요청하고, 반영되면 true를 반환한다")
+    void completeSuccess_requestsConditionalUpdateAndReturnsTrueWhenApplied() {
         RagResponse pending = RagResponse.builder().status(ResultStatus.PROCESSING).promptText("조립된 프롬프트").build();
         OllamaGenerateResult result = new OllamaGenerateResult(
             "qwen2.5:7b", "연차는 입사 1년 기준 15일 부여됩니다.", 120, 45, 1800
         );
+        given(ragResponseRepository.completeSuccessIfProcessing(
+            eq(pending.getId()), eq("연차는 입사 1년 기준 15일 부여됩니다."), eq("qwen2.5:7b"), eq(120), eq(45), eq(1800)
+        )).willReturn(1);
 
-        ragResponseCommandService.completeSuccess(pending, result);
+        boolean completed = ragResponseCommandService.completeSuccess(pending, result);
 
-        assertThat(pending.getStatus()).isEqualTo(ResultStatus.SUCCESS);
-        assertThat(pending.getAnswerText()).isEqualTo("연차는 입사 1년 기준 15일 부여됩니다.");
-        assertThat(pending.getLlmModelName()).isEqualTo("qwen2.5:7b");
-        assertThat(pending.getInputTokenCount()).isEqualTo(120);
-        assertThat(pending.getOutputTokenCount()).isEqualTo(45);
-        assertThat(pending.getLatencyMs()).isEqualTo(1800);
-        then(ragResponseRepository).shouldHaveNoInteractions();
+        assertThat(completed).isTrue();
     }
 
     @Test
-    @DisplayName("completeFailed: PROCESSING row를 FAILED로 채우되 답변에는 fallback 텍스트를 남긴다")
-    void completeFailed_fillsProcessingRowWithFailedStatusAndFallbackText() {
+    @DisplayName("completeSuccess: 조건부 UPDATE가 영향받은 행 0건이면(#288, 스위퍼가 이미 확정함) false를 반환한다")
+    void completeSuccess_conditionalUpdateAppliesToNoRows_returnsFalse() {
         RagResponse pending = RagResponse.builder().status(ResultStatus.PROCESSING).promptText("조립된 프롬프트").build();
+        OllamaGenerateResult result = new OllamaGenerateResult("qwen2.5:7b", "답변", 10, 5, 100);
+        given(ragResponseRepository.completeSuccessIfProcessing(any(), any(), any(), any(), any(), any()))
+            .willReturn(0);
 
-        ragResponseCommandService.completeFailed(pending, "extractive fallback 텍스트", "Ollama 서버 연결 실패");
+        boolean completed = ragResponseCommandService.completeSuccess(pending, result);
 
-        assertThat(pending.getStatus()).isEqualTo(ResultStatus.FAILED);
-        assertThat(pending.getAnswerText()).isEqualTo("extractive fallback 텍스트");
-        assertThat(pending.getErrorMessage()).isEqualTo("Ollama 서버 연결 실패");
-        then(ragResponseRepository).shouldHaveNoInteractions();
+        assertThat(completed).isFalse();
+    }
+
+    @Test
+    @DisplayName("completeFailed: 조건부 UPDATE(forceFailIfProcessing)로 확정을 요청하고, 반영되면 true를 반환한다")
+    void completeFailed_requestsConditionalUpdateAndReturnsTrueWhenApplied() {
+        RagResponse pending = RagResponse.builder().status(ResultStatus.PROCESSING).promptText("조립된 프롬프트").build();
+        given(ragResponseRepository.forceFailIfProcessing(
+            eq(pending.getId()), eq("extractive fallback 텍스트"), eq("Ollama 서버 연결 실패")
+        )).willReturn(1);
+
+        boolean completed = ragResponseCommandService.completeFailed(
+            pending, "extractive fallback 텍스트", "Ollama 서버 연결 실패");
+
+        assertThat(completed).isTrue();
+    }
+
+    @Test
+    @DisplayName("completeFailed: 조건부 UPDATE가 영향받은 행 0건이면(#288, 스위퍼가 이미 확정함) false를 반환한다")
+    void completeFailed_conditionalUpdateAppliesToNoRows_returnsFalse() {
+        RagResponse pending = RagResponse.builder().status(ResultStatus.PROCESSING).promptText("조립된 프롬프트").build();
+        given(ragResponseRepository.forceFailIfProcessing(any(), any(), any())).willReturn(0);
+
+        boolean completed = ragResponseCommandService.completeFailed(pending, "fallback", "error");
+
+        assertThat(completed).isFalse();
     }
 
     @Test

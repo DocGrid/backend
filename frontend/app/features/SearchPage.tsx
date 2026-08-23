@@ -91,6 +91,9 @@ export function SearchPage() {
 
   // 대기가 길어지고 있다는 걸 사용자에게 알려주는 용도일 뿐, 실제 재조회/타임아웃 로직과는
   // 무관하다 — 답변이 오면(awaitingAnswer가 false가 되면) 자동으로 꺼진다.
+  // deps에 result?.queryId도 넣는다 — 이전 검색도 PROCESSING, 새 검색도 PROCESSING이면
+  // awaitingAnswer 값 자체는 안 바뀌어서 queryId 없이는 이 effect가 재실행되지 않고, 이전
+  // 검색의 타이머/longWait 상태가 새 검색에 그대로 이어져 버린다.
   const [longWait, setLongWait] = useState(false);
   useEffect(() => {
     if (!awaitingAnswer) return;
@@ -99,7 +102,7 @@ export function SearchPage() {
       window.clearTimeout(timer);
       setLongWait(false);
     };
-  }, [awaitingAnswer]);
+  }, [awaitingAnswer, result?.queryId]);
 
   async function search(searchText = query) {
     const trimmed = searchText.trim();

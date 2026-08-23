@@ -62,6 +62,10 @@ public class RagFacade {
      *                                지시한다(#65 INSTRUCTION 참고). 검색은 됐지만(candidates 존재)
      *                                LLM이 무관하다고 판단한 경우, 화면에 근거 문서를 같이 보여주면
      *                                안내 문구와 모순돼 보인다.
+     * TIMEOUT_ERROR_MESSAGE        — RagJobTimeoutSweeper가 너무 오래 PROCESSING으로 남은 job을
+     *                                강제 종료할 때 error_message에 남기는 문구(#286). Ollama
+     *                                예외 메시지와 구분해, 나중에 로그/DB로 "진짜 실패"와 "큐
+     *                                적체로 인한 강제 종료"를 구분할 수 있게 한다.
      */
     private static final String LLM_FALLBACK_PREFIX = "AI 답변 생성이 지연되고 있습니다. "
         + "가장 관련도 높은 문서에서 다음 내용을 찾았습니다:\n\n";
@@ -69,6 +73,8 @@ public class RagFacade {
     private static final int FALLBACK_EXCERPT_MAX_CODE_POINTS = 300;
     private static final int MAX_PROMPT_CANDIDATES = 3;
     private static final String NO_RELEVANT_DOC_PHRASE = "관련 문서를 찾지 못했습니다";
+    private static final String TIMEOUT_ERROR_MESSAGE =
+        "PROCESSING 상태 유지 시간이 임계값을 초과해 강제 종료됨(RagJobTimeoutSweeper)";
 
     private final PromptBuilder promptBuilder;
     private final OllamaClient ollamaClient;
@@ -178,6 +184,24 @@ public class RagFacade {
     public void markUnexpectedFailure(Long jobId, String errorMessage) {
         ragResponseRepository.findById(jobId)
             .ifPresent(job -> ragResponseCommandService.completeFailed(job, UNEXPECTED_FAILURE_ANSWER_TEXT, errorMessage));
+    }
+
+    /**
+     * RagJobTimeoutSweeper가 너무 오래 PROCESSING으로 남은 job을 발견했을 때 호출한다(#286).
+     * LLM 호출 실패 fallback과 동일하게 검색 1등 후보를 인용한 답으로 채우되, 실제 종료는
+     * {@link RagResponseRepository#forceFailIfProcessing}의 조건부 UPDATE로만 한다 — 그 사이
+     * RagJobWorker가 이미 이 job을 정상 완료했다면 영향받은 행이 0건이라 덮어쓰지 않는다.
+     *
+     * @return 실제로 이 호출로 FAILED 전환이 일어났으면 true, 이미 다른 트랜잭션에서 끝나
+     *         아무 일도 하지 않았으면 false.
+     */
+    public boolean failIfStillProcessing(Long jobId, Long queryId) {
+        List<VectorSearchCandidate> candidates = loadCandidates(queryId);
+        String fallbackAnswer = candidates.isEmpty()
+            ? UNEXPECTED_FAILURE_ANSWER_TEXT
+            : buildExtractiveFallbackAnswer(candidates);
+        int updated = ragResponseRepository.forceFailIfProcessing(jobId, fallbackAnswer, TIMEOUT_ERROR_MESSAGE);
+        return updated > 0;
     }
 
     /**

@@ -15,9 +15,10 @@ import lombok.RequiredArgsConstructor;
  * RAG 최종 답변 저장 서비스 (F-RAG-03).
  *
  * <p>비동기 Job 큐 전환(#218) 이후에는 검색 직후 PROCESSING row를 먼저 저장해두고(createPending),
- * Worker가 LLM 생성을 마친 뒤 completeSuccess/completeFailed로 같은 row를 채운다(내부적으로
- * RagResponse 엔티티의 markSuccess/markFailed를 호출) — SearchQuery의 PROCESSING 선저장 패턴과
- * 동일해졌다.
+ * Worker가 LLM 생성을 마친 뒤 completeSuccess/completeFailed로 같은 row를 채운다 — SearchQuery의
+ * PROCESSING 선저장 패턴과 동일해졌다. 이 둘은 RagJobTimeoutSweeper와의 경합(#288) 때문에
+ * 엔티티 dirty checking이 아니라 {@code RagResponseRepository}의 조건부 UPDATE(WHERE
+ * status=PROCESSING)로 직접 확정하고, 실제로 확정이 일어났는지를 boolean으로 반환한다.
  */
 @Transactional
 @Service
@@ -60,27 +61,46 @@ public class RagResponseCommandService {
 
     /**
      * Worker가 LLM 생성에 성공했을 때, createPending()으로 미리 저장해둔 row를 SUCCESS로
-     * 채운다. ragResponse는 이미 영속 상태라 save()를 다시 부르지 않아도 트랜잭션 커밋 시점에
-     * 더티체킹으로 자동 반영된다.
+     * 채운다.
+     *
+     * <p>엔티티를 불러와 마크하고 dirty checking에 맡기는 대신, {@link
+     * RagResponseRepository#completeSuccessIfProcessing}(조건부 UPDATE, {@code WHERE
+     * status = PROCESSING})으로 직접 확정한다 — RagJobTimeoutSweeper가 이 job을 먼저 FAILED로
+     * 강제 종료했다면, Worker의 이 뒤늦은 성공 처리가 그 결과를 조건 없이 덮어써버리는 경합
+     * (#288)을 막기 위함이다. 영향받은 행이 0건이면(=스위퍼가 먼저 확정함) {@code false}를
+     * 반환하고, 호출자(RagFacade.processJob)는 이 경우 citation 저장도 건너뛴다 — 이미 아무도
+     * 안 볼 결과이기 때문이다.
+     *
+     * @return 실제로 이 호출로 SUCCESS 확정이 일어났으면 true, 이미 다른 경로(스위퍼)가
+     *         먼저 끝내 아무 일도 하지 않았으면 false.
      */
-    public void completeSuccess(RagResponse ragResponse, OllamaGenerateResult result) {
-        ragResponse.markSuccess(
-            result.answerText(), result.model(), result.inputTokenCount(), result.outputTokenCount(),
-            result.latencyMs()
+    public boolean completeSuccess(RagResponse ragResponse, OllamaGenerateResult result) {
+        int updated = ragResponseRepository.completeSuccessIfProcessing(
+            ragResponse.getId(), result.answerText(), result.model(),
+            result.inputTokenCount(), result.outputTokenCount(), result.latencyMs()
         );
+        return updated > 0;
     }
 
     /**
      * Worker가 LLM 생성에 실패했을 때, 빈손 대신 fallbackAnswerText(대개 extractive fallback)를
      * 채우고 status만 FAILED로 남긴다.
      *
+     * <p>{@link RagResponseRepository#forceFailIfProcessing}(조건부 UPDATE)을
+     * RagJobTimeoutSweeper와 공유해서 쓴다 — 이유는 {@link #completeSuccess}와 동일하다.
+     *
      * <p>검색 도메인의 SearchQueryCommandService.markFailed()와 달리 REQUIRES_NEW가 없다 —
      * 이 메서드를 부르는 RagFacade.processJob()의 catch 블록은 예외를 다시 던지지 않고 그대로
      * return하므로, 이 메서드가 실행되는 트랜잭션 자체가 롤백될 일이 없다. 재전파해서 바깥
      * 트랜잭션을 일부러 굴리는 검색 쪽 구조와 달리, 애초에 롤백될 트랜잭션이 없어 REQUIRES_NEW로
      * 실패 기록을 따로 지킬 필요 자체가 없다.
+     *
+     * @return 실제로 이 호출로 FAILED 확정이 일어났으면 true, 이미 다른 경로(스위퍼)가
+     *         먼저 끝내 아무 일도 하지 않았으면 false.
      */
-    public void completeFailed(RagResponse ragResponse, String fallbackAnswerText, String errorMessage) {
-        ragResponse.markFailed(fallbackAnswerText, errorMessage);
+    public boolean completeFailed(RagResponse ragResponse, String fallbackAnswerText, String errorMessage) {
+        int updated = ragResponseRepository.forceFailIfProcessing(
+            ragResponse.getId(), fallbackAnswerText, errorMessage);
+        return updated > 0;
     }
 }

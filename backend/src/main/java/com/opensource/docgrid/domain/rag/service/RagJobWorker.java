@@ -46,6 +46,11 @@ public class RagJobWorker {
      * 이미 올바르게 반영된 결과를 덮어쓰지 않도록 조용히 넘어간다(알림도 안 보낸다 — 그건
      * 먼저 처리한 쪽의 몫). ③그 외 예상 못한 예외 — FAILED로 강제 확정한 뒤 알림까지 보낸다
      * (실패했어도 화면이 영원히 로딩중으로 안 남도록).
+     *
+     * <p>①/③ 모두 알림은 {@code processJob}/{@code markUnexpectedFailure}가 반환하는
+     * boolean을 확인한 뒤에만 보낸다 — RagJobTimeoutSweeper가 이 job을 이미 먼저 FAILED로
+     * 확정해뒀다면(#288) 두 메서드 다 실제로는 아무것도 안 바꾸고 false를 반환하는데, 이 경우
+     * 스위퍼가 이미 보낸 알림 외에 Worker가 중복으로 또 보낼 이유가 없다.
      */
     @Scheduled(fixedDelayString = "${rag.worker.polling-interval:1s}")
     public void processNext() {
@@ -57,14 +62,17 @@ public class RagJobWorker {
         RagResponse job = maybeJob.get();
         /*
          * query/query.user는 findFirstByStatusOrderByCreatedAtAsc()의 @EntityGraph로 이미
-         * 로딩돼 있어 detached 상태에서 읽어도 안전하다 — 문제는 "쓰기"(markSuccess 등)뿐이라
-         * processJob()에는 id만 넘겨 그 안에서 managed 상태로 다시 조회하게 한다.
+         * 로딩돼 있어 detached 상태에서 읽어도 안전하다 — 완료 처리 자체는 조건부 UPDATE로
+         * 이뤄지므로(#288) 이 job 인스턴스가 detached여도 상관없지만, processJob()이 이
+         * 트랜잭션 시점 기준 최신 상태를 읽도록 id만 넘긴다.
          */
         Long queryId = job.getQuery().getId();
         String userEmail = job.getQuery().getUser().getEmail();
 
         try {
-            ragFacade.processJob(job.getId());
+            if (ragFacade.processJob(job.getId())) {
+                ragWebSocketController.notifyAnswerReady(userEmail, queryId);
+            }
         } catch (OptimisticLockingFailureException e) {
             /*
              * 설계상 Worker는 인스턴스 1개를 전제하지만(클래스 주석 참고), 롤링 배포로 신·구
@@ -74,7 +82,6 @@ public class RagJobWorker {
              * 사고가 난다 — 조용히 다음 폴링으로 넘어간다.
              */
             log.warn("[RAG-WORKER] job이 이미 다른 트랜잭션에서 처리된 것으로 보임(경합) queryId={}", queryId);
-            return;
         } catch (Exception e) {
             /*
              * processJob() 내부에서 Ollama 관련 실패는 이미 DocGridException으로 잡아 fallback
@@ -84,11 +91,9 @@ public class RagJobWorker {
              * 되므로(detached entity 버그와 같은 증상), 반드시 FAILED로 확정한 뒤 넘어간다.
              */
             log.error("[RAG-WORKER] job 처리 중 예상치 못한 예외 queryId={}", queryId, e);
-            ragFacade.markUnexpectedFailure(job.getId(), e.getMessage());
-            ragWebSocketController.notifyAnswerReady(userEmail, queryId);
-            return;
+            if (ragFacade.markUnexpectedFailure(job.getId(), e.getMessage())) {
+                ragWebSocketController.notifyAnswerReady(userEmail, queryId);
+            }
         }
-
-        ragWebSocketController.notifyAnswerReady(userEmail, queryId);
     }
 }

@@ -117,13 +117,19 @@ public class RagFacade {
      *
      * <p>{@code job} 객체가 아니라 {@code jobId}만 받아 이 메서드 자신의 트랜잭션 안에서 다시
      * 조회하는 이유: RagJobWorker가 {@code findFirstByStatusOrderByCreatedAtAsc()}로 꺼낸
-     * job은 그 조회 시점에 트랜잭션이 끝나 detached 상태다. 그 인스턴스를 그대로 받아
-     * markSuccess/markFailed로 값을 바꿔도 이 메서드의 새 트랜잭션에서는 dirty checking이
-     * 감지하지 못해 DB에 반영되지 않는다(영원히 PROCESSING으로 남아 Worker가 같은 job을
-     * 계속 재처리하는 버그로 실제 이어졌었다 — #218). {@code findById(jobId)}로 다시 조회해야
-     * 반드시 managed 상태로 확보된다.
+     * job은 그 조회 시점에 트랜잭션이 끝나 detached 상태다. 원래(#218) 이 detached 인스턴스를
+     * 그대로 받아 필드만 바꾸면 dirty checking이 감지 못해 DB에 반영되지 않는 버그가 있었는데,
+     * 지금은 완료 처리 자체가 dirty checking에 의존하지 않는다({@link
+     * RagResponseCommandService#completeSuccess}/{@link RagResponseCommandService#completeFailed}
+     * 참고, #288) — 그래도 {@code findById(jobId)}로 다시 조회해 이 트랜잭션 시점 기준
+     * 최신 상태(예: {@code promptText})를 읽는다.
+     *
+     * <p>{@code completeSuccess}/{@code completeFailed}는 RagJobTimeoutSweeper가 이미 이
+     * job을 먼저 확정해버렸으면 {@code false}를 반환한다(#288) — 이 경우 citation 저장을
+     * 건너뛰고 {@code false}를 그대로 반환해, 호출자(RagJobWorker)가 중복 알림을 보내지
+     * 않게 한다.
      */
-    public void processJob(Long jobId) {
+    public boolean processJob(Long jobId) {
         RagResponse job = ragResponseRepository.findById(jobId)
             .orElseThrow(() -> new DocGridException(ErrorCode.RAG_ANSWER_NOT_FOUND));
         Long queryId = job.getQuery().getId();
@@ -138,9 +144,9 @@ public class RagFacade {
             List<VectorSearchCandidate> candidates = loadCandidates(queryId);
             String fallbackAnswer = candidates.isEmpty() ? e.getErrorCode().getMessage()
                 : buildExtractiveFallbackAnswer(candidates);
-            ragResponseCommandService.completeFailed(job, fallbackAnswer, e.getMessage());
+            boolean completed = ragResponseCommandService.completeFailed(job, fallbackAnswer, e.getMessage());
             log.warn("[RAG] fallback queryId={} errorCode={}", queryId, e.getErrorCode().getCode());
-            return;
+            return completed;
         }
 
         // LLM이 무관하다고 판단해 안내 문구로만 답했으면, 근거 문서를 같이 보여주지 않는다. 단, 7B
@@ -163,15 +169,23 @@ public class RagFacade {
             }
         }
 
-        ragResponseCommandService.completeSuccess(job, new OllamaGenerateResult(
+        boolean completed = ragResponseCommandService.completeSuccess(job, new OllamaGenerateResult(
             result.model(), answerText, result.inputTokenCount(), result.outputTokenCount(), result.latencyMs()
         ));
+        if (!completed) {
+            // RagJobTimeoutSweeper가 이 job을 이미 FAILED로 강제 종료한 뒤라는 뜻이다 — 방금
+            // 만든 답변은 이미 아무도 안 볼 결과라, citation 저장도 하지 않고 그대로 물러난다.
+            log.info("[RAG] job이 이미 timeout으로 종료됨(경합), 완료 결과 반영 안 함 queryId={} responseId={}",
+                queryId, job.getId());
+            return false;
+        }
 
         if (!noRelevant) {
             List<SearchResult> searchResults = searchResultRepository.findByQuery_IdOrderByRankNo(queryId);
             responseCitationCommandService.saveAll(job, candidates, searchResults);
         }
         log.info("[RAG] done queryId={} responseId={} latencyMs={}", queryId, job.getId(), result.latencyMs());
+        return true;
     }
 
     /**
@@ -180,10 +194,15 @@ public class RagFacade {
      * PROCESSING으로 남아, 같은 job을 Worker가 계속 다시 집어 무한 재시도하게 된다 —
      * detached entity 버그(#218)와 증상이 같아진다. {@code ifPresent}로 감싸는 이유는 job이
      * 이미 다른 이유로 없어졌을 수 있는 극단적 상황을 방어하기 위함이다.
+     *
+     * @return 실제로 이 호출로 FAILED 확정이 일어났으면 true. job이 없거나(극단적 상황),
+     *         RagJobTimeoutSweeper가 이미 먼저 확정해뒀으면(#288) false — 호출자
+     *         (RagJobWorker)는 이 경우 WebSocket 알림을 보내지 않는다.
      */
-    public void markUnexpectedFailure(Long jobId, String errorMessage) {
-        ragResponseRepository.findById(jobId)
-            .ifPresent(job -> ragResponseCommandService.completeFailed(job, UNEXPECTED_FAILURE_ANSWER_TEXT, errorMessage));
+    public boolean markUnexpectedFailure(Long jobId, String errorMessage) {
+        return ragResponseRepository.findById(jobId)
+            .map(job -> ragResponseCommandService.completeFailed(job, UNEXPECTED_FAILURE_ANSWER_TEXT, errorMessage))
+            .orElse(false);
     }
 
     /**

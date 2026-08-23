@@ -54,7 +54,7 @@ public class RagResponse extends BaseEntity {
     @JoinColumn(name = "query_id", nullable = false)
     private SearchQuery query;
 
-    // PROCESSING 상태로 처음 저장될 때는 아직 값이 없다 — Worker가 생성을 마치면 markSuccess/markFailed로 채운다.
+    // PROCESSING 상태로 처음 저장될 때는 아직 값이 없다 — Worker가 생성을 마치면 채운다.
     @Column(name = "answer_text", columnDefinition = "TEXT")
     private String answerText;
 
@@ -98,25 +98,6 @@ public class RagResponse extends BaseEntity {
         this.outputTokenCount = outputTokenCount;
         this.latencyMs = latencyMs;
         this.status = status;
-        this.errorMessage = errorMessage;
-    }
-
-    // Worker가 LLM 생성을 마친 뒤 PROCESSING 상태였던 이 row를 SUCCESS로 채운다.
-    public void markSuccess(String answerText, String llmModelName, Integer inputTokenCount,
-                             Integer outputTokenCount, Integer latencyMs) {
-        this.answerText = answerText;
-        this.llmModelName = llmModelName;
-        this.inputTokenCount = inputTokenCount;
-        this.outputTokenCount = outputTokenCount;
-        this.latencyMs = latencyMs;
-        this.status = ResultStatus.SUCCESS;
-    }
-
-    // LLM 호출 실패 시에도 빈손이 아니라 extractive fallback 답변을 채워 넣는다 — status만 FAILED로
-    // 남겨 감사 추적을 위한 실패 이력은 유지한다.
-    public void markFailed(String fallbackAnswerText, String errorMessage) {
-        this.answerText = fallbackAnswerText;
-        this.status = ResultStatus.FAILED;
         this.errorMessage = errorMessage;
     }
 }

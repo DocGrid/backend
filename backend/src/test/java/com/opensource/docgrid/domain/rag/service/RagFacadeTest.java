@@ -171,6 +171,21 @@ class RagFacadeTest {
     }
 
     @Test
+    @DisplayName("processJob 경합(#288): findById 시점에 이미 PROCESSING이 아니면 Ollama 호출 없이 즉시 false를 반환한다")
+    void processJob_alreadyFinalizedBeforeFetch_skipsOllamaCallAndReturnsFalse() {
+        SearchQuery queryRef = mock(SearchQuery.class);
+        RagResponse job = RagResponse.builder().query(queryRef).promptText("조립된 프롬프트").status(ResultStatus.FAILED).build();
+        given(ragResponseRepository.findById(JOB_ID)).willReturn(Optional.of(job));
+
+        boolean completed = ragFacade.processJob(JOB_ID);
+
+        assertThat(completed).isFalse();
+        then(ollamaClient).should(never()).generate(anyString());
+        then(ragResponseCommandService).should(never()).completeSuccess(any(), any());
+        then(ragResponseCommandService).should(never()).completeFailed(any(), anyString(), anyString());
+    }
+
+    @Test
     @DisplayName("processJob 경합(#288): completeSuccess가 false를 반환하면(스위퍼가 이미 확정함) citation을 저장하지 않고 false를 반환한다")
     void processJob_completeSuccessLosesRace_skipsCitationsAndReturnsFalse() {
         SearchQuery queryRef = mock(SearchQuery.class);

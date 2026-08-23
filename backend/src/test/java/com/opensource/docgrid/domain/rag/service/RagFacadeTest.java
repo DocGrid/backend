@@ -234,6 +234,47 @@ class RagFacadeTest {
         then(responseCitationCommandService).should(times(1)).saveAll(eq(job), any(), eq(List.of(searchResult)));
     }
 
+    // === failIfStillProcessing() ===
+
+    @Test
+    @DisplayName("failIfStillProcessing: 검색 후보가 있으면 extractive fallback으로 강제 종료하고 true를 반환한다")
+    void failIfStillProcessing_withCandidates_forceFailsWithFallbackAndReturnsTrue() {
+        SearchResult searchResult = deepStubSearchResult(100L, 10L, "청크 내용", 12, "인사규정", new BigDecimal("0.9"));
+        given(searchResultRepository.findByQuery_IdOrderByRankNo(QUERY_ID)).willReturn(List.of(searchResult));
+        given(ragResponseRepository.forceFailIfProcessing(eq(JOB_ID), anyString(), anyString())).willReturn(1);
+
+        boolean result = ragFacade.failIfStillProcessing(JOB_ID, QUERY_ID);
+
+        assertThat(result).isTrue();
+        then(ragResponseRepository).should(times(1)).forceFailIfProcessing(
+            eq(JOB_ID), argThatFallbackContains("AI 답변 생성이 지연", "청크 내용", "인사규정"), anyString()
+        );
+    }
+
+    @Test
+    @DisplayName("failIfStillProcessing: 이미 다른 트랜잭션에서 끝난 job이면(영향받은 행 0건) false를 반환한다")
+    void failIfStillProcessing_alreadyFinishedByWorker_returnsFalse() {
+        SearchResult searchResult = deepStubSearchResult(100L, 10L, "청크 내용", 12, "인사규정", new BigDecimal("0.9"));
+        given(searchResultRepository.findByQuery_IdOrderByRankNo(QUERY_ID)).willReturn(List.of(searchResult));
+        given(ragResponseRepository.forceFailIfProcessing(eq(JOB_ID), anyString(), anyString())).willReturn(0);
+
+        boolean result = ragFacade.failIfStillProcessing(JOB_ID, QUERY_ID);
+
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    @DisplayName("failIfStillProcessing: 검색 후보가 없으면(이론상 도달 불가능한 방어 분기) 고정 안내 문구로 강제 종료한다")
+    void failIfStillProcessing_noCandidates_usesUnexpectedFailureAnswerText() {
+        given(searchResultRepository.findByQuery_IdOrderByRankNo(QUERY_ID)).willReturn(List.of());
+        given(ragResponseRepository.forceFailIfProcessing(eq(JOB_ID), anyString(), anyString())).willReturn(1);
+
+        ragFacade.failIfStillProcessing(JOB_ID, QUERY_ID);
+
+        then(ragResponseRepository).should(times(1))
+            .forceFailIfProcessing(eq(JOB_ID), eq("답변 생성 중 예상치 못한 오류가 발생했습니다."), anyString());
+    }
+
     private SearchResult deepStubSearchResult(
         Long documentId, Long chunkId, String chunkText, Integer pageNo, String documentTitle, BigDecimal similarityScore
     ) {

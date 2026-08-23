@@ -298,6 +298,18 @@ $ npx eslint app/features/SearchPage.tsx
 
 ---
 
+## 코드리뷰 반영 (CodeRabbit)
+
+PR #287에 자동 코드리뷰 코멘트 4건(actionable 3 + nitpick 1)이 달렸고, 각각 다음과 같이
+처리했다.
+
+| # | 코멘트 요지 | 처리 | 근거 |
+|---|---|---|---|
+| 1 | `RagJobTimeoutSweeper.sweep()`: 한 job 처리 중 예외가 나면 `for` 루프 전체가 종료돼 나머지 stale job이 이번 sweep 주기에서 통째로 건너뛰어짐(Minor) | **반영함** | job 하나하나를 `try/catch`로 격리해, 하나가 실패해도 나머지는 계속 처리하도록 수정(별도 커밋) |
+| 2 | `SearchPage.tsx`: `useEffect` deps가 `[awaitingAnswer]`뿐이라, 이전 검색도 PROCESSING·새 검색도 PROCESSING이면 `longWait` 타이머가 재시작되지 않음(Minor) | **반영함** | deps에 `result?.queryId` 추가 — 새 queryId마다 타이머가 리셋되도록 수정(별도 커밋) |
+| 3 | `RagResponseRepository.forceFailIfProcessing()`: 스위퍼→Worker 방향 경합만 막혀있고, 반대 방향(Worker가 스위퍼보다 늦게 완료되는 경우 `completeSuccess`/`completeFailed`가 조건 없이 덮어씀)은 안 막혀 있음(Major, Heavy lift) | **반영 안 함(별도 이슈로 분리)** | 이 기존(#218 시절부터 있던) Worker 정상 완료 경로까지 손대는 리팩터링이라 규모가 커서, `#288`로 분리해 `RagResponseCommandService`/`RagFacade`/`RagJobWorker`를 대칭적으로 수정했다 |
+| 4 | 순차 실행 단계에 번호 주석(`1.`, `2.`, `3.`) 추가 권장(Nitpick) | **반영 안 함** | 가치가 낮다고 판단, 스타일 변경만으로는 실질적 개선이 없음 |
+
 ## 설계 결정 요약
 
 - **새 컬럼/마이그레이션 없음**: "얼마나 오래 PROCESSING이었는지"는 이미 있는

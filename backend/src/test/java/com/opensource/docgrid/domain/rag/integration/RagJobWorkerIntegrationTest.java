@@ -28,10 +28,12 @@ import com.opensource.docgrid.domain.user.repository.UserRepository;
 
 /**
  * RagResponseRepository.findFirstByStatusOrderByCreatedAtAsc()로 꺼낸 job이 detached 상태라,
- * RagFacade.processJob()에 그 인스턴스를 그대로 넘기면 markSuccess/markFailed로 값을 바꿔도
- * dirty checking이 감지하지 못해 DB에 반영되지 않는(=영원히 PROCESSING으로 남는) 실사용 버그가
- * 있었다. 이 테스트는 그 버그를 Mockito 목이 아니라 실제 트랜잭션 경계로 재현·검증한다 — 목
- * 기반 단위 테스트는 "메서드가 호출됐는지"만 보고 "DB에 실제로 반영됐는지"는 증명하지 못한다.
+ * RagFacade.processJob()에 그 인스턴스를 그대로 넘기면(원래 #218 당시 그랬듯) 완료 처리가 DB에
+ * 반영되지 않는(=영원히 PROCESSING으로 남는) 실사용 버그가 있었다. 지금은 완료 처리 자체가
+ * 조건부 UPDATE(#288)라 detached 상태 여부와 무관하게 반영되지만, processJob()이 여전히
+ * jobId만 받아 자기 트랜잭션에서 다시 조회하는 설계를 유지하는지는 이 테스트로 계속 검증한다.
+ * 이 테스트는 이걸 Mockito 목이 아니라 실제 트랜잭션 경계로 재현·검증한다 — 목 기반 단위
+ * 테스트는 "메서드가 호출됐는지"만 보고 "DB에 실제로 반영됐는지"는 증명하지 못한다.
  */
 @Tag("integration")
 @SpringBootTest

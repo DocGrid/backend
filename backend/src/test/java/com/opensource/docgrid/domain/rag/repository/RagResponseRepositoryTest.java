@@ -25,9 +25,10 @@ import com.opensource.docgrid.domain.user.enums.UserStatus;
 import com.opensource.docgrid.domain.user.repository.UserRepository;
 
 /**
- * RagJobTimeoutSweeper(#286)가 의존하는 두 쿼리를 실제 PostgreSQL Repository 계층에서
- * 검증한다. 특히 {@code forceFailIfProcessing()}의 "이미 끝난 job은 절대 덮어쓰지 않는다"는
- * 조건부 UPDATE 정합성은 이번 수정의 핵심 안전장치라 Mockito 단위 테스트로는 증명할 수 없고,
+ * RagJobTimeoutSweeper(#286)/RagJobWorker(#288)가 의존하는 쿼리들을 실제 PostgreSQL
+ * Repository 계층에서 검증한다. {@code forceFailIfProcessing()}/{@code
+ * completeSuccessIfProcessing()} 둘 다 "이미 다른 경로가 먼저 끝낸 job은 절대 덮어쓰지
+ * 않는다"는 조건부 UPDATE 정합성이 핵심인데, 이건 Mockito 단위 테스트로는 증명할 수 없고
  * 실제 SQL이 실행되는 이 계층에서만 검증할 수 있다.
  */
 @DataJpaTest
@@ -66,8 +67,7 @@ class RagResponseRepositoryTest {
     @DisplayName("forceFailIfProcessing: 이미 SUCCESS로 끝난 job은 덮어쓰지 않고 영향받은 행이 0건이다")
     void forceFailIfProcessing_alreadySucceededJob_doesNotOverwriteAndReturnsZero() {
         RagResponse job = saveRagResponse(ResultStatus.PROCESSING);
-        job.markSuccess("실제 답변", "qwen2.5:7b", 100, 20, 900);
-        ragResponseRepository.saveAndFlush(job);
+        ragResponseRepository.completeSuccessIfProcessing(job.getId(), "실제 답변", "qwen2.5:7b", 100, 20, 900);
 
         // RagJobWorker가 이 순간 이미 SUCCESS로 커밋한 상황을 재현한다 — 스위퍼의 강제 종료는
         // 이 시점 이후 실행돼도 status 조건이 안 맞아 아무것도 바꾸면 안 된다.
@@ -77,6 +77,38 @@ class RagResponseRepositoryTest {
         RagResponse reloaded = ragResponseRepository.findById(job.getId()).orElseThrow();
         assertThat(reloaded.getStatus()).isEqualTo(ResultStatus.SUCCESS);
         assertThat(reloaded.getAnswerText()).isEqualTo("실제 답변");
+    }
+
+    @Test
+    @DisplayName("completeSuccessIfProcessing: PROCESSING인 job은 SUCCESS로 확정되고 영향받은 행이 1건이다")
+    void completeSuccessIfProcessing_processingJob_updatesToSuccessAndReturnsOne() {
+        RagResponse job = saveRagResponse(ResultStatus.PROCESSING);
+
+        int updated = ragResponseRepository.completeSuccessIfProcessing(
+            job.getId(), "실제 답변", "qwen2.5:7b", 100, 20, 900);
+
+        assertThat(updated).isEqualTo(1);
+        RagResponse reloaded = ragResponseRepository.findById(job.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(ResultStatus.SUCCESS);
+        assertThat(reloaded.getAnswerText()).isEqualTo("실제 답변");
+        assertThat(reloaded.getLlmModelName()).isEqualTo("qwen2.5:7b");
+    }
+
+    @Test
+    @DisplayName("completeSuccessIfProcessing: 이미 스위퍼가 FAILED로 강제 종료한 job은 덮어쓰지 않고 영향받은 행이 0건이다(#288)")
+    void completeSuccessIfProcessing_alreadyTimedOutJob_doesNotOverwriteAndReturnsZero() {
+        RagResponse job = saveRagResponse(ResultStatus.PROCESSING);
+        ragResponseRepository.forceFailIfProcessing(job.getId(), "fallback 답변", "타임아웃");
+
+        // RagJobTimeoutSweeper가 이 순간 이미 FAILED로 확정한 상황을 재현한다 — Worker가 뒤늦게
+        // 완료 처리를 시도해도(#288) status 조건이 안 맞아 아무것도 바꾸면 안 된다.
+        int updated = ragResponseRepository.completeSuccessIfProcessing(
+            job.getId(), "실제 답변", "qwen2.5:7b", 100, 20, 900);
+
+        assertThat(updated).isEqualTo(0);
+        RagResponse reloaded = ragResponseRepository.findById(job.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(ResultStatus.FAILED);
+        assertThat(reloaded.getAnswerText()).isEqualTo("fallback 답변");
     }
 
     @Test

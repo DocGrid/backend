@@ -64,13 +64,27 @@ class RagJobWorkerTest {
         RagResponse job = deepStubJob(999L, 100L, "user@example.com");
         given(ragResponseRepository.findFirstByStatusOrderByCreatedAtAsc(ResultStatus.PROCESSING))
             .willReturn(Optional.of(job));
+        given(ragFacade.processJob(999L)).willReturn(true);
 
         ragJobWorker.processNext();
 
         // Worker는 detached entity를 그대로 넘기지 않고 id만 넘긴다 — processJob()이 자기 트랜잭션
-        // 안에서 다시 조회해야 markSuccess 등의 변경이 dirty checking으로 실제 반영된다.
+        // 안에서 다시 조회해야 완료 처리(조건부 UPDATE)가 최신 상태 기준으로 실행된다.
         then(ragFacade).should(times(1)).processJob(999L);
         then(ragWebSocketController).should(times(1)).notifyAnswerReady("user@example.com", 100L);
+    }
+
+    @Test
+    @DisplayName("경합(#288): processJob이 false를 반환하면(RagJobTimeoutSweeper가 이미 확정함) 알림을 보내지 않는다")
+    void processNext_processJobLosesRace_doesNotNotify() {
+        RagResponse job = deepStubJob(999L, 100L, "user@example.com");
+        given(ragResponseRepository.findFirstByStatusOrderByCreatedAtAsc(ResultStatus.PROCESSING))
+            .willReturn(Optional.of(job));
+        given(ragFacade.processJob(999L)).willReturn(false);
+
+        ragJobWorker.processNext();
+
+        then(ragWebSocketController).should(never()).notifyAnswerReady(any(), any());
     }
 
     @Test
@@ -80,6 +94,7 @@ class RagJobWorkerTest {
         given(ragResponseRepository.findFirstByStatusOrderByCreatedAtAsc(ResultStatus.PROCESSING))
             .willReturn(Optional.of(job));
         org.mockito.Mockito.doThrow(new RuntimeException("예상 밖 버그")).when(ragFacade).processJob(999L);
+        given(ragFacade.markUnexpectedFailure(999L, "예상 밖 버그")).willReturn(true);
 
         ragJobWorker.processNext();
 
@@ -122,6 +137,7 @@ class RagJobWorkerTest {
         // 여기서는 그 상태 변화를 목으로 흉내낸다.
         given(ragResponseRepository.findFirstByStatusOrderByCreatedAtAsc(ResultStatus.PROCESSING))
             .willReturn(Optional.of(nextJob));
+        given(ragFacade.processJob(2L)).willReturn(true);
         ragJobWorker.processNext();  // 2번째 폴링: nextJob은 정상 처리돼야 한다
 
         then(ragFacade).should(times(1)).processJob(2L);

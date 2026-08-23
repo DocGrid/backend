@@ -52,6 +52,12 @@ public interface RagResponseRepository extends JpaRepository<RagResponse, Long> 
      * UPDATE로 "이미 끝난 job을 덮어쓰는" 경합을 막는다. 반환값(영향받은 행 수)으로 호출자가
      * 실제로 강제 종료가 일어났는지 판단한다.
      *
+     * <p>{@code RagJobTimeoutSweeper}뿐 아니라 {@code RagResponseCommandService.completeFailed()}
+     * (RagJobWorker가 Ollama 호출 실패를 처리하는 정상 경로)도 이 메서드를 그대로 재사용한다 —
+     * 둘 다 "PROCESSING인 job을 FAILED + 문구로 확정한다"는 동일한 SQL이 필요하고, 반대로
+     * RagJobTimeoutSweeper가 먼저 이 job을 확정해버렸다면 RagJobWorker 쪽 시도도 똑같이
+     * 무시돼야 하기 때문이다(#288).
+     *
      * <p>{@code clearAutomatically}: 벌크 UPDATE는 영속성 컨텍스트를 거치지 않고 DB에 직접
      * 실행되므로, 같은 트랜잭션에서 이 job 엔티티를 이미 로딩해둔 상태라면 그 캐시된 인스턴스가
      * 여전히 갱신 전 값을 들고 있다 — 이후 같은 트랜잭션에서 다시 조회해도 DB가 아니라 그 캐시를
@@ -64,4 +70,23 @@ public interface RagResponseRepository extends JpaRepository<RagResponse, Long> 
         + "WHERE r.id = :id AND r.status = com.opensource.docgrid.domain.search.enums.ResultStatus.PROCESSING")
     int forceFailIfProcessing(@Param("id") Long id, @Param("answerText") String answerText,
                                @Param("errorMessage") String errorMessage);
+
+    /**
+     * PROCESSING 상태인 job을 SUCCESS + 생성 결과로 확정한다. {@link #forceFailIfProcessing}과
+     * 대칭되는 목적이다 — RagJobTimeoutSweeper가 이 job을 먼저 FAILED로 강제 종료했다면,
+     * RagJobWorker의 뒤늦은 정상 완료 시도가 그 결과를 조건 없이 덮어써버리는 경합(#288)을
+     * 막는다. {@code WHERE ... AND status = PROCESSING} 조건 덕분에, 스위퍼가 먼저 확정해
+     * 이 UPDATE 시점에 status가 이미 FAILED라면 영향받은 행이 0건이 된다.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE RagResponse r SET r.status = com.opensource.docgrid.domain.search.enums.ResultStatus.SUCCESS, "
+        + "r.answerText = :answerText, r.llmModelName = :llmModelName, "
+        + "r.inputTokenCount = :inputTokenCount, r.outputTokenCount = :outputTokenCount, "
+        + "r.latencyMs = :latencyMs "
+        + "WHERE r.id = :id AND r.status = com.opensource.docgrid.domain.search.enums.ResultStatus.PROCESSING")
+    int completeSuccessIfProcessing(@Param("id") Long id, @Param("answerText") String answerText,
+                                     @Param("llmModelName") String llmModelName,
+                                     @Param("inputTokenCount") Integer inputTokenCount,
+                                     @Param("outputTokenCount") Integer outputTokenCount,
+                                     @Param("latencyMs") Integer latencyMs);
 }

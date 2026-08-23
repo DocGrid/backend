@@ -15,6 +15,7 @@ import com.opensource.docgrid.domain.rag.service.command.ResponseCitationCommand
 import com.opensource.docgrid.domain.search.dto.VectorSearchCandidate;
 import com.opensource.docgrid.domain.search.entity.SearchQuery;
 import com.opensource.docgrid.domain.search.entity.SearchResult;
+import com.opensource.docgrid.domain.search.enums.ResultStatus;
 import com.opensource.docgrid.domain.search.repository.SearchResultRepository;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
@@ -128,10 +129,21 @@ public class RagFacade {
      * job을 먼저 확정해버렸으면 {@code false}를 반환한다(#288) — 이 경우 citation 저장을
      * 건너뛰고 {@code false}를 그대로 반환해, 호출자(RagJobWorker)가 중복 알림을 보내지
      * 않게 한다.
+     *
+     * <p>{@code findById} 직후 status가 이미 PROCESSING이 아니면 곧바로 {@code false}를
+     * 반환하고 Ollama를 아예 호출하지 않는다 — RagJobWorker가 이 job을 집어든 뒤, 여기서
+     * {@code findById}로 다시 읽기 전에 RagJobTimeoutSweeper가 먼저 강제 종료했을 수 있다.
+     * 이 조기 반환이 없으면 이미 끝난 job에도 Ollama 호출(수십 초)을 그대로 낭비하게 되는데,
+     * Worker/GPU가 1개뿐이라 그 시간만큼 뒤에 대기 중인 다른 job까지 더 늦어진다 — 아래
+     * completeSuccess/completeFailed의 조건부 UPDATE는 이 조기 체크 "이후"에 벌어지는 경합(더
+     * 좁은 창)까지 막아주는 최종 방어선이다.
      */
     public boolean processJob(Long jobId) {
         RagResponse job = ragResponseRepository.findById(jobId)
             .orElseThrow(() -> new DocGridException(ErrorCode.RAG_ANSWER_NOT_FOUND));
+        if (job.getStatus() != ResultStatus.PROCESSING) {
+            return false;
+        }
         Long queryId = job.getQuery().getId();
 
         OllamaGenerateResult result;

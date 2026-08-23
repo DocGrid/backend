@@ -54,7 +54,9 @@ public class RagResponse extends BaseEntity {
     @JoinColumn(name = "query_id", nullable = false)
     private SearchQuery query;
 
-    // PROCESSING 상태로 처음 저장될 때는 아직 값이 없다 — Worker가 생성을 마치면 채운다.
+    // PROCESSING 상태로 처음 저장될 때는 아직 값이 없다 — Worker의 정상 완료(completeSuccess/
+    // completeFailed) 또는 RagJobTimeoutSweeper의 강제 종료(forceFailIfProcessing) 중 먼저
+    // 확정되는 쪽이 채운다.
     @Column(name = "answer_text", columnDefinition = "TEXT")
     private String answerText;
 

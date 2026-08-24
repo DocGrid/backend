@@ -265,6 +265,22 @@ class DocGridMcpToolsTest {
     }
 
     @Test
+    @DisplayName("예외 케이스: 문서가 삭제됐으면 DOCUMENT_NOT_FOUND 예외가 발생한다")
+    void getDocumentDetail_throws_when_documentDeleted() {
+        Document document = Document.builder()
+                .title("삭제된 문서")
+                .status(DocumentStatus.DELETED)
+                .build();
+        ReflectionTestUtils.setField(document, "id", 1L);
+        given(permissionQueryService.canReadDocument(USER_ID, 1L)).willReturn(true);
+        given(documentRepository.findByIdWithCurrentVersion(1L)).willReturn(Optional.of(document));
+
+        assertThatThrownBy(() -> docGridMcpTools.getDocumentDetail(1L))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DOCUMENT_NOT_FOUND);
+    }
+
+    @Test
     @DisplayName("예외 케이스: 인증 정보가 없으면 UNAUTHORIZED 예외가 발생한다")
     void getDocumentDetail_throws_when_unauthenticated() {
         SecurityContextHolder.clearContext();

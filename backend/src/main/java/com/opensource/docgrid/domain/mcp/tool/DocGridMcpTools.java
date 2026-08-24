@@ -13,6 +13,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.opensource.docgrid.domain.document.entity.Document;
+import com.opensource.docgrid.domain.document.enums.DocumentStatus;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
 import com.opensource.docgrid.domain.document.service.query.DocumentQueryService;
 import com.opensource.docgrid.domain.mcp.dto.response.DocumentDetailResponse;
@@ -109,6 +110,12 @@ public class DocGridMcpTools {
             // 종료 후 LazyInitializationException이 나므로 JOIN FETCH 쿼리를 사용한다.
             Document document = documentRepository.findByIdWithCurrentVersion(documentId)
                     .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
+
+            // 소프트 삭제된 문서는 존재하지 않는 것과 동일하게 취급한다 — get_indexing_status가
+            // 위임하는 DocumentQueryService.getDocumentStatus()와 동일한 처리.
+            if (document.getStatus() == DocumentStatus.DELETED) {
+                throw new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND);
+            }
 
             Integer currentVersionNo = document.getCurrentVersion() != null
                     ? document.getCurrentVersion().getVersionNo()

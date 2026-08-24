@@ -4,7 +4,7 @@ import java.time.LocalDateTime;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
-// MCP 토큰 조회 응답 DTO
+@Schema(description = "MCP 토큰 정보")
 public record McpAccessTokenResponse(
         @Schema(description = "토큰 ID") Long tokenId,
         @Schema(description = "발급 시각") LocalDateTime createdAt,

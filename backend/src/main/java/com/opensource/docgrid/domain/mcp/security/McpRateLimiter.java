@@ -52,36 +52,32 @@ public class McpRateLimiter {
     /**
      * 사용자·도구 단위 호출 제한을 검사한다. 제한을 초과하면 DocGridException을 던진다.
      *
+     * <p>구간 만료 판단·리셋·카운트 증가를 {@code synchronized(window)} 하나로 묶는 이유(과거
+     * 레이스 컨디션 이력)는 아래 {@code synchronized} 블록 위 주석 참고.
+     *
      * @param userId         사용자 ID
      * @param toolName       도구 이름
      * @param limitPerMinute 분당 호출 제한 횟수
      */
     public void checkLimit(Long userId, String toolName, int limitPerMinute) {
-        // "5:search_documents"처럼 사용자+도구를 하나로 묶은 식별자
         String key = userId + ":" + toolName;
         long now = System.currentTimeMillis();
-        // 이 조합을 처음 보는 거면 지금 시각으로 새 Window를 만들고, 이미 있으면 기존 것을 가져온다
         Window window = windows.computeIfAbsent(key, k -> new Window(now));
 
-        // 리셋 여부 판단과 카운터 증가를 같은 동기화 구역에 묶어야 한다 — 분리하면 "리셋 직전에
-        // 만료 전 카운터로 증가해버리는" 레이스가 생겨 새 윈도우의 첫 요청이 부당하게 막힐 수 있다.
-        //
-        // (과거에는 windowStartMillis/count를 AtomicLong/AtomicInteger로 따로 관리해서
-        //  "만료 판단+시작시각 갱신"과 "카운트 리셋"이 원자적으로 묶여있지 않았다. 그 틈에
-        //  다른 스레드가 끼어들면 "시작시각은 이미 새 걸로 바뀌었는데 카운트는 옛날 값 그대로"인
-        //  상태를 보게 되어, 새 윈도우의 첫 요청이 부당하게 차단되거나 카운트가 유실되는
-        //  레이스 컨디션이 있었다. 지금처럼 synchronized(window) 블록 하나로 전체를 묶으면
-        //  이 틈 자체가 사라진다.)
+        // 만료 판단·리셋·카운트 증가를 synchronized(window) 하나로 묶어야 하는 이유 — 과거엔
+        // windowStartMillis/count를 AtomicLong/AtomicInteger로 따로 관리해서 레이스가 있었다.
+        // 예: 20/20 다 쓴 직후, 윈도우가 막 만료된 순간에 두 요청(21·22번째)이 겹치면:
+        //   1) 스레드A(21번째)가 만료를 감지해 windowStart만 새 시각으로 갱신 — count=0은 아직 실행 전
+        //   2) 그 틈에 스레드B(22번째)가 들어와 "안 만료됨"으로 오판(리셋 스킵) → 옛 count(20)에 증가
+        //      → 21 > 20 → 새 윈도우의 첫 요청인데 부당하게 차단됨
+        //   3) 뒤늦게 스레드A가 count=0 실행 → 스레드B가 방금 남긴 증가(21)까지 통째로 사라짐
+        // synchronized(window)로 판단+리셋+증가를 한 덩어리로 묶으면 이 틈 자체가 사라진다.
         synchronized (window) {
-            // 1. 윈도우가 만료됐으면(=시작된 지 60초 지났으면) 리셋
-            //    → 새 구간 시작: 시작 시각을 지금으로, 카운트를 0으로
             if (now - window.windowStartMillis >= windowMillis) {
                 window.windowStartMillis = now;
                 window.count = 0;
             }
-            // 2. 이번 호출을 카운트에 반영 (리셋됐으면 0→1, 아니면 기존 값에서 +1)
             window.count++;
-            // 3. 이번 구간 안에서 허용치를 넘었는지 판단 — 넘었으면 호출 자체를 막는다
             if (window.count > limitPerMinute) {
                 throw new DocGridException(ErrorCode.RATE_LIMIT_EXCEEDED);
             }

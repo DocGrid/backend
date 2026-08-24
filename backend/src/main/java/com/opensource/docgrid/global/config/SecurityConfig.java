@@ -36,6 +36,14 @@ public class SecurityConfig {
     private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
     private final RestAccessDeniedHandler restAccessDeniedHandler;
 
+    /**
+     * MCP({@code /mcp})와 웹 API({@code /mcp/tokens} 포함)를 포함한 전체 보안 필터 체인을 구성한다.
+     *
+     * <p>인증(신원 확인)은 {@link JwtAuthenticationFilter}(웹 로그인, {@code /mcp/tokens} 등)와
+     * {@link McpApiKeyAuthFilter}(Claude Desktop API 키, {@code /mcp} 전용)로 나뉘며, 각자
+     * {@code shouldNotFilter()}로 자기 담당 경로만 처리한다. 인가(권한 판정)는
+     * {@code authorizeHttpRequests}가 별도로 담당한다.
+     */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -61,13 +69,9 @@ public class SecurityConfig {
                 .authenticationEntryPoint(restAuthenticationEntryPoint)
                 .accessDeniedHandler(restAccessDeniedHandler)
             )
-            /*
-             * UsernamePasswordAuthenticationFilter는 위치 기준점(앵커)일 뿐이며,
-             * 실제 목적은 두 필터(JwtAuthenticationFilter, McpApiKeyAuthFilter)가 최종 인증 판정(authorizeHttpRequests)보다 먼저 실행됨
-             * SecurityContext를 채워두는 것이다. 각자 다른 경로만 처리하고 나머지는 스킵:
-             *   - JwtAuthenticationFilter  → 웹 로그인(JWT), /mcp/tokens 등 일반 API 담당
-             *   - McpApiKeyAuthFilter      → Claude Desktop API 키, /mcp 경로만 담당
-             */
+            // UsernamePasswordAuthenticationFilter는 폼 로그인용이라 실제로는 안 쓰지만, addFilterBefore(A, B.class)가
+            // "A를 B보다 앞자리에 꽂아라"는 뜻이라 위치 기준점(앵커)으로만 재사용한다 — 이 필터 앞에 꽂아야
+            // 두 인증 필터가 authorizeHttpRequests의 최종 인가 판정보다 먼저 실행돼 SecurityContext를 채울 수 있다.
             .addFilterBefore(new JwtAuthenticationFilter(jwtProvider, tokenBlacklistService, roleAuthorityService), UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(new McpApiKeyAuthFilter(mcpAccessTokenCommandService), UsernamePasswordAuthenticationFilter.class);
         return http.build();

@@ -17,6 +17,13 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+/**
+ * MCP API 키 인증에 쓰이는 장기 액세스 토큰.
+ *
+ * <p>원본 토큰 값은 저장하지 않고 SHA-256 해시({@link #tokenHash})만 보관한다 — 비밀번호와
+ * 동일한 원칙이다. {@link com.opensource.docgrid.global.common.entity.BaseEntity}를 상속하지
+ * 않고 {@code createdAt}을 직접 관리하는 이유는 이 테이블에 {@code updated_at} 컬럼이 없어서다.
+ */
 @Getter
 @Entity
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -39,7 +46,6 @@ public class McpAccessToken {
     @Column(name = "token_hash", nullable = false, length = 255)
     private String tokenHash;
 
-    // BaseEntity 미사용 — updated_at 없는 스키마에 맞춰 직접 관리
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

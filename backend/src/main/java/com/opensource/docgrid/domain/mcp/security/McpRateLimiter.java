@@ -1,10 +1,11 @@
 package com.opensource.docgrid.domain.mcp.security;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import org.springframework.stereotype.Component;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
@@ -15,12 +16,21 @@ import com.opensource.docgrid.global.exception.ErrorCode;
  * "고정 윈도우"란: 60초짜리 시간 구간을 하나 정해두고, 그 구간 안에서 호출 횟수를 센다.
  * 60초가 지나면 그 구간은 "만료"되고, 카운트는 0부터 다시 시작한다.
  * (이 제한은 "평생 총 N번"이 아니라 "매 1분마다 N번씩 다시 허용"하는 속도 제한이다.)
+ *
+ * <p>사용자·도구 조합별 카운터({@link Window})는 {@link Cache}(Caffeine)에 보관하며, 마지막
+ * 접근으로부터 일정 시간(기본 2분)이 지나면 자동으로 제거된다(#292) — 한 번이라도 호출된
+ * 조합이 서버 재시작 전까지 메모리에 영구히 쌓이는 것을 막기 위함.
  */
 @Component
 public class McpRateLimiter {
 
     // 하나의 카운트 구간(윈도우) 길이 = 60초 = 60,000ms
     private static final long WINDOW_MILLIS = 60_000;
+
+    // 마지막 접근으로부터 이 시간이 지난 사용자·도구 조합은 캐시에서 자동 제거된다.
+    // rate limit 윈도우(60초)보다 넉넉하게 잡아, 아직 활동 중인 조합이 애매한 타이밍에
+    // 지워지는 일이 없도록 여유를 둔다.
+    private static final long TTL_MILLIS = TimeUnit.MINUTES.toMillis(2);
 
     // "사용자+도구 조합 하나"당 관리해야 하는 카운트 구간 정보를 담는 그릇
     private static final class Window {
@@ -34,19 +44,26 @@ public class McpRateLimiter {
 
     // key = "userId:toolName" (예: "5:search_documents") → 그 조합 전용 Window
     // 사용자별·도구별로 완전히 독립된 카운터를 갖게 됨
-    // ConcurrentHashMap: 여러 요청이 동시에 이 맵을 읽고 쓸 수 있으므로 스레드 안전한 구현체를 사용
-    private final Map<String, Window> windows = new ConcurrentHashMap<>();
+    private final Cache<String, Window> windows;
     private final long windowMillis;
 
     // 운영 환경에서 Spring이 빈을 만들 때 호출되는 생성자 — 윈도우 길이는 항상 60초로 고정
     public McpRateLimiter() {
-        this(WINDOW_MILLIS);
+        this(WINDOW_MILLIS, TTL_MILLIS);
     }
 
     // 테스트에서 윈도우 만료 경계를 짧은 시간 안에 재현할 수 있도록 window 길이를 주입받는다.
     // (실제로 60초를 기다릴 수 없으니, 테스트에서만 예: 100ms처럼 짧은 값을 넣어 빠르게 검증)
     McpRateLimiter(long windowMillis) {
+        this(windowMillis, TTL_MILLIS);
+    }
+
+    // 테스트에서 TTL 자동 제거를 짧은 시간 안에 재현할 수 있도록 TTL도 함께 주입받는다.
+    McpRateLimiter(long windowMillis, long ttlMillis) {
         this.windowMillis = windowMillis;
+        this.windows = Caffeine.newBuilder()
+                .expireAfterAccess(ttlMillis, TimeUnit.MILLISECONDS)
+                .build();
     }
 
     /**
@@ -62,7 +79,7 @@ public class McpRateLimiter {
     public void checkLimit(Long userId, String toolName, int limitPerMinute) {
         String key = userId + ":" + toolName;
         long now = System.currentTimeMillis();
-        Window window = windows.computeIfAbsent(key, k -> new Window(now));
+        Window window = windows.get(key, k -> new Window(now));
 
         // 만료 판단·리셋·카운트 증가를 synchronized(window) 하나로 묶어야 하는 이유 — 과거엔
         // windowStartMillis/count를 AtomicLong/AtomicInteger로 따로 관리해서 레이스가 있었다.
@@ -82,5 +99,13 @@ public class McpRateLimiter {
                 throw new DocGridException(ErrorCode.RATE_LIMIT_EXCEEDED);
             }
         }
+    }
+
+    // 테스트 전용 — TTL 만료로 캐시에서 실제로 제거됐는지 확인한다. cleanUp()은 Caffeine이
+    // 백그라운드 스레드 없이 다음 접근 시점에야 만료를 정리하는 지연 청소 방식이라, 검증
+    // 전에 명시적으로 호출해 즉시 정리를 강제한다.
+    long size() {
+        windows.cleanUp();
+        return windows.estimatedSize();
     }
 }

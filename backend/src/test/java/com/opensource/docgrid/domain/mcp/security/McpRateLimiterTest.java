@@ -150,4 +150,18 @@ class McpRateLimiterTest {
         assertThat(successCount.get()).isEqualTo(limit);
         assertThat(rejectedCount.get()).isEqualTo(totalCalls - limit);
     }
+
+    @Test
+    @DisplayName("정상 케이스: TTL이 지나면 사용하지 않은 카운터가 캐시에서 자동 제거된다")
+    void checkLimit_evictsEntry_afterTtlExpires() throws InterruptedException {
+        // TTL을 50ms로 줄여 만료를 짧은 시간 안에 재현한다 (windowMillis는 이 테스트와 무관해 그대로 60초 유지)
+        McpRateLimiter shortTtlLimiter = new McpRateLimiter(60_000, 50);
+
+        shortTtlLimiter.checkLimit(1L, "search_documents", 20);
+        assertThat(shortTtlLimiter.size()).isEqualTo(1);
+
+        Thread.sleep(100);
+
+        assertThat(shortTtlLimiter.size()).isZero();
+    }
 }

@@ -6,6 +6,7 @@ import com.opensource.docgrid.domain.document.enums.DocumentStatus;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+@Schema(description = "MCP 문서 상세 조회 응답")
 public record DocumentDetailResponse(
         @Schema(description = "문서 ID") Long documentId,
         @Schema(description = "문서 제목") String title,

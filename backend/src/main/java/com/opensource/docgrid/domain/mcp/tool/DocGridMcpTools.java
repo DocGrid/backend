@@ -27,19 +27,24 @@ import com.opensource.docgrid.global.exception.ErrorCode;
 
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * MCP 도구 3종({@code search_documents}, {@code get_document_detail}, {@code get_indexing_status})의
+ * 핸들러. 새 비즈니스 로직을 만들지 않고 기존 서비스({@link SearchFacade}, {@link PermissionQueryService},
+ * {@link DocumentQueryService})를 그대로 호출하는 얇은 어댑터다.
+ *
+ * <p>도구 3종 공통 제약:
+ * <ul>
+ *   <li>query 길이 제한: 2000자</li>
+ *   <li>topK 범위: 1~20</li>
+ *   <li>chunkText 길이 제한: 1000자 (검색 결과 반환 시)</li>
+ *   <li>search_documents 호출 제한: 분당 20회</li>
+ *   <li>get_document_detail / get_indexing_status 호출 제한: 분당 30회</li>
+ * </ul>
+ */
 @Slf4j
 @Component
 public class DocGridMcpTools {
 
-    /*
-     전체 MCP 도구 호출에 공통 적용되는 제약 조건
-        1) query 길이 제한: 2000자
-        2) topK 범위 제한: 1~20
-        3) chunkText 길이 제한: 1000자 (검색 결과 반환 시)
-        4) search_documents 호출 제한: 분당 20회
-        5) get_document_detail 호출 제한: 분당 30회
-        6) get_indexing_status 호출 제한: 분당 30회
-     */
     private static final int MAX_QUERY_LENGTH = 2000;
     private static final int MIN_TOP_K = 1;
     private static final int MAX_TOP_K = 20;
@@ -133,27 +138,21 @@ public class DocGridMcpTools {
      * 내부 정보가 클라이언트에 노출되지 않도록 INTERNAL_SERVER_ERROR로 치환한다.
      */
     private String executeTool(String toolName, int limitPerMinute, Function<Long, Object> action) {
-        // 1. McpApiKeyAuthFilter가 SecurityContext에 저장해둔 사용자 식별
         Long userId = currentUserId();
-        // 2. 분당 호출 횟수 제한 확인
         rateLimiter.checkLimit(userId, toolName, limitPerMinute);
 
         try {
-            // 3. 실제 도구 로직 실행
             Object result = action.apply(userId);
-            // 4. JSON으로 직렬화
             return toJson(result);
         } catch (DocGridException e) {
-            // 이미 안전한 메시지를 담고 있으므로 그대로 전파
             throw e;
         } catch (Exception e) {
-            // 예상치 못한 예외는 내부 정보가 노출되지 않도록 표준 메시지로 치환
             log.error("MCP 도구 실행 중 예상하지 못한 오류 toolName={}", toolName, e);
             throw new DocGridException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
     }
 
-    // 검색 결과 chunkText가 너무 길면 잘라서 반환 (MCP 도구 호출 시 JSON 응답 크기 제한)
+    // JSON 응답 크기 제한을 위해 chunkText가 너무 길면 잘라서 반환한다.
     private List<SearchResultItem> truncateChunkText(List<SearchResultItem> items) {
         return items.stream()
                 .map(item -> item.chunkText() != null && item.chunkText().length() > MAX_CHUNK_TEXT_LENGTH
@@ -164,14 +163,12 @@ public class DocGridMcpTools {
                 .toList();
     }
 
-    // MCP 도구 호출 시 documentId는 필수값이므로 null이면 예외를 던진다. )
     private void requireDocumentId(Long documentId) {
         if (documentId == null) {
             throw new DocGridException(ErrorCode.INVALID_PARAMETER, "documentId는 필수입니다.");
         }
     }
 
-    // search_documents 호출 시 query와 topK를 검증한다. query는 null/blank 불가, 길이 제한, topK는 범위 제한.
     private void validateSearchInput(String query, Integer topK) {
         if (query == null || query.isBlank()) {
             throw new DocGridException(ErrorCode.INVALID_PARAMETER, "query는 필수입니다.");
@@ -186,7 +183,7 @@ public class DocGridMcpTools {
         }
     }
 
-    // SecurityContext에서 현재 인증된 사용자의 ID를 가져온다. 인증 정보가 없거나 ID가 Long이 아니면 UNAUTHORIZED 예외를 던진다.
+    // McpApiKeyAuthFilter가 details에 저장해둔 userId를 꺼낸다 — getPrincipal()이 아니라 getDetails().
     private Long currentUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !(authentication.getDetails() instanceof Long userId)) {
@@ -195,7 +192,6 @@ public class DocGridMcpTools {
         return userId;
     }
 
-    // Jackson ObjectMapper를 사용해 객체를 JSON 문자열로 직렬화한다. 실패하면 INTERNAL_SERVER_ERROR 예외를 던진다.
     private String toJson(Object value) {
         try {
             return objectMapper.writeValueAsString(value);

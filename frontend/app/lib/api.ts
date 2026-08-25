@@ -1,5 +1,6 @@
 import type { ApiEnvelope, ApiErrorBody } from "./api-types";
 import { parseContentDispositionFilename } from "./content-disposition";
+import { confirmSessionExpired } from "./file-auth";
 
 export const ACCESS_TOKEN_KEY = "docgrid.access-token";
 export const AUTH_EXPIRED_EVENT = "docgrid:auth-expired";
@@ -104,15 +105,26 @@ async function fetchBackendFile(path: string): Promise<{ blob: Blob; filename: s
   // 1. Fetch the protected file through the same-origin proxy with the DocGrid token.
   const response = await fetch(`/api/backend${path}`, { headers, cache: "no-store" });
   if (response.status === 401) {
-    window.sessionStorage.removeItem(ACCESS_TOKEN_KEY);
-    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+    // 2. Confirm the token against the identity endpoint before a file-only failure clears the whole session.
+    await confirmSessionExpired(
+      async () => {
+        const authHeaders = new Headers({ Accept: "application/json" });
+        if (token) authHeaders.set("Authorization", `Bearer ${token}`);
+        const authResponse = await fetch("/api/backend/auth/me", { headers: authHeaders, cache: "no-store" });
+        return authResponse.status;
+      },
+      () => {
+        window.sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+        window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+      },
+    );
   }
   if (!response.ok) {
     const payload = safeJson(await response.text()) as ApiErrorBody | null;
     throw new ApiError(response.status, payload?.message ?? "원본 파일을 불러오지 못했습니다.", payload?.code);
   }
 
-  // 2. Preserve the MIME type and decode both browser and Spring filename formats.
+  // 3. Preserve the MIME type and decode both browser and Spring filename formats.
   const filename = parseContentDispositionFilename(response.headers.get("content-disposition"));
   return { blob: await response.blob(), filename };
 }

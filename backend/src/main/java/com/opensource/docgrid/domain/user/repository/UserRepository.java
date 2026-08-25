@@ -18,7 +18,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
 
     /**
-     * 관리자 사용자 화면의 검색·부서·상태 필터를 적용하고 부서를 함께 페이지 조회한다.
+     * 사용자 관리와 권한 대상 선택에 필요한 검색·부서·상태 필터를 적용하고 부서를 함께 페이지 조회한다.
      */
     @Query(
             value = """

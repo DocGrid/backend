@@ -3,12 +3,14 @@ package com.opensource.docgrid.domain.permission.controller;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.opensource.docgrid.domain.auth.annotation.CurrentUser;
@@ -16,9 +18,11 @@ import com.opensource.docgrid.domain.permission.dto.request.GrantPermissionReque
 import com.opensource.docgrid.domain.permission.dto.response.CollectionPermissionResponse;
 import com.opensource.docgrid.domain.permission.dto.response.DocumentPermissionResponse;
 import com.opensource.docgrid.domain.permission.dto.response.DocumentPermissionSummaryResponse;
+import com.opensource.docgrid.domain.permission.dto.response.PermissionTargetUserResponse;
 import com.opensource.docgrid.domain.permission.service.command.CollectionPermissionCommandService;
 import com.opensource.docgrid.domain.permission.service.command.DocumentPermissionCommandService;
 import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
+import com.opensource.docgrid.domain.permission.service.query.PermissionTargetUserQueryService;
 import com.opensource.docgrid.global.common.response.ApiResponse;
 import com.opensource.docgrid.global.common.response.ResponseUtils;
 
@@ -26,9 +30,12 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 
 @Tag(name = "Permission", description = "권한 관련 API")
+@Validated
 @RestController
 @RequestMapping("/permissions")
 @RequiredArgsConstructor
@@ -37,6 +44,7 @@ public class PermissionController {
     private final CollectionPermissionCommandService collectionPermissionCommandService;
     private final DocumentPermissionCommandService documentPermissionCommandService;
     private final PermissionQueryService permissionQueryService;
+    private final PermissionTargetUserQueryService permissionTargetUserQueryService;
 
     @Operation(
             summary = "내 문서 권한 확인",
@@ -73,6 +81,32 @@ public class PermissionController {
             @PathVariable Long collectionId,
             @Parameter(hidden = true) @CurrentUser Long userId) {
         return ResponseUtils.ok(permissionQueryService.getCollectionPermissions(userId, collectionId));
+    }
+
+    @Operation(
+            summary = "문서 권한 부여 대상 사용자 검색",
+            description = "문서 ADMIN 권한 보유자가 이름 또는 이메일로 활성 사용자를 검색합니다. " +
+                    "동명이인 구분을 위해 이름·이메일·부서와 내부 사용자 ID를 반환합니다."
+    )
+    @GetMapping("/documents/{documentId}/users")
+    public ResponseEntity<ApiResponse<List<PermissionTargetUserResponse>>> searchDocumentPermissionUsers(
+            @PathVariable Long documentId,
+            @RequestParam @NotBlank @Size(max = 100) String keyword,
+            @Parameter(hidden = true) @CurrentUser Long userId) {
+        return ResponseUtils.ok(permissionTargetUserQueryService.searchForDocument(userId, documentId, keyword));
+    }
+
+    @Operation(
+            summary = "컬렉션 권한 부여 대상 사용자 검색",
+            description = "컬렉션 ADMIN 권한 보유자가 이름 또는 이메일로 활성 사용자를 검색합니다. " +
+                    "동명이인 구분을 위해 이름·이메일·부서와 내부 사용자 ID를 반환합니다."
+    )
+    @GetMapping("/collections/{collectionId}/users")
+    public ResponseEntity<ApiResponse<List<PermissionTargetUserResponse>>> searchCollectionPermissionUsers(
+            @PathVariable Long collectionId,
+            @RequestParam @NotBlank @Size(max = 100) String keyword,
+            @Parameter(hidden = true) @CurrentUser Long userId) {
+        return ResponseUtils.ok(permissionTargetUserQueryService.searchForCollection(userId, collectionId, keyword));
     }
 
     @Operation(

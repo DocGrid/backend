@@ -191,6 +191,14 @@ export type PermissionSummary = {
   sources: string[];
 };
 
+export type PermissionTargetUser = {
+  userId: number;
+  name: string;
+  email: string;
+  departmentId: number | null;
+  departmentName: string | null;
+};
+
 export type PermissionGrant = {
   permissionId: number;
   documentId?: number;

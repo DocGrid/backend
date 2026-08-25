@@ -2,7 +2,9 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest, errorMessage, toQuery } from "../lib/api";
-import type { AdminUser, DashboardSummary, Department, IndexingAttempt, IndexingEvent, IndexingJob, ManualRetryEligibility, PageResponse, RetryAllJobsResult, SyncAdminSummary, SyncEventAdmin, SyncIssueAdmin, UserRoleResponse, Worker } from "../lib/api-types";
+import type { AdminUser, DashboardSummary, Department, IndexingAttempt, IndexingEvent, IndexingJob, ManualRetryEligibility, PageResponse, RetryAllJobsResult, SyncAdminSummary, SyncEventAdmin, SyncIssueAdmin, SyncReconciliationAdmin, UserRoleResponse, Worker } from "../lib/api-types";
+import { formatIndexingDuration, indexingAttemptStatusLabel, indexingEventDescription, indexingEventTitle, indexingEventTone, indexingJobDescription, indexingJobDurationMs, indexingJobResultTitle, indexingJobStatusLabel, indexingJobTone, indexingStatusLabel } from "../lib/indexing-job-view";
+import { parseSyncEvidence, syncEventStatusLabel, syncEventTitle, syncIssueAction, syncIssueSeverityLabel, syncIssueStatusLabel, syncIssueSummary, syncIssueTitle } from "../lib/sync-operations";
 import { useDashboardSocket } from "../lib/useDashboardSocket";
 import { EmptyState, ErrorState, LoadingState, PageHeading, StatusPill, formatDate } from "../components/ui";
 
@@ -34,6 +36,10 @@ export function DashboardPage({ notify }: { notify: (message: string) => void })
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [syncBusyKey, setSyncBusyKey] = useState("");
+  const [selectedSyncIssue, setSelectedSyncIssue] = useState<SyncIssueAdmin | null>(null);
+  const [ignoreTarget, setIgnoreTarget] = useState<SyncIssueAdmin | null>(null);
+  const [ignoreReason, setIgnoreReason] = useState("");
+  const [reconciliationResult, setReconciliationResult] = useState<SyncReconciliationAdmin | null>(null);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -85,75 +91,186 @@ export function DashboardPage({ notify }: { notify: (message: string) => void })
     finally { setBusy(false); }
   }
 
-  async function runSyncCommand(busyKey: string, path: string, successMessage: string, body?: Record<string, unknown>) {
+  async function runSyncCommand(busyKey: string, path: string, successMessage: string, body?: Record<string, unknown>): Promise<boolean> {
     setSyncBusyKey(busyKey);
+    setError("");
     try {
       await apiRequest(path, { method: "POST", ...(body === undefined ? {} : { body }) });
       notify(successMessage);
+      await load();
+      return true;
+    } catch (reason) {
+      setError(errorMessage(reason));
+      return false;
+    }
+    finally { setSyncBusyKey(""); }
+  }
+
+  async function runReconciliation(cursor: number) {
+    setSyncBusyKey("reconcile");
+    setError("");
+    try {
+      // 1. 한 번의 검사가 처리한 범위를 보존해 다음 Cursor를 운영자가 이어서 실행할 수 있게 한다.
+      const result = await apiRequest<SyncReconciliationAdmin>("/admin/sync/reconcile", {
+        method: "POST",
+        body: { mode: "REPAIR", cursor },
+      });
+      setReconciliationResult(result);
+      notify(`${result.scannedCount}개 문서 버전을 검사하고 ${result.detectedCount}개 이상을 찾았습니다.`);
+      // 2. 검사와 안전 복구 요청으로 변경된 요약·Event·Issue를 같은 화면에 즉시 반영한다.
       await load();
     } catch (reason) { setError(errorMessage(reason)); }
     finally { setSyncBusyKey(""); }
   }
 
-  function ignoreSyncIssue(issue: SyncIssueAdmin) {
-    const reason = window.prompt("이 Issue를 자동 조치하지 않는 이유를 입력하세요.");
-    if (!reason?.trim()) return;
-    void runSyncCommand(`ignore-${issue.issueId}`, `/admin/sync/issues/${issue.issueId}/ignore`, `Issue #${issue.issueId}를 감사 사유와 함께 무시했습니다.`, { reason: reason.trim() });
+  function openIgnoreSyncIssue(issue: SyncIssueAdmin) {
+    setIgnoreTarget(issue);
+    setIgnoreReason("");
   }
+
+  async function confirmIgnoreSyncIssue(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!ignoreTarget || !ignoreReason.trim()) return;
+    const succeeded = await runSyncCommand(
+      `ignore-${ignoreTarget.issueId}`,
+      `/admin/sync/issues/${ignoreTarget.issueId}/ignore`,
+      `이상 #${ignoreTarget.issueId}를 사유와 함께 무시 처리했습니다.`,
+      { reason: ignoreReason.trim() },
+    );
+    if (succeeded) {
+      setIgnoreTarget(null);
+      setSelectedSyncIssue(null);
+      setIgnoreReason("");
+    }
+  }
+
+  async function repairSyncIssue(issue: SyncIssueAdmin) {
+    const succeeded = await runSyncCommand(
+      `repair-${issue.issueId}`,
+      `/admin/sync/issues/${issue.issueId}/repair`,
+      `이상 #${issue.issueId}의 재색인 Event를 생성했습니다.`,
+    );
+    if (succeeded) setSelectedSyncIssue(null);
+  }
+
+  const expectedEvidence = selectedSyncIssue ? parseSyncEvidence(selectedSyncIssue.expectedJson) : [];
+  const actualEvidence = selectedSyncIssue ? parseSyncEvidence(selectedSyncIssue.actualJson) : [];
+  const openIssueCount = syncIssues.filter((issue) => issue.status === "OPEN").length;
 
   // vinext serves these operational links as full route requests.
   /* eslint-disable @next/next/no-html-link-for-pages */
   return <section className="content page-view sync-dashboard">
-    <PageHeading kicker="RAGOPS · SYNC CONTROL PLANE" title="운영 현황" description="문서 인덱싱과 Outbox 원장, Vector 정합성을 한 화면에서 확인하세요." actions={<div className="sync-page-actions"><div className={`live-indicator connection-${connection.toLowerCase()}`}><span /> {connection === "LIVE" ? "실시간 연결" : connection === "CONNECTING" ? "연결 중" : "30초 자동 갱신"}</div><button className="secondary-button" disabled={loading} onClick={() => void load()}>새로고침</button><button className="primary-button" disabled={Boolean(syncBusyKey)} onClick={() => void runSyncCommand("reconcile", "/admin/sync/reconcile", "정합성 검사와 안전한 복구 요청을 완료했습니다.", { mode: "REPAIR", cursor: 0 })}>{syncBusyKey === "reconcile" ? "검사 중…" : "정합성 검사"}</button></div>} />
+    <PageHeading kicker="RAGOPS · SYNC CONTROL PLANE" title="운영 현황" description="문서 변경 전달과 검색 데이터 상태를 확인하고 필요한 조치를 실행하세요." actions={<div className="sync-page-actions"><div className={`live-indicator connection-${connection.toLowerCase()}`}><span /> {connection === "LIVE" ? "실시간 연결" : connection === "CONNECTING" ? "연결 중" : "30초 자동 갱신"}</div><button className="secondary-button" disabled={loading} onClick={() => void load()}>새로고침</button><button className="primary-button" disabled={Boolean(syncBusyKey)} onClick={() => void runReconciliation(0)}>{syncBusyKey === "reconcile" ? "검사 중…" : "상태 검사 실행"}</button></div>} />
     {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
     {loading && !summary ? <LoadingState /> : null}
     {summary ? <><div className="metric-grid"><Metric label="전체 문서" value={summary.documents.total} note="soft-delete 제외" /><Metric label="검색 가능" value={summary.documents.searchable} note="INDEXED" tone="success-metric" /><Metric label="인덱싱 대기" value={summary.documents.pendingIndex} note="UPLOADED · INDEXING" /><Metric label="최근 24시간 검색" value={summary.search.recent24hCount} note="search.recent24hCount" /></div><div className="metric-grid job-metrics"><Metric label="대기" value={summary.jobs.pending} note="PENDING" /><Metric label="처리 중" value={summary.jobs.processing} note="PROCESSING" /><div className="metric-card danger-metric"><span>누적 실패</span><b>{summary.jobs.failed.toLocaleString()}</b><button disabled={busy || summary.jobs.failed === 0} onClick={() => void retryAll()}>재처리 가능 Job 요청</button></div><Metric label="평균 처리 시간" value={summary.jobs.avgProcessMs ?? "—"} note="ms · Queue 대기 제외" /><Metric label="정상 Worker" value={`${summary.workers.activeCount} / ${summary.workers.totalCount}`} note="ACTIVE · IDLE" /></div><div className="dashboard-grid"><div className="panel-card"><div className="panel-heading"><div><h2>최근 실패 Job</h2><p>클릭하면 Attempt와 Event를 추적할 수 있습니다.</p></div><a href="/admin/indexing-jobs" target="_top">전체 보기 →</a></div>{failedJobs.length ? <div className="mini-table failed-jobs">{failedJobs.map((job) => <div key={job.jobId}><a href={`/admin/indexing-jobs/${job.jobId}`} target="_top">#{job.jobId}</a><span>{job.documentTitle}</span><code>{job.errorCode ?? "—"}</code><span>{job.retryCount}/{job.maxRetryCount}</span><ManualRetryAction job={job} busy={busy} onRetry={() => void retry(job.jobId)} /></div>)}</div> : <EmptyState symbol="✓" title="실패한 Job이 없습니다" description="현재 재처리할 작업이 없습니다." />}</div><div className="panel-card"><div className="panel-heading"><div><h2>운영 경계</h2><p>대시보드 API가 제공하는 현재 Snapshot</p></div></div><div className="tool-list"><div><code>Documents</code><span>전체, 검색 가능, 인덱싱 대기</span></div><div><code>Jobs</code><span>대기, 처리 중, 누적 실패, 평균 처리 시간</span></div><div><code>Workers</code><span>정상 Worker와 전체 Worker 수</span></div></div></div></div></> : null}
     {syncSummary ? <>
-      <div className="sync-section-heading"><div><span className="page-kicker">TRANSACTIONAL OUTBOX</span><h2>동기화 원장과 정합성</h2></div><p>마지막 갱신 {formatDate(syncSummary.capturedAt)} · 마지막 처리 Event {syncSummary.events.lastProcessedEventId?.slice(0, 8) ?? "—"}</p></div>
-      <div className="metric-grid sync-metrics">
-        <div className="metric-card"><span>Outbox 대기</span><b>{formatMetric(syncSummary.events.pendingCount)}</b><small>최대 지연 {formatAge(syncSummary.events.oldestPendingAgeSeconds)}</small></div>
-        <div className="metric-card"><span>Dispatcher 처리 중</span><b>{formatMetric(syncSummary.events.processingCount)}</b><small>Lease 소유 Event</small></div>
-        <div className={`metric-card ${syncSummary.events.failedCount > 0 ? "danger-metric" : "success-metric"}`}><span>Event 최종 실패</span><b>{formatMetric(syncSummary.events.failedCount)}</b><small>최근 24시간 {formatMetric(syncSummary.events.failedLast24hCount)}</small></div>
-        <div className="metric-card success-metric"><span>24시간 처리 성공률</span><b>{syncSummary.events.successRateLast24h == null ? "—" : `${syncSummary.events.successRateLast24h}%`}</b><small>성공 {formatMetric(syncSummary.events.processedLast24hCount)} · 재시도 {formatMetric(syncSummary.events.retriedLast24hCount)}</small></div>
-        <div className={`metric-card ${syncSummary.issues.openCount > 0 ? "danger-metric" : "success-metric"}`}><span>미해결 정합성 Issue</span><b>{formatMetric(syncSummary.issues.openCount)}</b><small>복구 중 {formatMetric(syncSummary.issues.repairingCount)}</small></div>
-        <div className="metric-card success-metric"><span>24시간 자동 복구</span><b>{formatMetric(syncSummary.issues.autoResolvedLast24hCount)}</b><small>실패 {formatMetric(syncSummary.issues.failedRepairCount)}</small></div>
-        <div className="metric-card"><span>마지막 Reconciliation</span><b className="metric-status">{syncSummary.reconciliation?.status ?? "미실행"}</b><small>{syncSummary.reconciliation ? `${syncSummary.reconciliation.scannedCount}개 검사 · ${syncSummary.reconciliation.detectedCount}개 탐지` : "실행 이력 없음"}</small></div>
-        <div className="metric-card"><span>복구 요청</span><b>{formatMetric(syncSummary.reconciliation?.repairRequestedCount)}</b><small>{syncSummary.reconciliation?.mode ?? "DRY_RUN / REPAIR"}</small></div>
+      <div className="sync-section-heading"><div><span className="page-kicker">DOCUMENT SEARCH PIPELINE</span><h2>문서 변경 전달과 검색 데이터 상태</h2></div><p>마지막 갱신 {formatDate(syncSummary.capturedAt)} · 마지막 처리 Event {syncSummary.events.lastProcessedEventId?.slice(0, 8) ?? "—"}</p></div>
+      <div className="sync-operator-guide" aria-label="운영 순서 안내">
+        <div><b>1</b><span><strong>변경 전달 확인</strong><small>문서 변경이 Worker로 정상 전달되는지 확인합니다.</small></span></div>
+        <div><b>2</b><span><strong>검색 데이터 검사</strong><small>문서 원장과 Chunk·Vector가 일치하는지 검사합니다.</small></span></div>
+        <div><b>3</b><span><strong>근거 확인 후 조치</strong><small>안전 복구만 실행하고 나머지는 원인을 먼저 확인합니다.</small></span></div>
       </div>
+      <div className={`sync-current-action ${(syncSummary.events.failedCount > 0 || syncSummary.issues.openCount > 0) ? "needs-action" : "healthy"}`}>
+        <span>{syncSummary.events.failedCount > 0 ? "!" : syncSummary.issues.openCount > 0 ? "?" : "✓"}</span>
+        <div>
+          <strong>{syncSummary.events.failedCount > 0 ? `먼저 변경 전달 실패 ${syncSummary.events.failedCount}건을 확인하세요.` : syncSummary.issues.openCount > 0 ? `검색 데이터 이상 ${syncSummary.issues.openCount}건의 근거를 확인하세요.` : "지금 바로 조치할 문제가 없습니다."}</strong>
+          <p>{syncSummary.events.failedCount > 0 ? "아래 변경 전달 기록에서 실패 원인을 확인한 뒤 다시 전달할 수 있습니다." : syncSummary.issues.openCount > 0 ? "아래 이상 항목의 상세 보기에서 자동 복구 가능 여부와 다음 조치를 확인할 수 있습니다." : "실시간 연결 또는 30초 자동 갱신으로 상태를 계속 확인합니다."}</p>
+        </div>
+      </div>
+      <div className="metric-grid sync-metrics">
+        <div className="metric-card"><span>변경 전달 대기</span><b>{formatMetric(syncSummary.events.pendingCount)}</b><small>가장 오래 기다린 시간 {formatAge(syncSummary.events.oldestPendingAgeSeconds)}</small></div>
+        <div className="metric-card"><span>변경 전달 중</span><b>{formatMetric(syncSummary.events.processingCount)}</b><small>현재 Worker가 처리 중</small></div>
+        <div className={`metric-card ${syncSummary.events.failedCount > 0 ? "danger-metric" : "success-metric"}`}><span>변경 전달 실패</span><b>{formatMetric(syncSummary.events.failedCount)}</b><small>최근 24시간 {formatMetric(syncSummary.events.failedLast24hCount)}건</small></div>
+        <div className="metric-card success-metric"><span>24시간 전달 성공률</span><b>{syncSummary.events.successRateLast24h == null ? "—" : `${syncSummary.events.successRateLast24h}%`}</b><small>성공 {formatMetric(syncSummary.events.processedLast24hCount)} · 재시도 {formatMetric(syncSummary.events.retriedLast24hCount)}</small></div>
+        <div className={`metric-card ${syncSummary.issues.openCount > 0 ? "danger-metric" : "success-metric"}`}><span>검색 데이터 이상</span><b>{formatMetric(syncSummary.issues.openCount)}</b><small>복구 진행 중 {formatMetric(syncSummary.issues.repairingCount)}</small></div>
+        <div className="metric-card success-metric"><span>24시간 자동 복구</span><b>{formatMetric(syncSummary.issues.autoResolvedLast24hCount)}</b><small>실패 {formatMetric(syncSummary.issues.failedRepairCount)}</small></div>
+        <div className="metric-card"><span>마지막 상태 검사</span><b className="metric-status">{syncSummary.reconciliation?.status === "COMPLETED" ? "완료" : syncSummary.reconciliation?.status === "FAILED" ? "실패" : syncSummary.reconciliation?.status ?? "미실행"}</b><small>{syncSummary.reconciliation ? `${syncSummary.reconciliation.scannedCount}개 확인 · ${syncSummary.reconciliation.detectedCount}개 발견` : "실행 이력 없음"}</small></div>
+        <div className="metric-card"><span>재색인 요청</span><b>{formatMetric(syncSummary.reconciliation?.repairRequestedCount)}</b><small>마지막 검사에서 안전 복구 요청</small></div>
+      </div>
+      {reconciliationResult ? <div className="sync-reconcile-result" role="status">
+        <span className="sync-result-symbol">✓</span>
+        <div><strong>상태 검사 결과</strong><p>{reconciliationResult.scannedCount}개 문서 버전을 확인해 {reconciliationResult.detectedCount}개 이상을 발견했고, {reconciliationResult.repairRequestedCount}개 재색인을 요청했습니다.</p></div>
+        {reconciliationResult.hasMore ? <button className="secondary-button" disabled={Boolean(syncBusyKey)} onClick={() => void runReconciliation(reconciliationResult.endCursor)}>{syncBusyKey === "reconcile" ? "검사 중…" : "다음 묶음 검사"}</button> : <span className="sync-result-complete">전체 범위 확인 완료</span>}
+      </div> : null}
       {(syncSummary.events.failedCount > 0 || syncSummary.issues.failedRepairCount > 0) && <div className="alert-row">
-        {syncSummary.events.failedCount > 0 && <div className="danger-alert">▣ <strong>최종 실패 Sync Event가 {syncSummary.events.failedCount}건 있습니다.</strong> 원인을 확인한 뒤 개별 재시도하세요.</div>}
-        {syncSummary.issues.failedRepairCount > 0 && <div className="warning-alert">⚠ <strong>자동 복구에 실패한 Issue가 {syncSummary.issues.failedRepairCount}건 있습니다.</strong></div>}
+        {syncSummary.events.failedCount > 0 && <div className="danger-alert">▣ <strong>Worker로 전달하지 못한 변경이 {syncSummary.events.failedCount}건 있습니다.</strong> 아래 기록에서 원인을 확인한 뒤 다시 전달하세요.</div>}
+        {syncSummary.issues.failedRepairCount > 0 && <div className="warning-alert">⚠ <strong>자동 복구에 실패한 검색 데이터 이상이 {syncSummary.issues.failedRepairCount}건 있습니다.</strong> 상세 근거와 관련 Event를 확인하세요.</div>}
       </div>}
       <div className="dashboard-grid sync-operations-grid">
         <div className="panel-card">
-          <div className="panel-heading"><div><h2>최근 Sync Event</h2><p>Event ID로 장애 전후 처리 지점을 추적합니다.</p></div><code>GET /admin/sync/events</code></div>
+          <div className="panel-heading"><div><h2>최근 변경 전달 기록</h2><p>문서 변경이 Worker까지 전달됐는지 확인합니다.</p></div><span className="panel-count">최근 {syncEvents.length}건</span></div>
           <div className="mini-table sync-event-table">
-            {syncEvents.length === 0 ? <EmptyState symbol="✓" title="표시할 Event가 없습니다" description="Outbox가 비어 있거나 API 연결을 기다리는 중입니다." /> : syncEvents.map((event) => <div key={event.eventId}>
+            {syncEvents.length === 0 ? <EmptyState symbol="✓" title="표시할 변경 기록이 없습니다" description="전달할 문서 변경이 없거나 기록을 기다리는 중입니다." /> : syncEvents.map((event) => <div key={event.eventId}>
               <code>{event.eventId.slice(0, 8)}</code>
-              <span><strong>{event.eventType}</strong><small>{event.aggregateType} #{event.aggregateId ?? "—"}</small></span>
-              <StatusPill value={event.status} />
-              <span>{event.retryCount} / {event.maxRetryCount}</span>
+              <span><strong>{syncEventTitle(event.eventType)}</strong><small>{event.eventType} · {event.aggregateType} #{event.aggregateId ?? "—"}</small></span>
+              <span className={`sync-readable-status status-${event.status.toLowerCase()}`}><strong>{syncEventStatusLabel(event.status)}</strong><small>{event.status}</small></span>
+              <span className="sync-retry-count"><strong>{event.retryCount} / {event.maxRetryCount}</strong><small>시도 / 최대</small></span>
               <span>{event.lastErrorCode ?? formatDate(event.occurredAt)}</span>
-              {event.status === "FAILED" ? <button className="retry-button" disabled={Boolean(syncBusyKey)} onClick={() => void runSyncCommand(`event-${event.eventId}`, `/admin/sync/events/${event.eventId}/retry`, `${event.eventId.slice(0, 8)} Event를 재시도 대기열에 추가했습니다.`)}>{syncBusyKey === `event-${event.eventId}` ? "처리 중" : "재시도"}</button> : <span />}
+              {event.status === "FAILED" ? <button className="retry-button" disabled={Boolean(syncBusyKey)} onClick={() => void runSyncCommand(`event-${event.eventId}`, `/admin/sync/events/${event.eventId}/retry`, `${event.eventId.slice(0, 8)} 변경을 다시 전달하도록 요청했습니다.`)}>{syncBusyKey === `event-${event.eventId}` ? "요청 중" : "다시 전달"}</button> : <span />}
             </div>)}
           </div>
         </div>
-        <div className="panel-card">
-          <div className="panel-heading"><div><h2>정합성 Issue</h2><p>위험한 변경은 보고만 하고 관리자 판단을 기다립니다.</p></div><code>GET /admin/sync/issues</code></div>
-          <div className="mini-table sync-issue-table">
-            {syncIssues.length === 0 ? <EmptyState symbol="✓" title="열린 Issue가 없습니다" description="최근 검사에서 원장과 Vector 상태가 일치합니다." /> : syncIssues.map((issue) => <div key={issue.issueId}>
-              <span><strong>#{issue.issueId} · {issue.issueType}</strong><small>document {issue.documentId ?? "GLOBAL"} · {formatDate(issue.lastDetectedAt)}</small></span>
-              <StatusPill value={issue.severity} />
-              <StatusPill value={issue.status} />
-              <span className="sync-issue-actions">
-                {issue.status === "OPEN" && issue.repairable && <button className="retry-button" disabled={Boolean(syncBusyKey)} onClick={() => void runSyncCommand(`repair-${issue.issueId}`, `/admin/sync/issues/${issue.issueId}/repair`, `Issue #${issue.issueId} 복구 Event를 생성했습니다.`)}>복구</button>}
-                {issue.status === "OPEN" && <button className="danger-text" disabled={Boolean(syncBusyKey)} onClick={() => ignoreSyncIssue(issue)}>무시</button>}
-              </span>
-            </div>)}
+        <div className="panel-card sync-issue-panel">
+          <div className="panel-heading"><div><h2>검색 데이터 이상</h2><p>문서 원장과 검색용 Chunk·Vector의 차이를 보여줍니다.</p></div><span className={`panel-count ${openIssueCount > 0 ? "danger" : ""}`}>조치 필요 {openIssueCount}건</span></div>
+          <div className="sync-issue-list">
+            {syncIssues.length === 0 ? <EmptyState symbol="✓" title="검색 데이터 이상이 없습니다" description="최근 검사에서 문서 원장과 검색 데이터가 일치합니다." /> : syncIssues.map((issue) => <article className={`sync-issue-card severity-${issue.severity.toLowerCase()}`} key={issue.issueId}>
+              <div className="sync-issue-card-head">
+                <span className="sync-issue-number">#{issue.issueId}</span>
+                <div><strong>{syncIssueTitle(issue.issueType)}</strong><small>{issue.issueType} · 문서 {issue.documentId ?? "전체"} · {formatDate(issue.lastDetectedAt)}</small></div>
+                <span className={`sync-label severity-${issue.severity.toLowerCase()}`}>{syncIssueSeverityLabel(issue.severity)}</span>
+                <span className={`sync-label status-${issue.status.toLowerCase()}`}>{syncIssueStatusLabel(issue.status)}</span>
+              </div>
+              <p className="sync-issue-summary">{syncIssueSummary(issue.issueType)}</p>
+              <div className={`sync-issue-guidance ${issue.repairable ? "repairable" : "manual"}`}>
+                <strong>{issue.repairable ? "안전 복구 가능" : "자동 복구 불가"}</strong>
+                <span>{syncIssueAction(issue)}</span>
+              </div>
+              <div className="sync-issue-card-actions">
+                <button className="secondary-button" onClick={() => setSelectedSyncIssue(issue)}>상세 근거 보기</button>
+                {issue.documentId ? <a className="secondary-button" href={`/documents/${issue.documentId}`} target="_top">문서 상태 보기</a> : null}
+                {issue.status === "OPEN" && issue.repairable ? <button className="primary-button" disabled={Boolean(syncBusyKey)} onClick={() => void repairSyncIssue(issue)}>{syncBusyKey === `repair-${issue.issueId}` ? "요청 중…" : "안전 복구 요청"}</button> : null}
+                {issue.status === "OPEN" ? <button className="danger-text-button" disabled={Boolean(syncBusyKey)} onClick={() => openIgnoreSyncIssue(issue)}>무시 처리</button> : null}
+              </div>
+            </article>)}
           </div>
         </div>
       </div>
     </> : null}
+    {selectedSyncIssue && !ignoreTarget ? <div className="modal-layer" role="presentation">
+      <div className="modal sync-issue-modal" role="dialog" aria-modal="true" aria-labelledby="sync-issue-detail-title">
+        <div className="modal-header"><div><span className="modal-symbol">!</span><div><h2 id="sync-issue-detail-title">{syncIssueTitle(selectedSyncIssue.issueType)}</h2><p>이상 #{selectedSyncIssue.issueId} · {selectedSyncIssue.issueType}</p></div></div><button type="button" aria-label="상세 닫기" onClick={() => setSelectedSyncIssue(null)}>×</button></div>
+        <p className="sync-modal-summary">{syncIssueSummary(selectedSyncIssue.issueType)}</p>
+        <div className="sync-resource-grid">
+          <div><span>문서 ID</span><strong>{selectedSyncIssue.documentId ?? "전체"}</strong></div>
+          <div><span>문서 버전 ID</span><strong>{selectedSyncIssue.documentVersionId ?? "—"}</strong></div>
+          <div><span>Embedding 모델 ID</span><strong>{selectedSyncIssue.embeddingModelId ?? "—"}</strong></div>
+          <div><span>처음 발견</span><strong>{formatDate(selectedSyncIssue.detectedAt)}</strong></div>
+          <div><span>마지막 확인</span><strong>{formatDate(selectedSyncIssue.lastDetectedAt)}</strong></div>
+          <div><span>복구 시도</span><strong>{selectedSyncIssue.repairAttemptCount}회</strong></div>
+        </div>
+        <div className="sync-evidence-grid">
+          <div><h3>정상이어야 하는 값</h3>{expectedEvidence.length ? <dl>{expectedEvidence.map((item) => <div key={item.label}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}</dl> : <p>기대값 정보가 없습니다.</p>}</div>
+          <div><h3>현재 확인된 값</h3>{actualEvidence.length ? <dl>{actualEvidence.map((item) => <div key={item.label}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}</dl> : <p>현재값 정보가 없습니다.</p>}</div>
+        </div>
+        <div className={`sync-modal-guidance ${selectedSyncIssue.repairable ? "repairable" : "manual"}`}><strong>{selectedSyncIssue.repairable ? "이 화면에서 안전 복구할 수 있습니다." : "자동 복구가 안전하지 않습니다."}</strong><p>{syncIssueAction(selectedSyncIssue)}</p></div>
+        <div className="modal-footer">
+          <button type="button" className="secondary-button" onClick={() => setSelectedSyncIssue(null)}>닫기</button>
+          {selectedSyncIssue.documentId ? <a className="secondary-button" href={`/documents/${selectedSyncIssue.documentId}`} target="_top">문서 상태 보기</a> : null}
+          {selectedSyncIssue.status === "OPEN" ? <button type="button" className="danger-text-button" disabled={Boolean(syncBusyKey)} onClick={() => openIgnoreSyncIssue(selectedSyncIssue)}>무시 처리</button> : null}
+          {selectedSyncIssue.status === "OPEN" && selectedSyncIssue.repairable ? <button type="button" className="primary-button" disabled={Boolean(syncBusyKey)} onClick={() => void repairSyncIssue(selectedSyncIssue)}>{syncBusyKey === `repair-${selectedSyncIssue.issueId}` ? "요청 중…" : "안전 복구 요청"}</button> : null}
+        </div>
+      </div>
+    </div> : null}
+    {ignoreTarget ? <div className="modal-layer" role="presentation">
+      <form className="modal compact-modal sync-ignore-modal" role="dialog" aria-modal="true" aria-labelledby="sync-ignore-title" onSubmit={confirmIgnoreSyncIssue}>
+        <div className="modal-header"><div><span className="modal-symbol sync-ignore-symbol">!</span><div><h2 id="sync-ignore-title">이 이상을 무시 처리할까요?</h2><p>#{ignoreTarget.issueId} · {syncIssueTitle(ignoreTarget.issueType)}</p></div></div><button type="button" aria-label="무시 처리 취소" onClick={() => setIgnoreTarget(null)}>×</button></div>
+        <div className="sync-ignore-warning"><strong>데이터는 고쳐지지 않습니다.</strong><p>경고만 ‘관리자 무시’ 상태로 종료되며 자동 조치 대상에서 제외됩니다. 조사 결과와 무시해도 되는 이유를 남겨 주세요.</p></div>
+        <label className="form-field">무시 사유<textarea rows={4} value={ignoreReason} onChange={(event) => setIgnoreReason(event.target.value)} placeholder="예: 이전 모델의 비활성 Vector가 남아 있으나 현재 검색 결과에는 영향이 없음을 확인함" required /></label>
+        <div className="sync-ignore-meta"><span>문서 {ignoreTarget.documentId ?? "전체"}</span><span>마지막 확인 {formatDate(ignoreTarget.lastDetectedAt)}</span></div>
+        <div className="modal-footer"><button type="button" className="secondary-button" onClick={() => setIgnoreTarget(null)}>취소</button><button className="danger-button" disabled={!ignoreReason.trim() || Boolean(syncBusyKey)}>{syncBusyKey === `ignore-${ignoreTarget.issueId}` ? "기록 중…" : "이유를 기록하고 무시"}</button></div>
+      </form>
+    </div> : null}
   </section>;
   /* eslint-enable @next/next/no-html-link-for-pages */
 }
@@ -221,9 +338,91 @@ export function IndexingJobDetailPage({ jobId, notify }: { jobId: number; notify
     finally { setBusy(false); }
   }
 
+  const durationMs = job ? indexingJobDurationMs(job, attempts) : null;
+  const tone = job ? indexingJobTone(job.status) : "neutral";
+  const resultDetail = job?.status === "INDEXED"
+    ? `${formatDate(job.completedAt)}에 검색 가능한 상태로 전환됐습니다.`
+    : job?.status === "FAILED"
+      ? `${formatDate(job.failedAt)}에 실패했습니다. ${job.errorCode ? `오류 코드 ${job.errorCode}` : "상세 이벤트를 확인하세요."}`
+      : job?.status === "PROCESSING"
+        ? `${formatDate(job.startedAt)}부터 ${job.workerName ?? "Worker"}가 처리하고 있습니다.`
+        : job?.status === "PENDING"
+          ? `${formatDate(job.createdAt)}에 생성되어 Worker 배정을 기다리고 있습니다.`
+          : job?.status === "CANCELED"
+            ? "취소된 작업은 다시 실행되지 않습니다."
+            : "현재 작업 상태와 실행 기록을 확인하세요.";
+
   // vinext serves these operational links as full route requests.
-  // eslint-disable-next-line @next/next/no-html-link-for-pages
-  return <section className="content page-view wide-page"><div className="detail-back"><a href="/admin/indexing-jobs" target="_top">← 인덱싱 Job 목록</a><span>jobId {jobId}</span></div><PageHeading kicker="JOB TRACE" title={`Job #${jobId}`} description="실패 원인과 실행 시도를 Event 타임라인으로 추적하세요." actions={job ? <><StatusPill value={job.status} /><ManualRetryAction job={job} busy={busy} className="primary-button" label="이 Job 재처리" onRetry={() => void retry()} /></> : null} />{error ? <ErrorState message={error} onRetry={() => void load()} /> : null}{loading ? <LoadingState /> : null}{job ? <div className="job-detail-grid"><div className="panel-card job-info"><div className="panel-heading"><h2>Job 정보</h2><a href={`/documents/${job.documentId}`} target="_top">문서 보기 →</a></div><dl><div><dt>문서</dt><dd>{job.documentTitle} #{job.documentId}</dd></div><div><dt>버전</dt><dd>v{job.documentVersionNo} · {job.documentVersionStatus}</dd></div><div><dt>모델</dt><dd>{job.embeddingModelName} · {job.embeddingModelVersion}</dd></div><div><dt>priority</dt><dd>{job.priority}</dd></div><div><dt>재시도</dt><dd>{job.retryCount}/{job.maxRetryCount}</dd></div><div><dt>소유 Worker</dt><dd>{job.workerName ?? "—"}</dd></div><div><dt>Lease 만료</dt><dd>{formatDate(job.lockExpiresAt)}</dd></div><div><dt>errorCode</dt><dd><code>{job.errorCode ?? "—"}</code></dd></div></dl></div><div className="panel-card attempts"><div className="panel-heading"><div><h2>실행 시도</h2><p>/attempts</p></div></div>{attempts.length ? <div className="mini-table attempt-table"><div className="table-labels"><span>#</span><span>상태</span><span>WORKER</span><span>소요</span><span>오류 코드</span></div>{attempts.map((attempt) => <div key={attempt.attemptId}><b>{attempt.attemptNo}</b><StatusPill value={attempt.status} /><span>{attempt.workerName ?? `#${attempt.workerId ?? "—"}`}</span><span>{attempt.durationMs ? `${attempt.durationMs.toLocaleString()}ms` : "—"}</span><code>{attempt.errorCode ?? "—"}</code></div>)}</div> : <EmptyState symbol="○" title="Attempt가 없습니다" description="아직 실행 이력이 없습니다." />}</div><div className="panel-card timeline-card"><div className="panel-heading"><h2>이벤트 타임라인</h2><code>/events</code></div>{events.length ? <div className="event-timeline">{events.map((event) => <div className={event.toStatus === "FAILED" ? "danger" : event.toStatus === "INDEXED" ? "success" : "purple"} key={event.eventId}><i /><span><strong>{event.eventType} <small>{formatDate(event.occurredAt)}</small></strong><p>{event.fromStatus ?? "—"} → {event.toStatus ?? "—"}{event.message ? ` · ${event.message}` : ""}</p></span></div>)}</div> : <EmptyState symbol="○" title="Event가 없습니다" description="아직 상태 전이가 없습니다." />}</div></div> : null}</section>;
+  /* eslint-disable @next/next/no-html-link-for-pages */
+  return <section className="content page-view wide-page indexing-job-detail">
+    <div className="detail-back"><a href="/admin/indexing-jobs" target="_top">← 인덱싱 작업 목록</a></div>
+    <PageHeading
+      kicker="INDEXING JOB TRACE"
+      title={`인덱싱 작업 #${jobId}`}
+      description={job ? indexingJobDescription(job) : "문서 인덱싱의 현재 상태와 실행 기록을 확인하세요."}
+      actions={job ? <><span className={`job-page-status ${tone}`}><strong>{indexingJobStatusLabel(job.status)}</strong><small>{job.status}</small></span><ManualRetryAction job={job} busy={busy} className="primary-button" label="이 작업 재처리" onRetry={() => void retry()} /></> : null}
+    />
+    {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+    {loading ? <LoadingState /> : null}
+    {job ? <>
+      <div className={`job-result-summary ${tone}`}>
+        <span className="job-result-symbol">{job.status === "INDEXED" ? "✓" : job.status === "FAILED" ? "!" : job.status === "PROCESSING" ? "…" : "○"}</span>
+        <div className="job-result-copy"><strong>{indexingJobResultTitle(job.status)}</strong><p>{resultDetail}</p></div>
+        <dl>
+          <div><dt>처리 시간</dt><dd>{formatIndexingDuration(durationMs)}</dd></div>
+          <div><dt>실행 시도</dt><dd>{attempts.length}회</dd></div>
+          <div><dt>자동 재시도</dt><dd>{job.retryCount}회</dd></div>
+          <div><dt>담당 Worker</dt><dd>{job.workerName ?? "미배정"}</dd></div>
+        </dl>
+      </div>
+      <div className="job-detail-grid">
+        <div className="panel-card job-info">
+          <div className="panel-heading"><div><h2>작업 정보</h2><p>문서·모델과 처리 시각을 확인합니다.</p></div><a href={`/documents/${job.documentId}`} target="_top">문서 상태 보기 →</a></div>
+          <dl>
+            <div><dt>문서</dt><dd>{job.documentTitle} <small>#{job.documentId}</small></dd></div>
+            <div><dt>문서 버전</dt><dd>v{job.documentVersionNo} · {indexingStatusLabel(job.documentVersionStatus)}</dd></div>
+            <div><dt>Embedding 모델</dt><dd>{job.embeddingModelName} · {job.embeddingModelVersion}</dd></div>
+            <div><dt>우선순위</dt><dd>{job.priority}</dd></div>
+            <div><dt>자동 재시도</dt><dd>{job.retryCount}회 / 최대 {job.maxRetryCount}회</dd></div>
+            <div><dt>담당 Worker</dt><dd>{job.workerName ?? "아직 배정되지 않음"}</dd></div>
+            <div><dt>작업 생성</dt><dd>{formatDate(job.createdAt)}</dd></div>
+            <div><dt>처리 시작</dt><dd>{formatDate(job.startedAt)}</dd></div>
+            {job.status === "PROCESSING" ? <div><dt>작업 점유 만료</dt><dd>{formatDate(job.lockExpiresAt)}</dd></div> : null}
+            {job.status === "PENDING" && job.nextRetryAt ? <div><dt>다음 재시도</dt><dd>{formatDate(job.nextRetryAt)}</dd></div> : null}
+            {job.completedAt ? <div><dt>처리 완료</dt><dd>{formatDate(job.completedAt)}</dd></div> : null}
+            {job.failedAt ? <div><dt>최종 실패</dt><dd>{formatDate(job.failedAt)}</dd></div> : null}
+            <div><dt>최근 오류</dt><dd className={job.errorCode ? "job-error-code" : "job-no-error"}>{job.errorCode ?? "오류 없음"}</dd></div>
+          </dl>
+        </div>
+        <div className="panel-card attempts">
+          <div className="panel-heading"><div><h2>실행 시도</h2><p>{attempts.length ? `${attempts.length}회 실행 기록` : "아직 실행되지 않았습니다."}</p></div></div>
+          {attempts.length ? <div className="mini-table attempt-table">
+            <div className="table-labels"><span>#</span><span>결과</span><span>Worker</span><span>시작 시각</span><span>소요 시간</span><span>오류</span></div>
+            {attempts.map((attempt) => <div key={attempt.attemptId}>
+              <b>{attempt.attemptNo}</b>
+              <span className={`attempt-status status-${attempt.status.toLowerCase()}`}><strong>{indexingAttemptStatusLabel(attempt.status)}</strong><small>{attempt.status}</small></span>
+              <span>{attempt.workerName ?? `Worker #${attempt.workerId ?? "미배정"}`}</span>
+              <span>{formatDate(attempt.startedAt)}</span>
+              <strong>{formatIndexingDuration(attempt.durationMs)}</strong>
+              {attempt.errorCode ? <code className="job-error-code">{attempt.errorCode}</code> : <span className="job-no-error">없음</span>}
+            </div>)}
+          </div> : <EmptyState symbol="○" title="실행 시도가 없습니다" description="Worker가 작업을 시작하면 실행 기록이 여기에 표시됩니다." />}
+        </div>
+        <div className="panel-card timeline-card">
+          <div className="panel-heading"><div><h2>처리 과정</h2><p>최신순 · {events.length}개 이벤트</p></div></div>
+          {events.length ? <div className="event-timeline">{events.map((event) => <div className={indexingEventTone(event.eventType)} key={event.eventId}>
+            <i />
+            <div>
+              <div className="event-timeline-head"><span><strong>{indexingEventTitle(event.eventType)}</strong><code>{event.eventType}</code></span><time>{formatDate(event.occurredAt)}</time></div>
+              <p>{indexingEventDescription(event)}</p>
+              <small className="event-transition"><b>{indexingStatusLabel(event.fromStatus)}</b><span>→</span><b>{indexingStatusLabel(event.toStatus)}</b></small>
+            </div>
+          </div>)}</div> : <EmptyState symbol="○" title="처리 기록이 없습니다" description="상태가 변경되면 처리 과정이 여기에 표시됩니다." />}
+        </div>
+      </div>
+    </> : null}
+  </section>;
+  /* eslint-enable @next/next/no-html-link-for-pages */
 }
 
 export function WorkersPage() {

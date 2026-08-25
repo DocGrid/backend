@@ -97,7 +97,13 @@ class SyncConsistencyInspectorTest {
 
         assertThat(observations)
             .singleElement()
-            .satisfies(observation -> assertThat(observation.repairable()).isFalse());
+            .satisfies(observation -> {
+                assertThat(observation.repairable()).isFalse();
+                assertThat(observation.actualJson()).isEqualTo(
+                    "{\"activeEmbeddingCount\":1,\"currentModelEmbeddingCount\":3,"
+                        + "\"allModelEmbeddingCount\":3}"
+                );
+            });
     }
 
     @Test

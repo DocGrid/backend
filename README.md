@@ -1,391 +1,251 @@
 # DocGrid
 
-DocGrid는 문서 업로드·인덱싱·검색과 웹 인터페이스를 하나의 저장소에서 관리하는 모노레포입니다.
+> 팀의 지식에서 권한을 지키며 근거가 포함된 답을 찾는 오픈소스 문서 검색 워크스페이스
 
-## 저장소 구조
+DocGrid는 조직에 흩어진 PDF·DOCX 문서를 자동으로 인덱싱하고, 사용자가 열람할 수 있는 문서만
+벡터 검색과 RAG 답변에 활용합니다. 문서·컬렉션 관리부터 인용 근거, MCP 연동, 인덱싱 Worker와
+복구 상태 관측까지 하나의 웹 인터페이스에서 제공합니다.
 
-```text
-.
-├── backend/          # Spring Boot API와 임베딩 서버
-├── frontend/         # DocGrid 웹 애플리케이션
-├── docs/             # 설계 문서와 실행된 테스트 결과
-├── docker/           # 로컬 인프라 초기화 파일
-├── scripts/          # 프로젝트 공용 검증·보고 스크립트
-└── docker-compose.yml
+## 주요 기능
+
+- **문서 인덱싱 파이프라인**: PDF·DOCX 원본을 저장하고 본문 Parsing, Chunk 분할, BGE-M3 Batch
+  Embedding, pgvector 저장을 자동으로 처리합니다.
+- **권한 기반 AI 검색**: 사용자·역할·부서와 문서·컬렉션 공개 범위를 검색 전에 적용해 접근 가능한
+  문서만 의미 검색합니다.
+- **근거가 남는 RAG 답변**: Ollama로 답변을 생성하고 사용한 문서와 Chunk를 인용 근거로 함께 저장하고
+  표시합니다.
+- **지식 워크스페이스 관리**: 문서 Version, 원본 미리보기·다운로드, 계층형 컬렉션, 직접 권한 부여·회수를
+  웹에서 관리합니다.
+- **MCP 연동**: 전용 Access Token으로 문서 검색·상세 조회·인덱싱 상태 도구를 제공하고 Rate Limit과
+  출력 Sanitization을 적용합니다.
+- **RAGOps 운영 화면**: WebSocket으로 Job·Worker 상태를 갱신하고 실패 원인, Retry, Queue·동기화 상태를
+  관측하고 복구할 수 있습니다.
+
+## 아키텍처
+
+```mermaid
+flowchart LR
+    User[사용자] --> Web[React Web]
+    McpClient[MCP Client] --> Api[Spring Boot API]
+    Web --> Api
+
+    Api --> Redis[(Redis)]
+    Api --> Storage[(Local / MinIO / S3)]
+    Api --> Db[(OpenSQL / PostgreSQL 17<br/>pgvector)]
+    Api --> Bge[BGE-M3]
+
+    Db -- Indexing Job --> IndexWorker[Indexing Worker]
+    IndexWorker --> Storage
+    IndexWorker --> Bge
+    IndexWorker --> Db
+
+    Db -- RAG Job --> RagWorker[RAG Worker]
+    RagWorker --> Ollama[Ollama<br/>qwen2.5:7b]
+    RagWorker --> Db
+
+    Api -. WebSocket .-> Web
 ```
 
-## 사전 준비
+1. API가 업로드 원본을 파일 저장소에 보관하고 문서 Metadata와 인덱싱 Job을 DB에 기록합니다.
+2. Indexing Worker가 원본을 Parsing·Chunking하고 BGE-M3 Embedding을 pgvector에 저장합니다.
+3. 검색 요청은 Query Embedding과 권한 Pre-filter를 적용해 접근 가능한 문서의 Chunk를 조회합니다.
+4. RAG Worker가 검색 문맥으로 답변을 생성하고 인용 근거를 저장한 뒤 WebSocket으로 결과를 전달합니다.
+
+## 기술 스택
+
+| 영역 | 기술 |
+|---|---|
+| Backend | Java 17, Spring Boot 3.5.16, Spring Security, Spring Data JPA, Spring AI MCP, WebSocket, Flyway |
+| Frontend | React 19, TypeScript 5, Tailwind CSS 4, Vinext, Vite |
+| Database | OpenSQL 17.8, PostgreSQL 17, pgvector 0.8.1 |
+| AI | BAAI/bge-m3, Ollama, qwen2.5:7b |
+| Storage | Local Filesystem, MinIO, AWS S3 |
+| Cache | Redis 7 |
+| Observability | RAGOps Dashboard, Prometheus |
+| Test | JUnit 5, Gradle, Node.js Test Runner |
+
+## 빠른 실행
+
+아래는 별도 EC2 접근 권한 없이 로컬 PostgreSQL과 MinIO로 핵심 기능을 확인하는 경로입니다. 명령은
+저장소 루트에서 실행합니다.
+
+### 1. 사전 준비
 
 - Git
 - Java 17
 - Node.js 22.13.0 이상
 - Docker Desktop과 Docker Compose
-- OpenSSH Client(`ssh`), netcat(`nc`), curl
-- Rocky Linux 9.7 EC2의 OpenSQL 개발 DB에 접속할 SSH Key와 DB 계정
+- RAG 답변까지 확인하려면 Native Ollama
 
-EC2 주소, SSH Key, DB 비밀번호, OpenSQL License는 저장소에 포함하지 않습니다. 팀 구성원은 해당 값을
-별도의 안전한 경로로 전달받아야 합니다.
-
-## Clone
+### 2. Clone과 환경 변수
 
 ```bash
 git clone https://github.com/DocGrid/docgrid.git
 cd docgrid
-```
-
-이후 명령은 별도 안내가 없는 한 저장소 루트에서 실행합니다.
-
-## 파일 저장소 선택
-
-DocGrid의 API와 인덱싱 Worker는 특정 Cloud SDK가 아니라 공통 파일 저장소 Port를 사용합니다. 현재
-Local Filesystem, MinIO, AWS S3 Adapter를 지원하며 `STORAGE_TYPE`으로 하나만 선택합니다.
-
-| `STORAGE_TYPE` | 용도 | 추가 설정 |
-|---|---|---|
-| `local` | 별도 Object Storage 없이 실행하는 기본값 | `STORAGE_LOCAL_ROOT`, `STORAGE_BUCKET` |
-| `minio` | Docker 또는 외부 MinIO 사용 | `STORAGE_BUCKET`, `MINIO_ENDPOINT`, Credential |
-| `s3` | AWS S3를 사용하는 공용 개발·배포 환경 | `STORAGE_BUCKET`, `AWS_REGION`, AWS Credential |
-
-Local Filesystem은 `STORAGE_TYPE`을 설정하지 않았을 때의 애플리케이션 기본값입니다. 실제 절대 경로는
-DB에 저장하지 않고, DB에는 `LOCAL` Provider와 논리 Bucket·Object Key만 저장합니다.
-
-```dotenv
-STORAGE_TYPE=local
-STORAGE_BUCKET=docgrid
-STORAGE_LOCAL_ROOT=./data/docgrid
-```
-
-현재 `.env.example`은 팀의 Docker MinIO 개발 방식을 바로 실행할 수 있도록 `minio`를 명시합니다.
-
-```dotenv
-STORAGE_TYPE=minio
-STORAGE_BUCKET=docgrid
-MINIO_ENDPOINT=http://localhost:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin1234
-```
-
-AWS S3는 미리 생성된 Bucket을 사용하며 애플리케이션이 Bucket을 생성하거나 삭제하지 않습니다. 로컬에서
-실행할 때는 AWS Profile 또는 환경 변수를 사용하고, EC2에서 실행할 때는 Access Key보다 IAM Role을
-권장합니다.
-
-```dotenv
-STORAGE_TYPE=s3
-STORAGE_BUCKET=<s3-bucket-name>
-AWS_REGION=ap-northeast-2
-
-# IAM Role이나 ~/.aws/credentials를 사용하지 않을 때만 설정합니다.
-AWS_ACCESS_KEY_ID=<access-key>
-AWS_SECRET_ACCESS_KEY=<secret-key>
-# 임시 Credential인 경우에만 설정합니다.
-AWS_SESSION_TOKEN=<session-token>
-```
-
-일반 AWS S3에서는 `S3_ENDPOINT`를 설정하지 않습니다. LocalStack이나 별도 VPC Endpoint를 명시적으로
-사용할 때만 `S3_ENDPOINT`를 설정하고, Path-style 주소가 필요한 호환 Endpoint에서만
-`S3_PATH_STYLE_ACCESS_ENABLED=true`를 사용합니다.
-
-API와 Worker는 반드시 동일한 `STORAGE_TYPE`과 저장소 Endpoint·Bucket을 사용해야 합니다. 같은 DB
-Schema를 사용하면서 서로 다른 Local Directory나 개발자별 MinIO를 바라보면 DB의 Object Key는
-존재하지만 실제 파일을 찾지 못합니다.
-
-같은 DB Schema를 사용하는 모든 API와 Worker는 아래 설정을 하나의 환경 단위로 배포합니다.
-
-| 저장소 | 반드시 같은 값 |
-|---|---|
-| Local Filesystem | `STORAGE_TYPE`, `STORAGE_BUCKET`, 공유 가능한 `STORAGE_LOCAL_ROOT` |
-| MinIO | `STORAGE_TYPE`, `STORAGE_BUCKET`, `MINIO_ENDPOINT` |
-| AWS S3 | `STORAGE_TYPE`, `STORAGE_BUCKET`, `AWS_REGION`, 동일 Object 권한 |
-
-DB에 저장된 Provider 또는 Bucket이 현재 설정과 다르면 요청을 원격 저장소로 보내기 전에
-`DOCUMENT-STORAGE-003` 설정 불일치로 중단합니다. Provider·Bucket은 같지만 Endpoint가 다른 경우는
-DB만으로 구분할 수 없으므로 Object 조회 시 `DOCUMENT-STORAGE-002` 파일 누락으로 보일 수 있습니다.
-이때 실제 파일 삭제 여부와 API·Worker의 Endpoint를 함께 확인합니다.
-
-| 진단 코드 | 의미 | Worker 자동 Retry |
-|---|---|---|
-| `DOCUMENT-STORAGE-001` | Network·인증·저장소 서비스 장애 | 대상 |
-| `DOCUMENT-STORAGE-002` | Metadata가 가리키는 Object 누락 | 대상 아님 |
-| `DOCUMENT-STORAGE-003` | 현재 Provider 또는 Bucket 설정 불일치 | 대상 아님 |
-
-`STORAGE_TYPE` 변경은 기존 파일을 자동으로 옮기지 않습니다. 파일이 들어 있는 DB Schema의 Provider를
-바꾸려면 Object와 DB Metadata를 함께 이전하는 별도 Migration이 필요합니다.
-
-## EC2 OpenSQL을 사용하는 로컬 실행
-
-프론트엔드와 Spring Boot는 로컬에서 실행하고, DB만 SSH Tunnel을 통해 EC2 OpenSQL에 연결합니다.
-로컬 PostgreSQL Container는 실행하지 않습니다.
-
-### 1. 환경 변수 준비
-
-```bash
 cp .env.example .env
+cp frontend/.env.example frontend/.env.local
+npm --prefix frontend install
 ```
 
-루트 `.env`의 DB 항목을 발급받은 개발 전용 DB 정보로 변경합니다. 실제 비밀번호를 README,
-`application.yml`, Commit 또는 Issue에 기록하지 마세요.
+`.env.example`은 로컬 PostgreSQL, MinIO와 자동 인덱싱 Worker를 실행할 수 있는 기본값을 제공합니다.
+실제 비밀번호와 외부 서버 인증정보는 `.env`, README, Issue 또는 Commit에 기록하지 않습니다.
 
-```dotenv
-DB_HOST=127.0.0.1
-DB_PORT=55433
-DB_NAME=<development-database>
-DB_USER=<development-user>
-DB_PASSWORD=<development-password>
-DB_SCHEMA=<development-schema>
-DB_SSLMODE=disable
-SPRING_PROFILES_ACTIVE=local
-
-# EC2 OpenSQL의 개발자별 Schema와 한 환경으로 묶을 Local Docker MinIO입니다.
-STORAGE_TYPE=minio
-STORAGE_BUCKET=docgrid-<developer>
-MINIO_ENDPOINT=http://localhost:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin1234
-
-# 자동 인덱싱 Worker를 로컬에서 실행합니다.
-INDEXING_WORKER_ENABLED=true
-INDEXING_WORKER_MAX_CONCURRENCY=1
-
-# RAG 답변에 사용할 Ollama 모델입니다.
-OLLAMA_MODEL=qwen2.5:7b
-```
-
-`DB_SSLMODE=disable`은 DB 자체 TLS가 비활성화되어 있고 아래 SSH Tunnel로 전송 구간을 암호화하는
-환경의 설정입니다. OpenSQL 서버가 TLS를 제공하면 서버 정책에 맞는 SSL Mode를 사용합니다.
-
-EC2 OpenSQL과 개발자별 Local MinIO를 함께 사용할 때는 개발자마다 DB Schema와 Bucket을 분리해야
-합니다. 팀 공용 Schema를 사용하려면 모든 API와 Worker가 접근할 수 있는 공용 저장소가 필요합니다.
-`.env`는 Git에 추가하지 않습니다.
-
-팀 공용 Schema와 AWS S3를 한 환경으로 사용할 때는 위 MinIO 항목 대신 다음처럼 설정합니다. OpenSQL은
-SSH Tunnel을 사용하지만 S3 요청은 AWS Endpoint로 직접 전송하므로 S3용 SSH Port Forwarding은 만들지
-않습니다. API와 Worker에는 동일한 Bucket·Region·Credential 권한이 필요합니다.
-
-```dotenv
-STORAGE_TYPE=s3
-STORAGE_BUCKET=<shared-s3-bucket>
-AWS_REGION=ap-northeast-2
-```
-
-EC2에서 API와 Worker를 실행한다면 인스턴스 IAM Role에 해당 Bucket의 Object 읽기·쓰기·삭제 권한을
-부여합니다. 로컬 실행에서는 AWS Profile 또는 환경 변수를 사용하며 실제 Key는 README, Issue,
-Commit에 기록하지 않습니다.
-
-### 2. OpenSQL SSH Tunnel 열기
-
-별도 Terminal에서 다음 명령을 실행하고 Spring Boot를 사용하는 동안 열어 둡니다.
+### 3. PostgreSQL, MinIO, Redis, BGE-M3 실행
 
 ```bash
-ssh -i <absolute-path-to-ssh-key.pem> \
-  -o ExitOnForwardFailure=yes \
-  -o ServerAliveInterval=30 \
-  -o ServerAliveCountMax=3 \
-  -N -L 55433:127.0.0.1:5432 \
-  <ssh-user>@<ec2-host>
-```
-
-새 Terminal에서 Tunnel이 열렸는지 확인합니다.
-
-```bash
-nc -zv 127.0.0.1 55433
-```
-
-로컬 Spring Boot는 `127.0.0.1:55433`으로 접속하지만, 실제 요청은 SSH Tunnel을 통해 EC2의
-OpenSQL `127.0.0.1:5432`로 전달됩니다.
-
-### 3. MinIO, BGE-M3 실행 + Ollama 네이티브 설치
-
-Docker Desktop을 실행한 뒤 로컬 인프라를 기동합니다. 이 구성에서는 `postgres` Service를 실행하지
-않습니다.
-
-```bash
-docker compose up -d --build minio embedding-server
-```
-
-`STORAGE_TYPE=local`을 선택했다면 MinIO는 실행하지 않고 BGE-M3만 기동합니다.
-
-```bash
-docker compose up -d --build embedding-server
-```
-
-BGE-M3는 첫 실행 시 약 3GB 모델을 내려받으므로 준비까지 10~15분 정도 걸릴 수 있습니다. 모델이
-준비되기 전에 Spring Boot의 인덱싱 Worker를 실행하지 마세요.
-
-```bash
+docker compose up -d --build postgres minio redis embedding-server
 docker compose logs -f embedding-server
 ```
 
-모델 준비 Log를 확인한 뒤 `Ctrl+C`로 빠져나오고, 각 Service의 상태를 확인합니다. Container는 계속
-실행됩니다.
+BGE-M3는 첫 실행 시 약 3GB 모델을 내려받으므로 준비까지 10~15분 정도 걸릴 수 있습니다. 준비 완료 Log를
+확인한 뒤 `Ctrl+C`로 Log 조회만 종료하고 Health Check를 실행합니다.
 
 ```bash
-curl -f http://localhost:8000/health
-# STORAGE_TYPE=minio인 경우에만 확인합니다.
+curl -f http://localhost:8000/health/ready
 curl -f http://localhost:9000/minio/health/live
 ```
 
-Ollama는 **Docker가 아니라 macOS에 네이티브로 설치**합니다. Docker Desktop for Mac은 컨테이너에
-GPU(Metal)를 넘길 방법이 없어 CPU로만 추론하게 되고, 실제 RAG 프롬프트 기준 50초 이상 걸려 항상
-타임아웃됩니다. GPU(Metal) 가속은 **Apple Silicon Mac 기준**이며, Intel Mac은 네이티브로 설치해도
-CPU로만 추론하므로 동일한 타임아웃 문제가 있습니다.
+### 4. Ollama 실행
+
+최종 RAG 답변 생성에는 `qwen2.5:7b`가 필요합니다. Ollama를 운영체제에 맞게 Native로 설치한 뒤
+모델을 준비합니다. macOS에서는 다음 명령을 사용할 수 있습니다.
 
 ```bash
 brew install ollama
 brew services start ollama
 ollama pull qwen2.5:7b
-curl -f http://localhost:11434/api/tags
-```
-
-`ollama pull`은 모델을 다운로드만 하고 메모리에 올리지는 않습니다. 아래처럼 모델을 한 번 실행해
-로드한 뒤, `ollama ps`의 `PROCESSOR`가 `100% GPU`로 나오는지 확인하세요.
-
-```bash
 ollama run qwen2.5:7b "안녕"
-ollama ps
 ```
 
-자세한 내용은 [백엔드 README의 Ollama 절](backend/README.md#ollama-rag-llm-서버)을 참고하세요.
+Apple Silicon에서는 `ollama ps`의 `PROCESSOR`가 GPU인지 확인합니다. 설치와 성능 관련 상세 내용은
+[백엔드 실행 문서](backend/README.md#ollama-rag-llm-서버)를 참고하세요.
 
-### 4. Spring Boot 실행
+### 5. Backend와 Frontend 실행
+
+각 명령을 별도 Terminal에서 실행합니다.
 
 ```bash
 ./backend/gradlew -p backend bootRun
 ```
-
-Spring Boot는 저장소 루트의 `.env`와 `local` Profile을 사용합니다. 빈 개발 DB에 처음 연결하면
-Flyway가 Migration과 로컬 Seed를 적용합니다. 기존 데이터가 있는 DB나 운영 DB를 로컬 Profile에
-연결하지 마세요.
-
-API 문서가 열리는지 확인합니다.
-
-```bash
-curl -f http://localhost:8080/v3/api-docs
-```
-
-### 5. 프론트엔드 실행
-
-최초 한 번 Dependency와 환경 변수를 준비합니다.
-
-```bash
-npm --prefix frontend install
-cp frontend/.env.example frontend/.env.local
-```
-
-`frontend/.env.local`의 기본값은 로컬 Spring Boot입니다.
-
-```dotenv
-BACKEND_API_URL=http://localhost:8080
-```
-
-별도 Terminal에서 프론트엔드를 실행합니다.
 
 ```bash
 npm --prefix frontend run dev
 ```
 
-브라우저에서 `http://localhost:3000`에 접속합니다.
+- Web: `http://localhost:3000`
+- API 문서: `http://localhost:8080/swagger-ui/index.html`
+- OpenAPI JSON: `http://localhost:8080/v3/api-docs`
 
-### 6. 전체 동작 확인
+### 6. 핵심 흐름 확인
 
 1. 회원가입 또는 로그인
 2. PDF/DOCX 문서 업로드
-3. 문서 Version 상태가 `PENDING → PROCESSING → INDEXED`로 바뀌는지 확인
-4. 문서 내용으로 검색
-5. RAG 질문에 Ollama 답변과 인용 근거가 표시되는지 확인
+3. 문서 상태가 `PENDING → PROCESSING → INDEXED`로 바뀌는지 확인
+4. 문서 내용으로 AI 검색
+5. RAG 답변과 인용 근거 확인
 
-인덱싱은 BGE-M3와 선택한 파일 저장소가 필요하고, 최종 RAG 답변 생성은 Ollama가 필요합니다.
-
-## 사용 포트
-
-| 포트 | 실행 위치 | 용도 |
-|---:|---|---|
-| `3000` | 로컬 | 프론트엔드 개발 서버 |
-| `8080` | 로컬 | Spring Boot API |
-| `55433` | 로컬 | EC2 OpenSQL로 연결되는 SSH Tunnel |
-| `5432` | EC2 | OpenSQL 실제 포트 |
-| `8000` | 로컬 Docker | BGE-M3 임베딩 서버 |
-| `9000` | 로컬 Docker | MinIO API(`STORAGE_TYPE=minio`) |
-| `9001` | 로컬 Docker | MinIO Console(`STORAGE_TYPE=minio`) |
-| `11434` | 로컬 (네이티브) | Ollama RAG LLM 서버 |
-
-## 종료
-
-프론트엔드, Spring Boot, SSH Tunnel Terminal에서 각각 `Ctrl+C`를 누릅니다. EC2 OpenSQL 구성의
-Docker Service는 다음 명령으로 중지합니다.
+### 종료
 
 ```bash
-docker compose stop minio embedding-server
+docker compose stop postgres minio redis embedding-server
+# macOS에서 Homebrew로 Ollama를 실행한 경우
+brew services stop ollama
 ```
 
-Local Filesystem을 사용했다면 `embedding-server`만 중지합니다. `STORAGE_LOCAL_ROOT`의 원본 파일은
-애플리케이션 종료 후에도 유지되며 Git에 포함되지 않습니다.
+`docker compose down -v`는 DB·Object·모델 Cache Volume을 삭제할 수 있으므로 일반적인 종료에는 사용하지
+않습니다.
+
+## 환경 선택
+
+파일 저장소는 `STORAGE_TYPE`으로 하나만 선택합니다. API와 Worker는 반드시 같은 저장소 설정을 사용해야
+하며, 저장소 변경은 기존 파일을 자동으로 이전하지 않습니다.
+
+| `STORAGE_TYPE` | 용도 | 주요 설정 |
+|---|---|---|
+| `local` | 별도 Object Storage 없는 단일 실행 환경 | `STORAGE_LOCAL_ROOT`, `STORAGE_BUCKET` |
+| `minio` | 기본 Docker 개발 환경 | `MINIO_ENDPOINT`, Credential, `STORAGE_BUCKET` |
+| `s3` | 공용 개발·배포 환경 | `AWS_REGION`, AWS Credential, `STORAGE_BUCKET` |
+
+OpenSQL 개발 DB는 SSH Tunnel을 통해 사용할 수 있습니다. 공급사 설치 파일, License, DB Credential과
+SSH Key는 저장소에 포함하지 않습니다. 환경별 설정은 [.env.example](.env.example),
+[로컬 DB 실행 문서](docs/local-db.md)와
+[OpenSQL 검증 Runbook](docs/test-results/gimin-%23124-opensql-verification-runbook.md)을 참고하세요.
+
+## 테스트
+
+일반 회귀 테스트는 외부 장시간 Benchmark와 실제 인프라 E2E를 제외하지만 PostgreSQL과 Redis를
+사용하는 통합 테스트를 포함합니다. 두 Service를 먼저 준비합니다.
 
 ```bash
-docker compose stop embedding-server
-```
-
-로컬 PostgreSQL 구성까지 실행했다면 `postgres`도 함께 중지합니다.
-
-```bash
-docker compose stop postgres minio embedding-server
-```
-
-위 명령은 Container만 중지하고 데이터를 보존합니다. 반면 `docker compose down -v`는
-`postgres17-data`, `minio-data`, `huggingface-cache` Volume의 DB·Object·모델 Cache를
-삭제할 수 있으므로 일반적인 종료에는 사용하지 마세요.
-
-Ollama는 `brew services stop ollama`로 중지합니다.
-
-## EC2 없이 로컬 PostgreSQL 사용
-
-EC2 OpenSQL 접근 권한이 없는 기여자는 PostgreSQL 17 + pgvector 0.8.1을 로컬 기준선으로 사용할 수
-있습니다. 이 결과는 Rocky Linux 9.7의 공식 OpenSQL 검증을 대신하지 않습니다.
-
-루트 `.env`의 DB 항목을 `.env.example` 기본값으로 설정한 뒤 실행합니다.
-
-```dotenv
-DB_HOST=localhost
-DB_PORT=55432
-DB_NAME=app
-DB_USER=app
-DB_PASSWORD=local_password
-DB_SCHEMA=public
-DB_SSLMODE=disable
-```
-
-```bash
-docker compose pull postgres
-docker compose up -d --wait --wait-timeout 60 postgres
-./backend/gradlew -p backend bootRun
-```
-
-자세한 구성은 [백엔드 실행 방법](backend/README.md), [프론트엔드 실행 방법](frontend/README.md),
-[로컬 DB 실행 문서](docs/local-db.md)를 참고하세요.
-
-## 검증
-
-```bash
+docker compose up -d --wait postgres redis
 ./backend/gradlew -p backend test
 npm --prefix frontend test
 ```
 
-Local Filesystem·MinIO·S3 Adapter와 실제 자동 Worker 전체 흐름은 일반 테스트와 분리해 실행합니다.
-PostgreSQL, MinIO, BGE-M3가 준비되어 있어야 하며 S3 Adapter는 로컬 MinIO의 S3-compatible API를
-사용하므로 AWS 계정이나 실제 Credential이 필요하지 않습니다.
+파일 저장소 Adapter와 실제 자동 Worker 전체 흐름은 별도 E2E로 검증합니다.
 
 ```bash
-docker compose up -d --wait postgres minio embedding-server
+docker compose up -d --build --wait postgres minio redis embedding-server
 
-# Docker Compose의 PostgreSQL Host Port가 다르면 DB_PORT를 맞춰 변경합니다.
 DB_HOST=127.0.0.1 DB_PORT=55432 \
   ./backend/gradlew -p backend storageWorkerE2eTest
 ```
 
-이 검증은 실행마다 별도 DB Schema·Bucket·Local Root를 사용하고 종료 시 Test가 만든 위치만 정리합니다.
-실행 결과는 [파일 저장소·Worker E2E 결과](docs/test-results/Gimini-3-%23284-file-storage-worker-e2e.md)를
-참고하세요.
+## 검증 결과
 
-## 라이선스
+아래 수치는 서로 다른 고정 환경에서 측정한 재현 가능한 기준선이며 운영 SLO를 의미하지 않습니다.
 
-DocGrid의 자체 소스코드와 문서는 [Apache License 2.0](LICENSE)에 따라 배포합니다. 외부
-라이브러리, Container Image, AI 모델과 OpenSQL 배포본에는 각 구성요소의 별도 라이선스가 적용됩니다.
+| 검증 영역 | 결과 |
+|---|---|
+| PDF·DOCX 전체 E2E | 50·100문서 Profile에서 31.046·32.063문서/분 |
+| Pipeline 정합성 | 네 번의 실행, 합계 300문서·1,200 Vector에서 실패·Retry·미완료·중복 0건 |
+| OpenSQL Job Claim | Worker 5에서 748.45 TPS, p99 13.187ms |
+| BGE-M3 Batch | Batch 32가 측정 최대 처리량의 98.27%, Batch 64보다 p95 46.89% 감소 |
+
+상세 조건, 원본 데이터, 한계와 재현 명령은
+[인덱싱·Vector 검색 최종 통합 성능 리포트](docs/test-results/gimin-%23145-final-performance-report.md)에
+기록되어 있습니다.
+
+## 문서
+
+| 문서 | 내용 |
+|---|---|
+| [Backend README](backend/README.md) | PostgreSQL, BGE-M3, Ollama 실행 |
+| [Frontend README](frontend/README.md) | Web 실행, 인증과 API 연결 범위 |
+| [로컬 DB 실행](docs/local-db.md) | PostgreSQL 17 + pgvector 로컬 기준선 |
+| [OpenSQL 호환성·성능](docs/test-results/gimin-%23124-opensql-compatibility-performance.md) | OpenSQL 17.8 기능·성능 검증 |
+| [최종 성능 리포트](docs/test-results/gimin-%23145-final-performance-report.md) | 인덱싱·검색 Benchmark 통합 결과 |
+| [검색·RAG E2E](docs/test-results/kangcheolung-%2378-search-rag-e2e-test.md) | 검색부터 답변·인용 저장까지 전체 흐름 |
+| [MCP E2E](docs/test-results/kangcheolung-%23127-mcp-claude-desktop-e2e.md) | MCP Client 연동 검증 |
+| [파일 저장소·Worker E2E](docs/test-results/Gimini-3-%23284-file-storage-worker-e2e.md) | Local·MinIO·S3 Adapter 전체 관통 검증 |
+
+설계 의사결정은 [`docs/design/`](docs/design/), 실행된 Test Plan과 결과는
+[`docs/test-results/`](docs/test-results/)에서 확인할 수 있습니다.
+
+## 저장소 구조
+
+```text
+.
+├── backend/          # Spring Boot API, Worker와 BGE-M3 서버
+├── frontend/         # DocGrid Web Application
+├── docs/design/      # 설계 의사결정
+├── docs/test-results/# 실행된 Test Plan, 측정과 결과
+├── docker/           # 로컬 인프라 초기화
+├── monitoring/       # Prometheus 설정과 Alert Rule
+├── scripts/          # 검증·보고 자동화
+└── docker-compose.yml
+```
+
+## 라이선스 및 외부 구성요소
+
+DocGrid의 자체 소스코드와 문서는 [Apache License 2.0](LICENSE)에 따라 배포합니다.
+
+| 외부 구성요소 | 사용 방식 | 라이선스 경계 |
+|---|---|---|
+| [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3) | Embedding Server 첫 실행 시 다운로드 | MIT License |
+| [qwen2.5:7b](https://ollama.com/library/qwen2.5:7b) | 사용자가 `ollama pull`로 다운로드 | Apache License 2.0 |
+| OpenSQL | 외부 개발·검증 DB로 연결 | 공급사 배포본과 License는 저장소에 포함하지 않음 |
+| Java·npm 의존성과 Container Image | Build 또는 실행 시 외부 Registry에서 획득 | 각 구성요소의 별도 라이선스 적용 |
+
+외부 모델, 라이브러리, Container Image와 OpenSQL 배포본은 DocGrid의 Apache License 2.0 적용 범위에
+포함되지 않습니다.

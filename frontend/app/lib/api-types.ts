@@ -361,6 +361,16 @@ export type SyncAdminSummary = {
   reconciliation: SyncReconciliationSummary;
 };
 
+export type SyncReconciliationAdmin = {
+  runId: string;
+  startCursor: number;
+  endCursor: number;
+  scannedCount: number;
+  detectedCount: number;
+  repairRequestedCount: number;
+  hasMore: boolean;
+};
+
 export type SyncEventAdmin = {
   eventId: string;
   idempotencyKey: string;

@@ -134,8 +134,8 @@ public class SyncConsistencyInspector {
                 version,
                 activeModel,
                 "{\"activeEmbeddingCount\":%d}".formatted(chunkCount),
-                "{\"activeEmbeddingCount\":%d,\"currentModelEmbeddingCount\":%d,"
-                    + "\"allModelEmbeddingCount\":%d}"
+                ("{\"activeEmbeddingCount\":%d,\"currentModelEmbeddingCount\":%d,"
+                    + "\"allModelEmbeddingCount\":%d}")
                     .formatted(embeddingCount, currentModelCount, allModelCount),
                 currentModelCount == embeddingCount && currentModelCount < chunkCount
             ));

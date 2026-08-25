@@ -76,6 +76,26 @@ class FileValidationServiceTest {
     }
 
     @Test
+    @DisplayName("기본 최대 파일 크기는 50MB다")
+    void defaultMaxFileSize_is50Megabytes() {
+        DocumentUploadProperties properties = new DocumentUploadProperties();
+
+        assertThat(properties.getMaxFileSize()).isEqualTo(DataSize.ofMegabytes(50));
+    }
+
+    @Test
+    @DisplayName("최대 파일 크기와 같은 파일은 허용한다")
+    void validate_succeeds_when_fileSizeEqualsLimit() {
+        DocumentUploadProperties properties = new DocumentUploadProperties();
+        properties.setMaxFileSize(DataSize.ofBytes(4));
+        fileValidationService = new FileValidationService(properties);
+
+        ValidatedFile result = fileValidationService.validate(file("limit.txt", "text/plain", "four"));
+
+        assertThat(result.fileSize()).isEqualTo(4L);
+    }
+
+    @Test
     @DisplayName("최대 파일 크기를 초과하면 예외가 발생한다")
     void validate_throws_when_fileIsTooLarge() {
         DocumentUploadProperties properties = new DocumentUploadProperties();

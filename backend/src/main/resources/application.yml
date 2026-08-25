@@ -7,9 +7,9 @@ spring:
     active: ${SPRING_PROFILES_ACTIVE:local}
   servlet:
     multipart:
-      max-file-size: 20MB
+      max-file-size: 50MB
       # Multipart 메타데이터를 포함할 수 있도록 파일 제한보다 요청 제한을 넉넉하게 둔다.
-      max-request-size: 25MB
+      max-request-size: 60MB
   jpa:
     # 전역 OSIV를 끄고, WebMvcConfig에서 /mcp를 제외한 나머지 경로에만 다시 등록한다.
     # /mcp는 MCP Streamable HTTP 응답 처리 방식과 OSIV가 충돌해 DB 커넥션이 누수됐다(#120).
@@ -43,7 +43,7 @@ dashboard:
 
 document:
   upload:
-    max-file-size: 20MB
+    max-file-size: 50MB
   chunking:
     chunk-size: ${DOCUMENT_CHUNK_SIZE:1000}
     overlap: ${DOCUMENT_CHUNK_OVERLAP:200}

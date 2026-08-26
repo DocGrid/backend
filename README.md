@@ -117,6 +117,15 @@ ollama pull qwen2.5:7b
 ollama run qwen2.5:7b "안녕"
 ```
 
+초기 설치 후에는 Redis, BGE-M3, Ollama를 전용 스크립트로 한 번에 기동하고 실제 연결 상태까지 확인합니다.
+
+```bash
+./scripts/local-services.sh start
+./scripts/local-services.sh status
+```
+
+`start`는 BGE-M3 준비 완료까지 최대 15분 기다리며, 실패하면 서비스별 복구 명령을 출력합니다.
+
 Apple Silicon에서는 `ollama ps`의 `PROCESSOR`가 GPU인지 확인합니다. 설치와 성능 관련 상세 내용은
 [백엔드 실행 문서](backend/README.md#ollama-rag-llm-서버)를 참고하세요.
 

@@ -8,6 +8,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.opensource.docgrid.domain.search.dto.ConversationContext;
 import com.opensource.docgrid.domain.search.dto.VectorSearchCandidate;
 
 @DisplayName("PromptBuilder 단위 테스트")
@@ -103,5 +104,20 @@ class PromptBuilderTest {
         assertThat(prompt).contains("[1]", "[20]");
         assertThat(contextCodePoints).isEqualTo(3_200L);
         assertThat(prompt.codePoints().filter(codePoint -> codePoint == '…').count()).isEqualTo(20L);
+    }
+
+    @Test
+    @DisplayName("후속 질문은 최근 대화를 질문 해석용 문맥으로 포함하되 문서 근거로 취급하지 않는다")
+    void build_withConversationContext_marksHistoryAsInterpretationOnly() {
+        ConversationContext context = new ConversationContext("휴가 규정을 요약해줘", "연차는 15일입니다.");
+
+        String prompt = promptBuilder.build("그중 신청 절차는?", List.of(), List.of(context));
+
+        assertThat(prompt)
+            .contains("이전 대화는 현재 질문의 지시어와 맥락을 해석할 때만 참고하세요")
+            .contains("이전 답변 자체를 문서 근거로 인용하지 마세요")
+            .contains("[이전 대화 1] 사용자: 휴가 규정을 요약해줘")
+            .contains("AI: 연차는 15일입니다.")
+            .contains("질문: 그중 신청 절차는?");
     }
 }

@@ -29,6 +29,7 @@ import com.opensource.docgrid.domain.search.dto.request.SearchRequest;
 import com.opensource.docgrid.domain.search.dto.response.SearchResponse;
 import com.opensource.docgrid.domain.search.service.SearchFacade;
 import com.opensource.docgrid.domain.search.service.query.SearchAnswerQueryService;
+import com.opensource.docgrid.domain.search.service.query.SearchConversationQueryService;
 
 import java.math.BigDecimal;
 
@@ -43,6 +44,7 @@ class SearchControllerTest {
 
     private static final Long USER_ID = 10L;
     private static final Long QUERY_ID = 100L;
+    private static final Long CONVERSATION_ID = 50L;
     private static final String NO_CONTEXT_ANSWER = "관련 문서를 찾지 못했습니다.";
 
     @Autowired private MockMvc mockMvc;
@@ -50,6 +52,7 @@ class SearchControllerTest {
     @MockitoBean private SearchFacade searchFacade;
     @MockitoBean private RagFacade ragFacade;
     @MockitoBean private SearchAnswerQueryService searchAnswerQueryService;
+    @MockitoBean private SearchConversationQueryService searchConversationQueryService;
     @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
 
     @Test
@@ -57,12 +60,12 @@ class SearchControllerTest {
     void search_noQualifiedCandidates_returnsNoContextResponse() throws Exception {
         SearchRequest request = new SearchRequest("넌 뭐야?", 5, null);
         SearchOutcome outcome = new SearchOutcome(
-            SearchResponse.empty(QUERY_ID),
+            SearchResponse.empty(CONVERSATION_ID, QUERY_ID),
             List.of(),
             List.of()
         );
         given(searchFacade.search(USER_ID, request)).willReturn(outcome);
-        given(ragFacade.enqueue(QUERY_ID, request.queryText(), List.of()))
+        given(ragFacade.enqueue(CONVERSATION_ID, QUERY_ID, request.queryText(), List.of()))
             .willReturn(RagEnqueueOutcome.done(RagAnswer.noContext(NO_CONTEXT_ANSWER)));
 
         mockMvc.perform(post("/search")
@@ -79,13 +82,14 @@ class SearchControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.queryId").value(QUERY_ID))
+            .andExpect(jsonPath("$.data.conversationId").value(CONVERSATION_ID))
             .andExpect(jsonPath("$.data.results").isEmpty())
             .andExpect(jsonPath("$.data.ragStatus").value("SUCCESS"))
             .andExpect(jsonPath("$.data.answer").value(NO_CONTEXT_ANSWER))
             .andExpect(jsonPath("$.data.citations").isEmpty());
 
         then(searchFacade).should().search(USER_ID, request);
-        then(ragFacade).should().enqueue(QUERY_ID, request.queryText(), List.of());
+        then(ragFacade).should().enqueue(CONVERSATION_ID, QUERY_ID, request.queryText(), List.of());
     }
 
     @Test
@@ -96,12 +100,12 @@ class SearchControllerTest {
             1L, 10L, 100L, "청크 내용", 12, "인사규정", new BigDecimal("0.9")
         );
         SearchOutcome outcome = new SearchOutcome(
-            SearchResponse.of(QUERY_ID, List.of(candidate)),
+            SearchResponse.of(CONVERSATION_ID, QUERY_ID, List.of(candidate)),
             List.of(candidate),
             List.of()
         );
         given(searchFacade.search(USER_ID, request)).willReturn(outcome);
-        given(ragFacade.enqueue(QUERY_ID, request.queryText(), List.of(candidate)))
+        given(ragFacade.enqueue(CONVERSATION_ID, QUERY_ID, request.queryText(), List.of(candidate)))
             .willReturn(RagEnqueueOutcome.stillPending());
 
         mockMvc.perform(post("/search")
@@ -121,7 +125,9 @@ class SearchControllerTest {
             .andExpect(jsonPath("$.data.ragStatus").value("PROCESSING"))
             .andExpect(jsonPath("$.data.answer").doesNotExist());
 
-        then(ragFacade).should().enqueue(QUERY_ID, request.queryText(), List.of(candidate));
+        then(ragFacade).should().enqueue(
+            CONVERSATION_ID, QUERY_ID, request.queryText(), List.of(candidate)
+        );
     }
 
     private UsernamePasswordAuthenticationToken authenticationWithUserId(Long userId) {

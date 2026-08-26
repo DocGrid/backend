@@ -6,6 +6,7 @@ import { groupSearchSources } from "../app/lib/search-sources.ts";
 
 test("groups multiple citation chunks from the same document into one source", () => {
   const response: SearchResponse = {
+    conversationId: 1,
     queryId: 11,
     ragStatus: "SUCCESS",
     answer: "요약",
@@ -32,6 +33,7 @@ test("groups multiple citation chunks from the same document into one source", (
 
 test("deduplicates repeated citations for one chunk", () => {
   const response: SearchResponse = {
+    conversationId: 1,
     queryId: 12,
     ragStatus: "SUCCESS",
     answer: null,
@@ -53,6 +55,7 @@ test("returns no sources when citations are empty, even if raw search results ex
   // citations가 비어있는 건 "관련 문서 없음"(NO_CONTEXT 또는 RAG가 무관 판단)이라는 의도된 신호이므로,
   // 검색 자체는 히트가 있었더라도(results) 근거 문서 섹션에는 아무것도 보여주지 않는다.
   const response: SearchResponse = {
+    conversationId: 1,
     queryId: 13,
     ragStatus: "SUCCESS",
     answer: "관련 문서를 찾지 못했습니다.",

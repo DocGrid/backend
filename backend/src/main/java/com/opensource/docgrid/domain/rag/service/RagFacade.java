@@ -12,11 +12,13 @@ import com.opensource.docgrid.domain.rag.entity.RagResponse;
 import com.opensource.docgrid.domain.rag.repository.RagResponseRepository;
 import com.opensource.docgrid.domain.rag.service.command.RagResponseCommandService;
 import com.opensource.docgrid.domain.rag.service.command.ResponseCitationCommandService;
+import com.opensource.docgrid.domain.search.dto.ConversationContext;
 import com.opensource.docgrid.domain.search.dto.VectorSearchCandidate;
 import com.opensource.docgrid.domain.search.entity.SearchQuery;
 import com.opensource.docgrid.domain.search.entity.SearchResult;
 import com.opensource.docgrid.domain.search.enums.ResultStatus;
 import com.opensource.docgrid.domain.search.repository.SearchResultRepository;
+import com.opensource.docgrid.domain.search.service.query.SearchConversationQueryService;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
@@ -73,6 +75,7 @@ public class RagFacade {
     private static final String UNEXPECTED_FAILURE_ANSWER_TEXT = "답변 생성 중 예상치 못한 오류가 발생했습니다.";
     private static final int FALLBACK_EXCERPT_MAX_CODE_POINTS = 300;
     private static final int MAX_PROMPT_CANDIDATES = 3;
+    private static final int MAX_CONVERSATION_CONTEXT_TURNS = 3;
     private static final String NO_RELEVANT_DOC_PHRASE = "관련 문서를 찾지 못했습니다";
     private static final String TIMEOUT_ERROR_MESSAGE =
         "PROCESSING 상태 유지 시간이 임계값을 초과해 강제 종료됨(RagJobTimeoutSweeper)";
@@ -83,6 +86,7 @@ public class RagFacade {
     private final ResponseCitationCommandService responseCitationCommandService;
     private final RagResponseRepository ragResponseRepository;
     private final SearchResultRepository searchResultRepository;
+    private final SearchConversationQueryService searchConversationQueryService;
     private final EntityManager entityManager;
 
     /**
@@ -93,7 +97,12 @@ public class RagFacade {
      * PROCESSING 상태로 저장한 뒤 즉시 반환한다 — 실제 LLM 호출은 나중에 RagJobWorker가
      * {@link #processJob}으로 한다.
      */
-    public RagEnqueueOutcome enqueue(Long queryId, String queryText, List<VectorSearchCandidate> candidates) {
+    public RagEnqueueOutcome enqueue(
+        Long conversationId,
+        Long queryId,
+        String queryText,
+        List<VectorSearchCandidate> candidates
+    ) {
         SearchQuery queryRef = entityManager.getReference(SearchQuery.class, queryId);
 
         if (candidates.isEmpty()) {
@@ -105,7 +114,10 @@ public class RagFacade {
         List<VectorSearchCandidate> promptCandidates = candidates.size() > MAX_PROMPT_CANDIDATES
             ? candidates.subList(0, MAX_PROMPT_CANDIDATES)
             : candidates;
-        String prompt = promptBuilder.build(queryText, promptCandidates);
+        List<ConversationContext> conversationContext = searchConversationQueryService.findRecentContext(
+            conversationId, queryId, MAX_CONVERSATION_CONTEXT_TURNS
+        );
+        String prompt = promptBuilder.build(queryText, promptCandidates, conversationContext);
         RagResponse ragResponse = ragResponseCommandService.createPending(queryRef, prompt);
         log.info("[RAG] enqueued queryId={} responseId={}", queryId, ragResponse.getId());
         return RagEnqueueOutcome.stillPending();

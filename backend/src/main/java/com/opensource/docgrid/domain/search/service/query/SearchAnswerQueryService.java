@@ -58,7 +58,9 @@ public class SearchAnswerQueryService {
          */
         RagResponse ragResponse = ragResponseRepository.findByQuery_Id(query.getId()).orElse(null);
         if (ragResponse == null || ragResponse.getStatus() == ResultStatus.PROCESSING) {
-            return new SearchResponse(queryId, items, ResultStatus.PROCESSING, null, List.of());
+            return new SearchResponse(
+                query.getConversation().getId(), queryId, items, ResultStatus.PROCESSING, null, List.of()
+            );
         }
 
         // 4. citation 재구성 — SUCCESS/FAILED 확정된 경우에만 조회한다.
@@ -68,6 +70,9 @@ public class SearchAnswerQueryService {
             .map(CitationResponse::from)
             .toList();
 
-        return new SearchResponse(queryId, items, ragResponse.getStatus(), ragResponse.getAnswerText(), citations);
+        return new SearchResponse(
+            query.getConversation().getId(), queryId, items,
+            ragResponse.getStatus(), ragResponse.getAnswerText(), citations
+        );
     }
 }

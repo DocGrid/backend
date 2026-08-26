@@ -36,6 +36,7 @@ import com.opensource.docgrid.domain.search.entity.SearchQuery;
 import com.opensource.docgrid.domain.search.entity.SearchResult;
 import com.opensource.docgrid.domain.search.enums.ResultStatus;
 import com.opensource.docgrid.domain.search.repository.SearchResultRepository;
+import com.opensource.docgrid.domain.search.service.query.SearchConversationQueryService;
 import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
@@ -72,9 +73,13 @@ class RagFacadeTest {
     private SearchResultRepository searchResultRepository;
 
     @Mock
+    private SearchConversationQueryService searchConversationQueryService;
+
+    @Mock
     private EntityManager entityManager;
 
     private static final Long QUERY_ID = 100L;
+    private static final Long CONVERSATION_ID = 50L;
     private static final Long JOB_ID = 999L;
 
     // === enqueue() ===
@@ -90,12 +95,12 @@ class RagFacadeTest {
             .build();
         given(ragResponseCommandService.createNoContext(queryRef)).willReturn(noContextResponse);
 
-        RagEnqueueOutcome outcome = ragFacade.enqueue(QUERY_ID, "질문", List.of());
+        RagEnqueueOutcome outcome = ragFacade.enqueue(CONVERSATION_ID, QUERY_ID, "질문", List.of());
 
         assertThat(outcome.pending()).isFalse();
         assertThat(outcome.immediateAnswer().answerText()).isEqualTo("관련 문서를 찾지 못했습니다.");
         assertThat(outcome.immediateAnswer().citations()).isEmpty();
-        then(promptBuilder).should(never()).build(anyString(), any());
+        then(promptBuilder).should(never()).build(anyString(), any(), any());
         then(ragResponseCommandService).should(times(1)).createNoContext(queryRef);
         then(ragResponseCommandService).should(never()).createPending(any(), anyString());
     }
@@ -110,11 +115,16 @@ class RagFacadeTest {
             1L, 10L, 100L, "청크 내용", 12, "인사규정", new BigDecimal("0.9")
         );
         List<VectorSearchCandidate> candidates = List.of(candidate);
-        given(promptBuilder.build(eq("연차 규정 알려줘"), eq(candidates))).willReturn("조립된 프롬프트");
+        given(searchConversationQueryService.findRecentContext(CONVERSATION_ID, QUERY_ID, 3))
+            .willReturn(List.of());
+        given(promptBuilder.build(eq("연차 규정 알려줘"), eq(candidates), eq(List.of())))
+            .willReturn("조립된 프롬프트");
         given(ragResponseCommandService.createPending(queryRef, "조립된 프롬프트"))
             .willReturn(RagResponse.builder().status(ResultStatus.PROCESSING).build());
 
-        RagEnqueueOutcome outcome = ragFacade.enqueue(QUERY_ID, "연차 규정 알려줘", candidates);
+        RagEnqueueOutcome outcome = ragFacade.enqueue(
+            CONVERSATION_ID, QUERY_ID, "연차 규정 알려줘", candidates
+        );
 
         assertThat(outcome.pending()).isTrue();
         assertThat(outcome.immediateAnswer()).isNull();
@@ -136,13 +146,16 @@ class RagFacadeTest {
             new VectorSearchCandidate(5L, 50L, 500L, "청크5", 5, "문서5", new BigDecimal("0.5"))
         );
         List<VectorSearchCandidate> expectedPromptCandidates = candidates.subList(0, 3);
-        given(promptBuilder.build(anyString(), eq(expectedPromptCandidates))).willReturn("조립된 프롬프트");
+        given(searchConversationQueryService.findRecentContext(CONVERSATION_ID, QUERY_ID, 3))
+            .willReturn(List.of());
+        given(promptBuilder.build(anyString(), eq(expectedPromptCandidates), eq(List.of())))
+            .willReturn("조립된 프롬프트");
         given(ragResponseCommandService.createPending(queryRef, "조립된 프롬프트"))
             .willReturn(RagResponse.builder().status(ResultStatus.PROCESSING).build());
 
-        ragFacade.enqueue(QUERY_ID, "질문", candidates);
+        ragFacade.enqueue(CONVERSATION_ID, QUERY_ID, "질문", candidates);
 
-        then(promptBuilder).should(times(1)).build(anyString(), eq(expectedPromptCandidates));
+        then(promptBuilder).should(times(1)).build(anyString(), eq(expectedPromptCandidates), eq(List.of()));
     }
 
     // === processJob() ===

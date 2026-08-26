@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.stereotype.Component;
 
+import com.opensource.docgrid.domain.search.dto.ConversationContext;
 import com.opensource.docgrid.domain.search.dto.VectorSearchCandidate;
 
 /**
@@ -37,6 +38,7 @@ public class PromptBuilder {
      */
     private static final int MAX_CHUNK_TEXT_CODE_POINTS = 800;
     private static final int MAX_CONTEXT_TEXT_CODE_POINTS = 3_200;
+    private static final int MAX_HISTORY_ITEM_CODE_POINTS = 600;
 
     /*
      * 매 질문마다 항상 앞에 붙는 고정 지시문. 4가지 규칙을 담고 있다:
@@ -72,7 +74,32 @@ public class PromptBuilder {
      * 책임이지 이 메서드의 책임이 아니다.
      */
     public String build(String queryText, List<VectorSearchCandidate> candidates) {
+        return build(queryText, candidates, List.of());
+    }
+
+    /**
+     * 최근 대화 문맥과 검색 근거를 함께 조립하되, 이전 답변은 질문 해석에만 사용하고
+     * 문서 근거로 인용하지 않도록 경계를 명시한다.
+     */
+    public String build(
+        String queryText,
+        List<VectorSearchCandidate> candidates,
+        List<ConversationContext> conversationContext
+    ) {
         StringBuilder sb = new StringBuilder(INSTRUCTION);
+        if (!conversationContext.isEmpty()) {
+            sb.append("이전 대화는 현재 질문의 지시어와 맥락을 해석할 때만 참고하세요. ")
+                .append("이전 답변 자체를 문서 근거로 인용하지 마세요.\n");
+            for (int i = 0; i < conversationContext.size(); i++) {
+                ConversationContext turn = conversationContext.get(i);
+                sb.append("[이전 대화 ").append(i + 1).append("] 사용자: ")
+                    .append(truncate(turn.queryText(), MAX_HISTORY_ITEM_CODE_POINTS))
+                    .append("\nAI: ")
+                    .append(truncate(turn.answerText(), MAX_HISTORY_ITEM_CODE_POINTS))
+                    .append('\n');
+            }
+            sb.append('\n');
+        }
         int chunkTextLimit = chunkTextLimit(candidates.size());
         for (int i = 0; i < candidates.size(); i++) {
             VectorSearchCandidate candidate = candidates.get(i);

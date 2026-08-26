@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -23,9 +24,11 @@ import com.opensource.docgrid.domain.rag.entity.RagResponse;
 import com.opensource.docgrid.domain.rag.repository.RagResponseRepository;
 import com.opensource.docgrid.domain.rag.repository.ResponseCitationRepository;
 import com.opensource.docgrid.domain.rag.service.command.RagResponseCommandService;
+import com.opensource.docgrid.domain.search.entity.SearchConversation;
 import com.opensource.docgrid.domain.search.entity.SearchQuery;
 import com.opensource.docgrid.domain.search.enums.ResultStatus;
 import com.opensource.docgrid.domain.search.enums.SearchType;
+import com.opensource.docgrid.domain.search.repository.SearchConversationRepository;
 import com.opensource.docgrid.domain.search.repository.SearchQueryRepository;
 import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.domain.user.enums.UserStatus;
@@ -46,12 +49,14 @@ class RagJobWorkerConcurrentQueueIntegrationTest {
     @Autowired private RagResponseCommandService ragResponseCommandService;
     @Autowired private RagResponseRepository ragResponseRepository;
     @Autowired private SearchQueryRepository searchQueryRepository;
+    @Autowired private SearchConversationRepository searchConversationRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private EmbeddingModelRepository embeddingModelRepository;
     @Autowired private ResponseCitationRepository responseCitationRepository;
 
     private final List<Long> createdUserIds = new CopyOnWriteArrayList<>();
     private final List<Long> createdQueryIds = new CopyOnWriteArrayList<>();
+    private final List<Long> createdConversationIds = new CopyOnWriteArrayList<>();
     private Long createdModelId;
 
     // 이 테스트는 @Transactional로 감쌀 수 없다(실제 @Scheduled Worker가 별도 스레드·트랜잭션에서
@@ -67,6 +72,7 @@ class RagJobWorkerConcurrentQueueIntegrationTest {
             });
             searchQueryRepository.deleteById(queryId);
         }
+        createdConversationIds.forEach(searchConversationRepository::deleteById);
         if (createdModelId != null) embeddingModelRepository.deleteById(createdModelId);
         createdUserIds.forEach(userRepository::deleteById);
     }
@@ -95,8 +101,16 @@ class RagJobWorkerConcurrentQueueIntegrationTest {
             Thread thread = new Thread(() -> {
                 try {
                     startLine.await();
+                    User user = createUser();
+                    SearchConversation conversation = searchConversationRepository.save(SearchConversation.builder()
+                        .user(user)
+                        .title(prompt)
+                        .lastMessageAt(LocalDateTime.now())
+                        .build());
+                    createdConversationIds.add(conversation.getId());
                     SearchQuery query = searchQueryRepository.save(SearchQuery.builder()
-                        .user(createUser())
+                        .user(user)
+                        .conversation(conversation)
                         .queryText(prompt)
                         .queryEmbeddingModel(model)
                         .queryVector(new float[1024])

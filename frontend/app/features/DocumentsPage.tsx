@@ -48,7 +48,7 @@ export function DocumentsPage({ onUpload, refreshKey }: { onUpload: () => void; 
 
   return <section className="content page-view">
     <PageHeading kicker="KNOWLEDGE BASE" title="문서" description="내가 읽을 수 있는 문서와 현재 인덱싱 상태를 확인하세요." actions={<button className="primary-button" onClick={onUpload}>＋ 문서 업로드</button>} />
-    <div className="toolbar"><div className="toolbar-search"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="현재 페이지 문서 검색" /></div><select value={status} onChange={(event) => { setStatus(event.target.value); setPage(0); }}>{statuses.map((item) => <option key={item || "ALL"} value={item}>{item || "모든 상태"}</option>)}</select><span className="toolbar-count">총 {data?.totalElements ?? 0}개 문서</span></div>
+    <div className="toolbar"><div className="toolbar-search"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="현재 페이지 문서 검색" /></div><select aria-label="문서 상태" value={status} onChange={(event) => { setStatus(event.target.value); setPage(0); }}>{statuses.map((item) => <option key={item || "ALL"} value={item}>{item || "모든 상태"}</option>)}</select><span className="toolbar-count">총 {data?.totalElements ?? 0}개 문서</span></div>
     {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
     {loading ? <LoadingState label="문서 목록을 불러오는 중입니다." /> : null}
     {!loading && !error && !visible.length ? <EmptyState symbol="▤" title="표시할 문서가 없습니다" description="필터를 바꾸거나 새 문서를 업로드해 보세요." /> : null}
@@ -294,4 +294,3 @@ function fileTone(type: string) {
   if (type === "MARKDOWN" || type === "MD") return "violet";
   return "green";
 }
-

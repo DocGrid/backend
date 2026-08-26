@@ -101,10 +101,47 @@ test("groups search citations by document and constrains source cards to the vie
   ]);
 
   assert.match(apiTypes, /export type SearchResult = \{[\s\S]*chunkId: number;/);
-  assert.match(searchPage, /groupSearchSources\(result\)/);
+  assert.match(searchPage, /groupSearchSources\(turn\.response\)/);
   assert.match(searchSources, /new Map<number, GroupedSearchSource/);
   assert.match(styles, /\.source-list \{[^}]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(styles, /\.source-card \{[^}]*max-width: 100%[^}]*overflow: hidden/);
+});
+
+test("restores saved search conversations and exposes a collapsible history panel", async () => {
+  const source = await readFile(new URL("../app/features/SearchPage.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /\/search\/conversations\?page=0&size=20/);
+  assert.match(source, /\/search\/conversations\/\$\{selectedConversationId\}/);
+  assert.match(source, /conversationIdFromSearch\(window\.location\.search\)/);
+  assert.match(source, /window\.addEventListener\("popstate", restoreFromBrowserHistory\)/);
+  assert.match(source, /window\.history\.pushState\(\{\}, "", conversationPath/);
+  assert.match(source, /aria-expanded=\{historyOpen\}/);
+  assert.match(source, /aria-controls="conversation-history-panel"/);
+  assert.match(source, /최근 20개까지 표시하며/);
+  assert.match(source, /이 대화에 이어서 질문하세요/);
+  assert.match(source, /aria-label="검색 범위"/);
+  assert.match(source, /aria-label="결과 수"/);
+  assert.doesNotMatch(source, /queryId \{turn\.queryId\}/);
+  assert.match(source, /conversationRequestIdRef\.current !== requestId/);
+  assert.match(source, /searchRequestIdRef\.current !== requestId/);
+});
+
+test("names filter controls for keyboard and screen reader users", async () => {
+  const [documents, permissions, admin] = await Promise.all([
+    readFile(new URL("../app/features/DocumentsPage.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/features/PermissionsPage.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/features/AdminPages.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(documents, /aria-label="문서 상태"/);
+  assert.match(permissions, /aria-label="리소스 종류"/);
+  assert.match(permissions, /aria-label="권한 관리 대상"/);
+  assert.match(admin, /aria-label="인덱싱 Job 상태"/);
+  assert.match(admin, /aria-label="문서 ID"/);
+  assert.match(admin, /aria-label="Worker ID"/);
+  assert.match(admin, /aria-label="사용자 검색"/);
+  assert.match(admin, /aria-label="사용자 부서"/);
+  assert.match(admin, /aria-label="사용자 상태"/);
 });
 
 test("wires document metadata update and soft delete actions to their permissions", async () => {

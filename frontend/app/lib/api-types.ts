@@ -156,11 +156,31 @@ export type Citation = {
 export type RagStatus = "PROCESSING" | "SUCCESS" | "FAILED";
 
 export type SearchResponse = {
+  conversationId: number;
   queryId: number;
   results: SearchResult[];
   ragStatus: RagStatus;
   answer: string | null;
   citations: Citation[];
+};
+
+export type SearchConversationSummary = {
+  conversationId: number;
+  title: string;
+  lastMessageAt: string;
+};
+
+export type SearchConversationTurn = {
+  queryId: number;
+  queryText: string;
+  createdAt: string;
+  response: SearchResponse;
+};
+
+export type SearchConversation = {
+  conversationId: number;
+  title: string;
+  turns: SearchConversationTurn[];
 };
 
 export type Collection = {

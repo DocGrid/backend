@@ -5,10 +5,11 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest, errorMessage } from "../lib/api";
-import type { Collection, DocumentSummary, PageResponse, SearchResponse } from "../lib/api-types";
+import type { Collection, DocumentSummary, PageResponse, SearchConversation, SearchConversationSummary, SearchConversationTurn, SearchResponse } from "../lib/api-types";
+import { conversationIdFromSearch, conversationPath, upsertConversationTurn } from "../lib/conversation-history";
 import { groupSearchSources } from "../lib/search-sources";
 import { useRagAnswerSocket } from "../lib/useRagAnswerSocket";
-import { ErrorState, StatusPill } from "../components/ui";
+import { ErrorState, LoadingState, StatusPill, formatDate } from "../components/ui";
 
 // 검색 범위 드롭다운에 읽기 가능한 컬렉션 전체를 보여주기 위해 100건씩 모든 페이지를 이어붙인다.
 async function loadAllCollections(): Promise<Collection[]> {
@@ -42,6 +43,14 @@ export function SearchPage() {
   const [collectionId, setCollectionId] = useState("");
   const [collections, setCollections] = useState<Collection[]>([]);
   const [suggestions, setSuggestions] = useState<SuggestedQuestion[]>([]);
+  const [conversationId, setConversationId] = useState<number | null>(null);
+  const [conversationTitle, setConversationTitle] = useState("");
+  const [turns, setTurns] = useState<SearchConversationTurn[]>([]);
+  const [conversationHistory, setConversationHistory] = useState<SearchConversationSummary[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [conversationLoading, setConversationLoading] = useState(false);
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
@@ -49,11 +58,93 @@ export function SearchPage() {
   // "지금 화면이 보여주고 있어야 할 queryId"를 별도로 들고 있는다 — refreshAnswer의 응답이
   // 돌아왔을 때 그 사이 사용자가 새 검색을 시작해 이미 낡은 queryId가 됐는지 판별하는 용도다.
   const activeQueryIdRef = useRef<number | null>(null);
+  // 기록을 빠르게 연속 선택하거나 로딩 중 새 대화로 이동하면 가장 마지막 화면 요청만 반영한다.
+  const conversationRequestIdRef = useRef(0);
+  const searchRequestIdRef = useRef(0);
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const page = await apiRequest<PageResponse<SearchConversationSummary>>("/search/conversations?page=0&size=20");
+      setConversationHistory(page.content);
+      setHistoryTotal(page.totalElements);
+    } catch {
+      setConversationHistory([]);
+      setHistoryTotal(0);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  const loadConversation = useCallback(async (
+    selectedConversationId: number,
+    navigation: "push" | "replace" | "none" = "push",
+  ) => {
+    const requestId = ++conversationRequestIdRef.current;
+    // 진행 중인 새 질문 응답이 불러온 과거 대화를 뒤늦게 덮지 못하게 무효화한다.
+    searchRequestIdRef.current += 1;
+    setSearching(false);
+    setConversationLoading(true);
+    setError("");
+    try {
+      const conversation = await apiRequest<SearchConversation>(`/search/conversations/${selectedConversationId}`);
+      if (conversationRequestIdRef.current !== requestId) return;
+      const latest = conversation.turns.at(-1)?.response ?? null;
+      setConversationId(conversation.conversationId);
+      setConversationTitle(conversation.title);
+      setTurns(conversation.turns);
+      setResult(latest);
+      setQuery("");
+      activeQueryIdRef.current = latest?.queryId ?? null;
+      if (navigation === "push") {
+        window.history.pushState({}, "", conversationPath(conversation.conversationId));
+      } else if (navigation === "replace") {
+        window.history.replaceState({}, "", conversationPath(conversation.conversationId));
+      }
+      setHistoryOpen(false);
+    } catch (reason) {
+      if (conversationRequestIdRef.current === requestId) setError(errorMessage(reason));
+    } finally {
+      if (conversationRequestIdRef.current === requestId) setConversationLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     void loadAllCollections().then(setCollections).catch(() => setCollections([]));
     void loadSuggestedQuestions().then(setSuggestions).catch(() => setSuggestions([]));
-  }, []);
+    // 초기 렌더가 끝난 뒤 저장된 기록과 URL 대화를 복원해 effect 안의 동기 상태 변경을 피한다.
+    const initialLoadTimer = window.setTimeout(() => {
+      void loadHistory();
+      const restoredConversationId = conversationIdFromSearch(window.location.search);
+      if (restoredConversationId) void loadConversation(restoredConversationId, "none");
+    }, 0);
+    return () => window.clearTimeout(initialLoadTimer);
+  }, [loadConversation, loadHistory]);
+
+  useEffect(() => {
+    function restoreFromBrowserHistory() {
+      const restoredConversationId = conversationIdFromSearch(window.location.search);
+      if (restoredConversationId) {
+        void loadConversation(restoredConversationId, "none");
+        return;
+      }
+      // 새 대화 URL로 돌아온 경우 서버 호출 없이 초기 검색 화면을 복원한다.
+      conversationRequestIdRef.current += 1;
+      searchRequestIdRef.current += 1;
+      activeQueryIdRef.current = null;
+      setConversationLoading(false);
+      setSearching(false);
+      setConversationId(null);
+      setConversationTitle("");
+      setTurns([]);
+      setResult(null);
+      setQuery("");
+      setError("");
+      setHistoryOpen(false);
+    }
+    window.addEventListener("popstate", restoreFromBrowserHistory);
+    return () => window.removeEventListener("popstate", restoreFromBrowserHistory);
+  }, [loadConversation]);
 
   // AI 답변이 아직 생성 중일 때만 true — WebSocket과 폴백 폴링을 이때만 연다.
   const awaitingAnswer = result?.ragStatus === "PROCESSING";
@@ -67,6 +158,9 @@ export function SearchPage() {
         // 이미 화면과 무관해진 낡은 응답이다 — 새 검색 결과를 덮어쓰지 않도록 버린다.
         if (activeQueryIdRef.current !== queryId) return;
         setResult(response);
+        setTurns((current) => current.map((turn) => turn.queryId === queryId
+          ? { ...turn, response }
+          : turn));
       })
       .catch(() => {
         // 재조회 실패는 조용히 무시한다 — 다음 폴링/push 때 다시 시도된다. 검색 결과는 이미 화면에
@@ -107,7 +201,10 @@ export function SearchPage() {
   async function search(searchText = query) {
     const trimmed = searchText.trim();
     if (!trimmed) return;
-    setQuery(trimmed);
+    const requestId = ++searchRequestIdRef.current;
+    // 과거 대화 로딩과 새 질문이 겹쳐도 사용자가 마지막으로 시작한 검색을 우선한다.
+    conversationRequestIdRef.current += 1;
+    setConversationLoading(false);
     setSearching(true);
     setError("");
     // 새 검색을 시작하는 순간, 이전 queryId를 향해 날아가고 있을지 모르는 refreshAnswer 응답을
@@ -123,17 +220,30 @@ export function SearchPage() {
           queryText: trimmed,
           topK,
           collectionId: collectionId ? Number(collectionId) : null,
+          conversationId,
         },
       });
+      if (searchRequestIdRef.current !== requestId) return;
       activeQueryIdRef.current = response.queryId;
+      setConversationId(response.conversationId);
+      if (!conversationId) setConversationTitle(trimmed);
+      setTurns((current) => upsertConversationTurn(current, trimmed, response, new Date().toISOString()));
       setResult(response);
+      setQuery("");
+      if (conversationId === null) {
+        window.history.pushState({}, "", conversationPath(response.conversationId));
+      } else {
+        window.history.replaceState({}, "", conversationPath(response.conversationId));
+      }
+      void loadHistory();
     } catch (reason) {
-      setResult(null);
-      setError(reason instanceof DOMException && ["AbortError", "TimeoutError"].includes(reason.name)
-        ? "검색 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."
-        : errorMessage(reason));
+      if (searchRequestIdRef.current === requestId) {
+        setError(reason instanceof DOMException && ["AbortError", "TimeoutError"].includes(reason.name)
+          ? "검색 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."
+          : errorMessage(reason));
+      }
     } finally {
-      setSearching(false);
+      if (searchRequestIdRef.current === requestId) setSearching(false);
     }
   }
 
@@ -142,19 +252,35 @@ export function SearchPage() {
     void search();
   }
 
-  const groupedSources = result ? groupSearchSources(result) : [];
-  // 원본 후보(raw results)는 "아직 판단 전(PROCESSING)"이거나 "fallback 답변(FAILED, citation
-  // 미저장)"일 때만 미리보기로 보여준다. ragStatus가 SUCCESS인데 citations이 비어있는 건 —
-  // 검색 후보가 아예 없었거나(NO_CONTEXT) RAG가 "관련 문서를 찾지 못했습니다"로 명시적으로 판단한
-  // 경우다 — 이때 raw results로 대신 채우면 "관련 문서 없음" 답변과 근거 문서 목록이 동시에
-  // 뜨는 모순이 생긴다(예: "야" 같은 무관한 질문에도 검색 후보가 뜨는 문제). groupSearchSources가
-  // citations만 근거로 렌더링하도록 설계된 이유가 정확히 이거라, SUCCESS일 땐 그 판단을 그대로 따른다.
-  const showRawResults = result !== null && result.results.length > 0
-    && (result.ragStatus === "PROCESSING" || result.ragStatus === "FAILED");
+  function startNewConversation() {
+    conversationRequestIdRef.current += 1;
+    searchRequestIdRef.current += 1;
+    activeQueryIdRef.current = null;
+    setConversationLoading(false);
+    setSearching(false);
+    setConversationId(null);
+    setConversationTitle("");
+    setTurns([]);
+    setResult(null);
+    setQuery("");
+    setError("");
+    setHistoryOpen(false);
+    window.history.pushState({}, "", conversationPath(null));
+  }
 
   return (
-    <section className={`content search-view ${result || searching || error ? "has-results" : ""}`}>
-      {!result && !searching && !error ? <div className="search-landing">
+    <section className={`content search-view ${turns.length || searching || error ? "has-results" : ""}`}>
+      <div className="conversation-controls">
+        <button type="button" className={historyOpen ? "active" : ""} aria-expanded={historyOpen} aria-controls="conversation-history-panel" onClick={() => setHistoryOpen((open) => !open)}>
+          <span>☰</span> 대화 기록 <small>{historyTotal}</small><b>{historyOpen ? "▴" : "▾"}</b>
+        </button>
+        {conversationId ? <button type="button" onClick={startNewConversation}><span>＋</span> 새 대화</button> : null}
+      </div>
+      {historyOpen ? <div className="conversation-history-panel" id="conversation-history-panel">
+        <div className="conversation-history-head"><div><strong>최근 대화</strong><p>최근 20개까지 표시하며, 선택하면 질문·답변과 근거 문서를 복원합니다.</p></div><button type="button" aria-label="대화 기록 닫기" onClick={() => setHistoryOpen(false)}>×</button></div>
+        {historyLoading ? <div className="conversation-history-loading">대화 기록을 불러오는 중입니다.</div> : conversationHistory.length ? <div className="conversation-history-list">{conversationHistory.map((conversation) => <button type="button" className={conversation.conversationId === conversationId ? "active" : ""} key={conversation.conversationId} onClick={() => void loadConversation(conversation.conversationId, conversation.conversationId === conversationId ? "replace" : "push")}><span>✦</span><div><strong>{conversation.title}</strong><small>{formatDate(conversation.lastMessageAt)}</small></div><b>→</b></button>)}</div> : <div className="conversation-history-empty"><span>○</span><strong>저장된 대화가 없습니다.</strong><p>첫 질문을 입력하면 이곳에 자동으로 저장됩니다.</p></div>}
+      </div> : null}
+      {conversationLoading ? <LoadingState label="대화 내용을 불러오는 중입니다." /> : turns.length === 0 && !searching && !error ? <div className="search-landing">
         <div className="eyebrow"><span>✦</span> AI KNOWLEDGE SEARCH</div>
         <h1>팀의 지식에서<br /><em>정확한 답</em>을 찾으세요.</h1>
         <p className="hero-copy">벡터 검색과 권한 검증을 거쳐, 출처가 명확한 답변을 제공합니다.</p>
@@ -163,45 +289,40 @@ export function SearchPage() {
         {suggestions.length ? <div className="suggestions"><span>추천 질문</span>{suggestions.map((item) => <button key={item.documentId} onClick={() => void search(item.label)}>{item.label}<b>↗</b></button>)}</div> : null}
         <div className="feature-links"><a href="/documents" target="_top"><span>▤</span><div><strong>문서 탐색</strong><small>문서와 인덱싱 상태 확인</small></div><b>→</b></a><a href="/collections" target="_top"><span>▱</span><div><strong>컬렉션</strong><small>주제별 검색 범위 관리</small></div><b>→</b></a><a href="/mcp-tokens" target="_top"><span>⌁</span><div><strong>MCP 연동</strong><small>AI 클라이언트 연결</small></div><b>→</b></a></div>
       </div> : <div className="results-page">
-        <form className="results-search" onSubmit={submit}><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="문서 검색" /><select value={collectionId} onChange={(event) => setCollectionId(event.target.value)}><option value="">전체 컬렉션</option>{collections.map((collection) => <option value={collection.collectionId} key={collection.collectionId}>{collection.name}</option>)}</select><select value={topK} onChange={(event) => setTopK(Number(event.target.value))}><option value={5}>Top-K 5</option><option value={10}>Top-K 10</option><option value={20}>Top-K 20</option></select><button disabled={searching}>{searching ? "검색 중" : "검색"}</button></form>
+        <div className="conversation-heading"><div><span>AI CONVERSATION</span><h1>{conversationTitle || "새 대화"}</h1><p>{turns.length}개의 질문과 답변이 저장되어 있습니다.</p></div><small>{conversationId ? "자동 저장됨" : "새 대화"}</small></div>
+        <form className="results-search" onSubmit={submit}><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="문서 검색" placeholder={turns.length ? "이 대화에 이어서 질문하세요" : "질문을 입력하세요"} /><select aria-label="검색 범위" value={collectionId} onChange={(event) => setCollectionId(event.target.value)}><option value="">전체 컬렉션</option>{collections.map((collection) => <option value={collection.collectionId} key={collection.collectionId}>{collection.name}</option>)}</select><select aria-label="결과 수" value={topK} onChange={(event) => setTopK(Number(event.target.value))}><option value={5}>Top-K 5</option><option value={10}>Top-K 10</option><option value={20}>Top-K 20</option></select><button disabled={searching || !query.trim()}>{searching ? "검색 중" : "전송"}</button></form>
         {error ? <ErrorState message={error} onRetry={() => void search()} /> : null}
         {searching ? <div className="thinking-card"><div className="thinking-orb"><span /><span /><span /></div><div><strong>권한이 있는 문서에서 답을 찾고 있어요</strong><p>벡터 유사도 검색을 진행 중입니다.</p></div></div> : null}
-        {result ? <>
-          <div className="results-meta"><span>AI 답변</span><small>{result.results.length}개의 검색 결과 · queryId {result.queryId}{awaitingAnswer ? ` · ${socketStatus === "LIVE" ? "실시간 대기 중" : "잠시 후 자동 갱신"}` : ""}</small></div>
-          <article className="answer-card"><div className="answer-icon">✦</div><div className="answer-content"><h2>{query}</h2>
-            {awaitingAnswer
-              ? <p className="answer-loading">
-                  <span className="thinking-orb"><span /><span /><span /></span>
-                  {longWait ? "생각보다 오래 걸리고 있어요. 조금만 더 기다려 주세요…" : "AI가 답변을 정리하고 있어요…"}
-                </p>
-              : <p>{result.answer || "접근 가능한 문서에서 답을 생성하지 못했습니다."}</p>}
-          </div></article>
-          <div className="source-heading"><h2>검색 결과와 근거 문서</h2><span>유사도 높은 순</span></div>
-          <div className="source-list">
-            {showRawResults
-              ? result.results.map((item) => (
-                <a className="source-card" key={`${item.documentId}-${item.chunkId}`} href={`/documents/${item.documentId}`} target="_top">
-                  <span className="source-labels"><span className="source-number">{`[${item.rank}]`}</span></span>
-                  <div>
-                    <div className="source-title"><h3>{item.documentTitle}</h3><StatusPill value={`${(item.similarityScore * 100).toFixed(1)}%`} /></div>
-                    <p>{`"${item.chunkText}"`}</p>
-                    <span>{item.pageNo ? `${item.pageNo}페이지 · ` : ""}문서 상세 보기 →</span>
-                  </div>
-                </a>
-              ))
-              : groupedSources.map((source) => (
-                <a className="source-card" key={source.documentId} href={`/documents/${source.documentId}`} target="_top">
-                  <span className="source-labels">{source.labels.map((label) => <span className="source-number" key={label}>{label}</span>)}</span>
-                  <div>
-                    <div className="source-title"><h3>{source.documentTitle}</h3>{source.similarityScore !== null ? <StatusPill value={`${(source.similarityScore * 100).toFixed(1)}%`} /> : null}</div>
-                    <p>{source.excerpts.map((excerpt) => `“${excerpt}”`).join(" · ")}</p>
-                    <span>{source.chunkCount > 1 ? `${source.chunkCount}개 근거 · ` : ""}{source.pages.length > 0 ? `${source.pages.map((page) => `${page}페이지`).join(", ")} · ` : ""}문서 상세 보기 →</span>
-                  </div>
-                </a>
-              ))}
-          </div>
-        </> : null}
+        <div className="conversation-turns">{turns.map((turn, index) => <ConversationTurnView key={turn.queryId} turn={turn} latest={index === turns.length - 1} longWait={longWait && turn.queryId === result?.queryId} socketStatus={turn.queryId === result?.queryId ? socketStatus : null} />)}</div>
       </div>}
     </section>
   );
+}
+
+function ConversationTurnView({ turn, latest, longWait, socketStatus }: { turn: SearchConversationTurn; latest: boolean; longWait: boolean; socketStatus: string | null }) {
+  const groupedSources = groupSearchSources(turn.response);
+  // 확정된 SUCCESS 답변에 Citation이 없으면 "관련 문서 없음"이라는 서버 판단을 그대로 따른다.
+  const showRawResults = turn.response.results.length > 0
+    && (turn.response.ragStatus === "PROCESSING" || turn.response.ragStatus === "FAILED");
+  const hasSources = showRawResults || groupedSources.length > 0;
+  const answerStatus = turn.response.ragStatus === "PROCESSING"
+    ? (socketStatus === "LIVE" ? "답변 생성 중 · 실시간 연결됨" : "답변 생성 중 · 자동 갱신 대기")
+    : turn.response.ragStatus === "FAILED"
+      ? "AI 생성 실패 · 검색 결과 저장됨"
+      : "답변 저장됨";
+
+  return <section className="conversation-turn">
+    <div className="conversation-user-message"><span>나</span><div><p>{turn.queryText}</p><small>{formatDate(turn.createdAt)}</small></div></div>
+    <div className="results-meta"><span>AI 답변</span><small>{answerStatus}</small></div>
+    <article className="answer-card"><div className="answer-icon">✦</div><div className="answer-content">
+      {turn.response.ragStatus === "PROCESSING"
+        ? <p className="answer-loading"><span className="thinking-orb"><span /><span /><span /></span>{longWait ? "생각보다 오래 걸리고 있어요. 조금만 더 기다려 주세요…" : "AI가 답변을 정리하고 있어요…"}</p>
+        : <p>{turn.response.answer || "접근 가능한 문서에서 답을 생성하지 못했습니다."}</p>}
+    </div></article>
+    {hasSources ? <details className="conversation-sources" open={latest}><summary><span>검색 결과와 근거 문서</span><small>{showRawResults ? turn.response.results.length : groupedSources.length}개 보기</small></summary><div className="source-list">
+      {showRawResults
+        ? turn.response.results.map((item) => <a className="source-card" key={`${item.documentId}-${item.chunkId}`} href={`/documents/${item.documentId}`} target="_top"><span className="source-labels"><span className="source-number">{`[${item.rank}]`}</span></span><div><div className="source-title"><h3>{item.documentTitle}</h3><StatusPill value={`${(item.similarityScore * 100).toFixed(1)}%`} /></div><p>{`"${item.chunkText}"`}</p><span>{item.pageNo ? `${item.pageNo}페이지 · ` : ""}문서 상세 보기 →</span></div></a>)
+        : groupedSources.map((source) => <a className="source-card" key={source.documentId} href={`/documents/${source.documentId}`} target="_top"><span className="source-labels">{source.labels.map((label) => <span className="source-number" key={label}>{label}</span>)}</span><div><div className="source-title"><h3>{source.documentTitle}</h3>{source.similarityScore !== null ? <StatusPill value={`${(source.similarityScore * 100).toFixed(1)}%`} /> : null}</div><p>{source.excerpts.map((excerpt) => `“${excerpt}”`).join(" · ")}</p><span>{source.chunkCount > 1 ? `${source.chunkCount}개 근거 · ` : ""}{source.pages.length > 0 ? `${source.pages.map((page) => `${page}페이지`).join(", ")} · ` : ""}문서 상세 보기 →</span></div></a>)}
+    </div></details> : null}
+  </section>;
 }

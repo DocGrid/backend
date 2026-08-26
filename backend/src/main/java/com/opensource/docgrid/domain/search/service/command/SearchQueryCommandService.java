@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.opensource.docgrid.domain.collection.entity.DocumentCollection;
 import com.opensource.docgrid.domain.embedding.entity.EmbeddingModel;
 import com.opensource.docgrid.domain.search.entity.SearchQuery;
+import com.opensource.docgrid.domain.search.entity.SearchConversation;
 import com.opensource.docgrid.domain.search.enums.ResultStatus;
 import com.opensource.docgrid.domain.search.enums.SearchType;
 import com.opensource.docgrid.domain.search.repository.SearchQueryRepository;
@@ -30,6 +31,7 @@ public class SearchQueryCommandService {
      */
     public SearchQuery createProcessing(
         User user,
+        SearchConversation conversation,
         DocumentCollection collection,
         String queryText,
         EmbeddingModel model,
@@ -38,6 +40,7 @@ public class SearchQueryCommandService {
     ) {
         SearchQuery searchQuery = SearchQuery.builder()
             .user(user)
+            .conversation(conversation)
             .collection(collection)
             .queryText(queryText)
             .queryEmbeddingModel(model)

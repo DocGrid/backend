@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -34,10 +35,13 @@ import com.opensource.docgrid.domain.search.dto.VectorSearchCandidate;
 import com.opensource.docgrid.domain.search.dto.request.SearchRequest;
 import com.opensource.docgrid.domain.search.entity.SearchQuery;
 import com.opensource.docgrid.domain.search.entity.SearchResult;
+import com.opensource.docgrid.domain.search.entity.SearchConversation;
 import com.opensource.docgrid.domain.search.fixture.SearchQueryFixture;
+import com.opensource.docgrid.domain.search.service.command.SearchConversationCommandService;
 import com.opensource.docgrid.domain.search.service.command.SearchQueryCommandService;
 import com.opensource.docgrid.domain.search.service.command.SearchResultCommandService;
 import com.opensource.docgrid.domain.search.service.query.AccessibleDocumentQueryService;
+import com.opensource.docgrid.domain.search.service.query.SearchConversationQueryService;
 import com.opensource.docgrid.domain.search.service.query.VectorSearchQueryService;
 import com.opensource.docgrid.domain.user.repository.UserRepository;
 
@@ -49,6 +53,8 @@ class SearchFacadeTest {
     @InjectMocks private SearchFacade searchFacade;
 
     @Mock private QueryEmbeddingService queryEmbeddingService;
+    @Mock private SearchConversationCommandService searchConversationCommandService;
+    @Mock private SearchConversationQueryService searchConversationQueryService;
     @Mock private SearchQueryCommandService searchQueryCommandService;
     @Mock private AccessibleDocumentQueryService accessibleDocumentQueryService;
     @Mock private VectorSearchQueryService vectorSearchQueryService;
@@ -60,6 +66,16 @@ class SearchFacadeTest {
     private static final Long USER_ID = 1L;
     private static final SearchRequest REQUEST = new SearchRequest("검색어", 5, null);
 
+    @BeforeEach
+    void setUpConversation() {
+        SearchConversation conversation = mock(SearchConversation.class);
+        given(conversation.getId()).willReturn(50L);
+        given(searchConversationCommandService.resolve(any(), any(), anyString())).willReturn(conversation);
+        given(searchConversationQueryService.findRecentContext(50L, null, 2)).willReturn(List.of());
+        given(searchConversationQueryService.contextualizeRetrieval(anyString(), any()))
+            .willAnswer(invocation -> invocation.getArgument(0));
+    }
+
     @Test
     @DisplayName("정상 흐름: 후보 조회 후 live check를 거쳐 결과를 반환한다")
     void search_normalFlow_returnsResults() {
@@ -70,7 +86,7 @@ class SearchFacadeTest {
         given(queryEmbeddingService.embed(anyString())).willReturn(embedResult);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(com.opensource.docgrid.domain.user.entity.User.builder()
             .email("test@test.com").passwordHash("hash").name("테스트").build()));
-        given(searchQueryCommandService.createProcessing(any(), any(), anyString(), any(), any(), anyInt()))
+        given(searchQueryCommandService.createProcessing(any(), any(), any(), anyString(), any(), any(), anyInt()))
             .willReturn(searchQuery);
         given(accessibleDocumentQueryService.findReadableDocumentIds(USER_ID, null)).willReturn(List.of(3L));
         given(vectorSearchQueryService.search(any(), any(), any(), anyInt())).willReturn(List.of(candidate));
@@ -98,7 +114,7 @@ class SearchFacadeTest {
         given(queryEmbeddingService.embed(anyString())).willReturn(embedResult);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(com.opensource.docgrid.domain.user.entity.User.builder()
             .email("test@test.com").passwordHash("hash").name("테스트").build()));
-        given(searchQueryCommandService.createProcessing(any(), any(), anyString(), any(), any(), anyInt()))
+        given(searchQueryCommandService.createProcessing(any(), any(), any(), anyString(), any(), any(), anyInt()))
             .willReturn(searchQuery);
         given(accessibleDocumentQueryService.findReadableDocumentIds(USER_ID, null)).willReturn(List.of());
 
@@ -119,7 +135,7 @@ class SearchFacadeTest {
         given(queryEmbeddingService.embed(anyString())).willReturn(embedResult);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(com.opensource.docgrid.domain.user.entity.User.builder()
             .email("test@test.com").passwordHash("hash").name("테스트").build()));
-        given(searchQueryCommandService.createProcessing(any(), any(), anyString(), any(), any(), anyInt()))
+        given(searchQueryCommandService.createProcessing(any(), any(), any(), anyString(), any(), any(), anyInt()))
             .willReturn(searchQuery);
         given(accessibleDocumentQueryService.findReadableDocumentIds(USER_ID, null)).willReturn(List.of(3L));
         given(vectorSearchQueryService.search(any(), any(), any(), anyInt())).willReturn(List.of());
@@ -145,7 +161,7 @@ class SearchFacadeTest {
         given(queryEmbeddingService.embed(anyString())).willReturn(embedResult);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(com.opensource.docgrid.domain.user.entity.User.builder()
             .email("test@test.com").passwordHash("hash").name("테스트").build()));
-        given(searchQueryCommandService.createProcessing(any(), any(), anyString(), any(), any(), anyInt()))
+        given(searchQueryCommandService.createProcessing(any(), any(), any(), anyString(), any(), any(), anyInt()))
             .willReturn(searchQuery);
         given(accessibleDocumentQueryService.findReadableDocumentIds(USER_ID, null)).willReturn(List.of(3L));
         given(vectorSearchQueryService.search(any(), any(), any(), anyInt())).willReturn(List.of(candidate));

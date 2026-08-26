@@ -8,6 +8,7 @@ import com.opensource.docgrid.domain.search.enums.ResultStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 public record SearchResponse(
+    @Schema(description = "질문이 속한 대화방 ID") Long conversationId,
     @Schema(description = "검색 요청 ID (search_queries.id)") Long queryId,
     @Schema(description = "검색 결과 목록 (유사도 내림차순)") List<SearchResultItem> results,
     @Schema(description = "RAG 답변 생성 상태 — PROCESSING이면 answer가 아직 null이라는 뜻이며, "
@@ -24,12 +25,12 @@ public record SearchResponse(
      * 검색은 끝났지만 RAG 답변은 아직 시작 전인 시점이라 ragStatus는 항상 PROCESSING,
      * answer/citations는 비워둔다 — 이후 {@link #withAnswer}로 덧씌워진다.
      */
-    public static SearchResponse of(Long queryId, List<VectorSearchCandidate> candidates) {
+    public static SearchResponse of(Long conversationId, Long queryId, List<VectorSearchCandidate> candidates) {
         List<SearchResultItem> items = new java.util.ArrayList<>();
         for (int i = 0; i < candidates.size(); i++) {
             items.add(SearchResultItem.of(i + 1, candidates.get(i)));
         }
-        return new SearchResponse(queryId, List.copyOf(items), ResultStatus.PROCESSING, null, List.of());
+        return new SearchResponse(conversationId, queryId, List.copyOf(items), ResultStatus.PROCESSING, null, List.of());
     }
 
     /**
@@ -39,8 +40,8 @@ public record SearchResponse(
      * RAG도 애초에 태우지 않을 것이라 나중에 채워질 값이 없기 때문이다. 에러가 아닌
      * 정상적인 빈 결과(200)로 취급된다.
      */
-    public static SearchResponse empty(Long queryId) {
-        return new SearchResponse(queryId, List.of(), ResultStatus.SUCCESS, null, List.of());
+    public static SearchResponse empty(Long conversationId, Long queryId) {
+        return new SearchResponse(conversationId, queryId, List.of(), ResultStatus.SUCCESS, null, List.of());
     }
 
     /**
@@ -52,6 +53,27 @@ public record SearchResponse(
      * (PROCESSING 상태로 대기하지 않아도 될 때) 이 메서드로 {@link #of}의 결과를 덧씌운다.
      */
     public SearchResponse withAnswer(ResultStatus ragStatus, String answer, List<CitationResponse> citations) {
-        return new SearchResponse(queryId, results, ragStatus, answer, citations);
+        return new SearchResponse(conversationId, queryId, results, ragStatus, answer, citations);
+    }
+
+    /** 기존 내부 호출이 새 대화방 도입 전 생성자 형태를 계속 사용할 수 있게 한다. */
+    public SearchResponse(
+        Long queryId,
+        List<SearchResultItem> results,
+        ResultStatus ragStatus,
+        String answer,
+        List<CitationResponse> citations
+    ) {
+        this(null, queryId, results, ragStatus, answer, citations);
+    }
+
+    /** 기존 테스트·MCP 호출이 대화방을 직접 지정하지 않는 빈 응답을 만들 때 사용한다. */
+    public static SearchResponse empty(Long queryId) {
+        return empty(null, queryId);
+    }
+
+    /** 기존 테스트가 대화방을 직접 지정하지 않는 처리 중 응답을 만들 때 사용한다. */
+    public static SearchResponse of(Long queryId, List<VectorSearchCandidate> candidates) {
+        return of(null, queryId, candidates);
     }
 }

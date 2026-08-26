@@ -33,6 +33,7 @@ import org.hibernate.annotations.Type;
  * 이 query를 기준으로 연결된다.
  * 이유: 검색 요청/응답의 전체 흐름을 하나의 query 단위로 추적하기 위함이다.
  * 관계: user_id -> User, collection_id -> DocumentCollection(nullable, 특정 컬렉션으로 범위를 좁힌 검색일 때),
+ * conversation_id -> SearchConversation(질문과 답변을 묶는 사용자 대화방),
  * query_embedding_model_id -> EmbeddingModel(질의 임베딩에 사용된 모델, document embedding과 동일해야 함).
  * index: user_id, collection_id, query_embedding_model_id, search_type, created_at.
  *
@@ -63,6 +64,11 @@ public class SearchQuery extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
+
+    // 질문·답변 기록을 화면에서 다시 열 수 있도록 모든 검색은 하나의 대화방에 속한다.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "conversation_id", nullable = false)
+    private SearchConversation conversation;
 
     // 검색 범위를 특정 컬렉션으로 좁힌 경우에만 값이 있음
     @ManyToOne(fetch = FetchType.LAZY)
@@ -113,10 +119,11 @@ public class SearchQuery extends BaseEntity {
     }
 
     @Builder
-    public SearchQuery(User user, DocumentCollection collection, String queryText,
+    public SearchQuery(User user, SearchConversation conversation, DocumentCollection collection, String queryText,
                         EmbeddingModel queryEmbeddingModel, float[] queryVector, SearchType searchType, int topK,
                         String filtersJson, Integer latencyMs, ResultStatus status, String errorMessage) {
         this.user = user;
+        this.conversation = conversation;
         this.collection = collection;
         this.queryText = queryText;
         this.queryEmbeddingModel = queryEmbeddingModel;

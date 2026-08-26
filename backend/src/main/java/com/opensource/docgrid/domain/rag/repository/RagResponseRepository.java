@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -11,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.opensource.docgrid.domain.rag.entity.RagResponse;
+import com.opensource.docgrid.domain.search.dto.ConversationContext;
 import com.opensource.docgrid.domain.search.enums.ResultStatus;
 
 /**
@@ -33,6 +35,26 @@ public interface RagResponseRepository extends JpaRepository<RagResponse, Long> 
 
     /** 특정 검색 요청(queryId)에 대한 RAG 답변을 찾는다. GET /search/{queryId} 재조회에 쓰인다. */
     Optional<RagResponse> findByQuery_Id(Long queryId);
+
+    /**
+     * 후속 질문 프롬프트에 사용할 확정 답변만 최근순으로 제한 조회한다.
+     * 현재 생성 중인 Query는 excludedQueryId로 제외해 자기 자신을 문맥으로 다시 읽지 않게 한다.
+     */
+    @Query("""
+        SELECT new com.opensource.docgrid.domain.search.dto.ConversationContext(q.queryText, r.answerText)
+        FROM RagResponse r
+        JOIN r.query q
+        WHERE q.conversation.id = :conversationId
+          AND (:excludedQueryId IS NULL OR q.id <> :excludedQueryId)
+          AND r.status = com.opensource.docgrid.domain.search.enums.ResultStatus.SUCCESS
+          AND r.answerText IS NOT NULL
+        ORDER BY q.createdAt DESC
+        """)
+    List<ConversationContext> findRecentConversationContext(
+        @Param("conversationId") Long conversationId,
+        @Param("excludedQueryId") Long excludedQueryId,
+        Pageable pageable
+    );
 
     /**
      * 주어진 상태(보통 PROCESSING)로 threshold 이전부터 남아있는 job들을 찾는다 —

@@ -330,6 +330,11 @@ public enum ErrorCode {
         "SEARCH-006",
         "임베딩 서버가 요청 계약을 거부했습니다."
     ),
+    SEARCH_CONVERSATION_NOT_FOUND(
+        HttpStatus.NOT_FOUND,
+        "SEARCH-007",
+        "대화 기록을 찾을 수 없습니다."
+    ),
 
     // RAG
     RAG_SERVICE_UNAVAILABLE(

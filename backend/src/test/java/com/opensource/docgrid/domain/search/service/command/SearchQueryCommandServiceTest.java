@@ -39,7 +39,7 @@ class SearchQueryCommandServiceTest {
         given(searchQueryRepository.save(any(SearchQuery.class))).willAnswer(i -> i.getArgument(0));
 
         searchQueryCommandService.createProcessing(
-            null, null, SearchQueryFixture.QUERY_TEXT,
+            null, null, null, SearchQueryFixture.QUERY_TEXT,
             model, SearchQueryFixture.VECTOR, SearchQueryFixture.TOP_K
         );
 

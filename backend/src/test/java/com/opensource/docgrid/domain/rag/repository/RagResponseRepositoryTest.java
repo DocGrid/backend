@@ -16,9 +16,11 @@ import com.opensource.docgrid.domain.embedding.entity.EmbeddingModel;
 import com.opensource.docgrid.domain.embedding.fixture.EmbeddingModelFixture;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingModelRepository;
 import com.opensource.docgrid.domain.rag.entity.RagResponse;
+import com.opensource.docgrid.domain.search.entity.SearchConversation;
 import com.opensource.docgrid.domain.search.entity.SearchQuery;
 import com.opensource.docgrid.domain.search.enums.ResultStatus;
 import com.opensource.docgrid.domain.search.enums.SearchType;
+import com.opensource.docgrid.domain.search.repository.SearchConversationRepository;
 import com.opensource.docgrid.domain.search.repository.SearchQueryRepository;
 import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.domain.user.enums.UserStatus;
@@ -42,6 +44,9 @@ class RagResponseRepositoryTest {
 
     @Autowired
     private SearchQueryRepository searchQueryRepository;
+
+    @Autowired
+    private SearchConversationRepository searchConversationRepository;
 
     @Autowired
     private UserRepository userRepository;
@@ -139,8 +144,14 @@ class RagResponseRepositoryTest {
             .build());
         EmbeddingModel model = embeddingModelRepository.save(
             EmbeddingModelFixture.createModel("rag-repo-test-" + System.nanoTime(), false, false));
+        SearchConversation conversation = searchConversationRepository.save(SearchConversation.builder()
+            .user(user)
+            .title("테스트 질문")
+            .lastMessageAt(LocalDateTime.now())
+            .build());
         SearchQuery query = searchQueryRepository.save(SearchQuery.builder()
             .user(user)
+            .conversation(conversation)
             .queryText("테스트 질문")
             .queryEmbeddingModel(model)
             .queryVector(new float[1024])

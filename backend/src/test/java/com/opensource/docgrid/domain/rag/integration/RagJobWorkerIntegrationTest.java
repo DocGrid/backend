@@ -2,6 +2,8 @@ package com.opensource.docgrid.domain.rag.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.LocalDateTime;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -18,9 +20,11 @@ import com.opensource.docgrid.domain.rag.repository.RagResponseRepository;
 import com.opensource.docgrid.domain.rag.repository.ResponseCitationRepository;
 import com.opensource.docgrid.domain.rag.service.RagJobWorker;
 import com.opensource.docgrid.domain.rag.service.command.RagResponseCommandService;
+import com.opensource.docgrid.domain.search.entity.SearchConversation;
 import com.opensource.docgrid.domain.search.entity.SearchQuery;
 import com.opensource.docgrid.domain.search.enums.ResultStatus;
 import com.opensource.docgrid.domain.search.enums.SearchType;
+import com.opensource.docgrid.domain.search.repository.SearchConversationRepository;
 import com.opensource.docgrid.domain.search.repository.SearchQueryRepository;
 import com.opensource.docgrid.domain.user.entity.User;
 import com.opensource.docgrid.domain.user.enums.UserStatus;
@@ -44,6 +48,7 @@ class RagJobWorkerIntegrationTest {
     @Autowired private RagResponseCommandService ragResponseCommandService;
     @Autowired private RagResponseRepository ragResponseRepository;
     @Autowired private SearchQueryRepository searchQueryRepository;
+    @Autowired private SearchConversationRepository searchConversationRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private EmbeddingModelRepository embeddingModelRepository;
     @Autowired private ResponseCitationRepository responseCitationRepository;
@@ -51,6 +56,7 @@ class RagJobWorkerIntegrationTest {
     private Long createdUserId;
     private Long createdModelId;
     private Long createdQueryId;
+    private Long createdConversationId;
 
     // 테스트 메서드를 @Transactional로 감쌀 수 없어(위 설명 참고) 자동 롤백이 안 되므로, 만든
     // 데이터를 직접 정리한다 — 안 그러면 docgrid_test 스키마에 유저가 계속 쌓여 다른 테스트
@@ -65,6 +71,7 @@ class RagJobWorkerIntegrationTest {
             });
             searchQueryRepository.deleteById(createdQueryId);
         }
+        if (createdConversationId != null) searchConversationRepository.deleteById(createdConversationId);
         if (createdModelId != null) embeddingModelRepository.deleteById(createdModelId);
         if (createdUserId != null) userRepository.deleteById(createdUserId);
     }
@@ -88,8 +95,15 @@ class RagJobWorkerIntegrationTest {
             EmbeddingModelFixture.createModel("ragjobworker-it-" + System.nanoTime(), false, false)
         );
         createdModelId = model.getId();
+        SearchConversation conversation = searchConversationRepository.save(SearchConversation.builder()
+            .user(user)
+            .title("통합 테스트 질문")
+            .lastMessageAt(LocalDateTime.now())
+            .build());
+        createdConversationId = conversation.getId();
         SearchQuery query = searchQueryRepository.save(SearchQuery.builder()
             .user(user)
+            .conversation(conversation)
             .queryText("통합 테스트 질문")
             .queryEmbeddingModel(model)
             .queryVector(new float[1024])

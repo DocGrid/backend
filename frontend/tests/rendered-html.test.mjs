@@ -154,6 +154,22 @@ test("wires document metadata update and soft delete actions to their permission
   assert.match(source, /window\.location\.assign\("\/documents"\)/);
 });
 
+test("shows document version history and never renders the issued MCP token value", async () => {
+  const [documents, tokens, styles] = await Promise.all([
+    readFile(new URL("../app/features/DocumentsPage.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/features/McpTokensPage.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(documents, /\/api\/documents\/\$\{documentId\}\/versions/);
+  assert.match(documents, /문서 버전 전체 이력/);
+  assert.match(styles, /\.version-history-card/);
+  assert.match(tokens, /maskToken\(issued\.token\)/);
+  assert.match(tokens, /await navigator\.clipboard\.writeText\(issued\.token\);\s*setIssued\(null\);/);
+  assert.doesNotMatch(tokens, /<span>\{issued\.token\}<\/span>/);
+  assert.doesNotMatch(tokens, /보조 스크립트|Keychain용 복사/);
+});
+
 test("keeps collection document add selection independent from removal", async () => {
   const source = await readFile(new URL("../app/features/CollectionsPage.tsx", import.meta.url), "utf8");
 

@@ -25,6 +25,7 @@ import com.opensource.docgrid.domain.document.dto.response.CurrentVersionStatusR
 import com.opensource.docgrid.domain.document.dto.response.DocumentContentResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentDetailResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentStatusResponse;
+import com.opensource.docgrid.domain.document.dto.response.DocumentVersionHistoryResponse;
 import com.opensource.docgrid.domain.document.dto.response.ProcessingVersionStatusResponse;
 import com.opensource.docgrid.domain.document.enums.DocumentSourceType;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
@@ -46,6 +47,7 @@ class DocumentQueryControllerTest {
     private static final String DETAIL_URL = "/api/documents/{documentId}";
     private static final String CONTENT_URL = "/api/documents/{documentId}/content";
     private static final String FILE_URL = "/api/documents/{documentId}/file";
+    private static final String VERSIONS_URL = "/api/documents/{documentId}/versions";
 
     @Autowired
     private MockMvc mockMvc;
@@ -103,6 +105,42 @@ class DocumentQueryControllerTest {
             .andExpect(jsonPath("$.data.documentVersionId").value(30))
             .andExpect(jsonPath("$.data.content").value("첫 페이지\n둘째 페이지"))
             .andExpect(jsonPath("$.data.chunkCount").value(4));
+    }
+
+    @Test
+    @DisplayName("인증된 사용자가 현재 여부와 최신 Job을 포함한 전체 버전 이력을 조회한다")
+    void getDocumentVersions_returnsCompleteHistory() throws Exception {
+        DocumentVersionHistoryResponse response = new DocumentVersionHistoryResponse(
+            31L,
+            2,
+            DocumentVersionStatus.FAILED,
+            false,
+            "security-v2.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            2048L,
+            "sha256",
+            20L,
+            "관리자",
+            LocalDateTime.of(2026, 8, 26, 10, 0),
+            null,
+            41L,
+            EmbeddingJobStatus.FAILED,
+            "demo-worker-b",
+            "EMBEDDING_PROVIDER_TIMEOUT",
+            3,
+            3
+        );
+        given(documentQueryService.getDocumentVersions(20L, 10L)).willReturn(List.of(response));
+
+        mockMvc.perform(get(VERSIONS_URL, 10L)
+                .with(authentication(authenticationWithUserId(20L))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[0].versionNo").value(2))
+            .andExpect(jsonPath("$.data[0].current").value(false))
+            .andExpect(jsonPath("$.data[0].status").value("FAILED"))
+            .andExpect(jsonPath("$.data[0].latestJobId").value(41))
+            .andExpect(jsonPath("$.data[0].latestWorkerName").value("demo-worker-b"))
+            .andExpect(jsonPath("$.data[0].errorCode").value("EMBEDDING_PROVIDER_TIMEOUT"));
     }
 
     @Test

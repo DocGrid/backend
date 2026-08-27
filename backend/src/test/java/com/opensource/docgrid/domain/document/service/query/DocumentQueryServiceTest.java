@@ -26,10 +26,12 @@ import org.springframework.data.domain.Pageable;
 import com.opensource.docgrid.domain.document.converter.DocumentStatusConverter;
 import com.opensource.docgrid.domain.document.converter.DocumentSummaryConverter;
 import com.opensource.docgrid.domain.document.converter.DocumentDetailConverter;
+import com.opensource.docgrid.domain.document.converter.DocumentVersionHistoryConverter;
 import com.opensource.docgrid.domain.document.dto.response.DocumentContentResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentDetailResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentStatusResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentSummaryResponse;
+import com.opensource.docgrid.domain.document.dto.response.DocumentVersionHistoryResponse;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.entity.DocumentChunk;
 import com.opensource.docgrid.domain.document.entity.DocumentVersion;
@@ -42,8 +44,11 @@ import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
 import com.opensource.docgrid.domain.document.repository.DocumentStatusProjection;
 import com.opensource.docgrid.domain.document.repository.DocumentChunkRepository;
+import com.opensource.docgrid.domain.document.repository.DocumentVersionRepository;
 import com.opensource.docgrid.domain.document.storage.StoredFile;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
+import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
+import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.global.common.response.PageResponse;
 import com.opensource.docgrid.global.exception.DocGridException;
@@ -60,11 +65,14 @@ class DocumentQueryServiceTest {
     private DocumentQueryService service;
 
     @Mock private DocumentRepository documentRepository;
+    @Mock private DocumentVersionRepository documentVersionRepository;
     @Mock private DocumentChunkRepository documentChunkRepository;
+    @Mock private EmbeddingJobRepository embeddingJobRepository;
     @Mock private PermissionQueryService permissionQueryService;
     @Mock private DocumentDetailConverter documentDetailConverter;
     @Mock private DocumentStatusConverter documentStatusConverter;
     @Mock private DocumentSummaryConverter documentSummaryConverter;
+    @Mock private DocumentVersionHistoryConverter documentVersionHistoryConverter;
     @Mock private DocumentStatusProjection projection;
 
     @Test
@@ -94,6 +102,45 @@ class DocumentQueryServiceTest {
             .isInstanceOf(DocGridException.class)
             .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PERMISSION_DENIED);
         then(documentRepository).should(never()).findByIdWithCurrentVersion(DOCUMENT_ID);
+    }
+
+    @Test
+    @DisplayName("전체 버전을 최신순으로 각 버전의 최신 Job과 결합해 반환한다")
+    void getDocumentVersions_returnsCompleteTimeline() {
+        Document document = mock(Document.class);
+        DocumentVersion version2 = mock(DocumentVersion.class);
+        DocumentVersion version1 = mock(DocumentVersion.class);
+        EmbeddingJob version2Job = mock(EmbeddingJob.class);
+        DocumentVersionHistoryResponse expectedVersion2 = mock(DocumentVersionHistoryResponse.class);
+        DocumentVersionHistoryResponse expectedVersion1 = mock(DocumentVersionHistoryResponse.class);
+        givenReadableDocument(document);
+        given(document.getCurrentVersion()).willReturn(version1);
+        given(version1.getId()).willReturn(30L);
+        given(version2.getId()).willReturn(31L);
+        given(version2Job.getDocumentVersion()).willReturn(version2);
+        given(documentVersionRepository.findHistoryByDocumentId(DOCUMENT_ID))
+            .willReturn(List.of(version2, version1));
+        given(embeddingJobRepository.findHistoryJobsByDocumentVersionIds(List.of(31L, 30L)))
+            .willReturn(List.of(version2Job));
+        given(documentVersionHistoryConverter.toResponse(version2, 30L, version2Job))
+            .willReturn(expectedVersion2);
+        given(documentVersionHistoryConverter.toResponse(version1, 30L, null))
+            .willReturn(expectedVersion1);
+
+        List<DocumentVersionHistoryResponse> result = service.getDocumentVersions(USER_ID, DOCUMENT_ID);
+
+        assertThat(result).containsExactly(expectedVersion2, expectedVersion1);
+    }
+
+    @Test
+    @DisplayName("문서 읽기 권한이 없으면 버전 이력 저장소를 조회하지 않는다")
+    void getDocumentVersions_throws_whenReadPermissionIsDenied() {
+        given(permissionQueryService.canReadDocument(USER_ID, DOCUMENT_ID)).willReturn(false);
+
+        assertThatThrownBy(() -> service.getDocumentVersions(USER_ID, DOCUMENT_ID))
+            .isInstanceOf(DocGridException.class)
+            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PERMISSION_DENIED);
+        then(documentVersionRepository).should(never()).findHistoryByDocumentId(DOCUMENT_ID);
     }
 
     @Test

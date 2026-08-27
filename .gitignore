@@ -48,5 +48,15 @@ __pycache__/
 # Local Filesystem Adapter가 저장하는 문서 원본
 /data/
 
+# 로컬 시연 DB Snapshot, PID, Log, 업로드 원본 저장소
+/.demo/
+
+# 로컬 전용 시연 촬영 스토리보드와 실제 화면 캡처
+/docs/test-results/demo-recording-storyboard.md
+/docs/test-results/demo-storyboard/
+
+# 저장소 루트에 잘못 생성된 Git Fetch 임시 표식
+/FETCH_HEAD
+
 # 공급사 설치 파일과 라이선스는 Repository 외부에 보관한다.
 /.local-vendor/

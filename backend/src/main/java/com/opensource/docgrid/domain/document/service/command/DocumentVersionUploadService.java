@@ -22,6 +22,7 @@ import com.opensource.docgrid.domain.embedding.entity.EmbeddingModel;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.embedding.service.query.EmbeddingModelQueryService;
+import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.sync.entity.SyncOutboxEvent;
 import com.opensource.docgrid.domain.sync.service.command.SyncEventWriter;
 import com.opensource.docgrid.domain.user.entity.User;
@@ -52,22 +53,25 @@ public class DocumentVersionUploadService {
     private final DocumentVersionRepository documentVersionRepository;
     private final EmbeddingJobRepository embeddingJobRepository;
     private final EmbeddingModelQueryService embeddingModelQueryService;
+    private final PermissionQueryService permissionQueryService;
     private final SyncEventWriter syncEventWriter;
 
     @Transactional(readOnly = true)
     public Optional<Long> prepare(Long userId, Long documentId, ValidatedFile file, String fileHash) {
+        validateWritePermission(userId, documentId);
         Document document = documentRepository.findById(documentId)
             .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
-        validate(document, userId, file, fileHash);
+        validate(document, file, fileHash);
         return fileObjectResolutionService.findReusableFileObjectId(fileHash, file.fileSize());
     }
 
     public DocumentVersionUploadTransactionResult upload(DocumentVersionUploadCommand command) {
         userRepository.findById(command.userId())
             .orElseThrow(() -> new DocGridException(ErrorCode.USER_NOT_FOUND));
+        validateWritePermission(command.userId(), command.documentId());
         Document document = documentRepository.findByIdForUpdate(command.documentId())
             .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
-        validate(document, command.userId(), command.validatedFile(), command.fileHash());
+        validate(document, command.validatedFile(), command.fileHash());
 
         FileObjectResolutionService.Resolution resolution = fileObjectResolutionService.resolve(
             command.userId(), command.validatedFile(), command.fileHash(),
@@ -129,10 +133,14 @@ public class DocumentVersionUploadService {
         return new DocumentVersionUploadTransactionResult(response, resolution.candidateClaimed());
     }
 
-    private void validate(Document document, Long userId, ValidatedFile file, String fileHash) {
-        if (!document.getOwner().getId().equals(userId)) {
+    private void validateWritePermission(Long userId, Long documentId) {
+        // UI의 canWrite와 같은 권한 계산을 사용해 WRITE 보유자가 실제 새 버전 업로드도 수행할 수 있게 한다.
+        if (!permissionQueryService.canWriteDocument(userId, documentId)) {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
+    }
+
+    private void validate(Document document, ValidatedFile file, String fileHash) {
         // 삭제된 문서는 다른 조회·수정 경로와 같이 존재하지 않는 것으로 다룬다.
         // 상태 분기까지 내려가면 이 경우만 409가 되어 나머지 API의 404와 어긋난다.
         if (document.getStatus() == DocumentStatus.DELETED) {

@@ -1,7 +1,9 @@
 package com.opensource.docgrid.domain.document.service.query;
 
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.springframework.data.domain.Page;
@@ -14,10 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 import com.opensource.docgrid.domain.document.converter.DocumentDetailConverter;
 import com.opensource.docgrid.domain.document.converter.DocumentStatusConverter;
 import com.opensource.docgrid.domain.document.converter.DocumentSummaryConverter;
+import com.opensource.docgrid.domain.document.converter.DocumentVersionHistoryConverter;
 import com.opensource.docgrid.domain.document.dto.response.DocumentContentResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentDetailResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentStatusResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentSummaryResponse;
+import com.opensource.docgrid.domain.document.dto.response.DocumentVersionHistoryResponse;
 import com.opensource.docgrid.domain.document.entity.Document;
 import com.opensource.docgrid.domain.document.entity.DocumentChunk;
 import com.opensource.docgrid.domain.document.entity.DocumentVersion;
@@ -27,8 +31,11 @@ import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 import com.opensource.docgrid.domain.document.repository.DocumentChunkRepository;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
 import com.opensource.docgrid.domain.document.repository.DocumentStatusProjection;
+import com.opensource.docgrid.domain.document.repository.DocumentVersionRepository;
 import com.opensource.docgrid.domain.document.storage.StoredFile;
 import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
+import com.opensource.docgrid.domain.embedding.entity.EmbeddingJob;
+import com.opensource.docgrid.domain.embedding.repository.EmbeddingJobRepository;
 import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.global.common.response.PageResponse;
 import com.opensource.docgrid.global.exception.DocGridException;
@@ -68,11 +75,14 @@ public class DocumentQueryService {
     );
 
     private final DocumentRepository documentRepository;
+    private final DocumentVersionRepository documentVersionRepository;
     private final DocumentChunkRepository documentChunkRepository;
+    private final EmbeddingJobRepository embeddingJobRepository;
     private final PermissionQueryService permissionQueryService;
     private final DocumentDetailConverter documentDetailConverter;
     private final DocumentStatusConverter documentStatusConverter;
     private final DocumentSummaryConverter documentSummaryConverter;
+    private final DocumentVersionHistoryConverter documentVersionHistoryConverter;
 
     public PageResponse<DocumentSummaryResponse> getMyDocuments(
         Long userId,
@@ -108,6 +118,35 @@ public class DocumentQueryService {
         boolean contentAvailable = currentVersion != null
             && documentChunkRepository.existsByDocumentVersionId(currentVersion.getId());
         return documentDetailConverter.toResponse(document, contentAvailable);
+    }
+
+    /**
+     * 읽기 가능한 문서의 모든 버전과 각 버전의 최신 인덱싱 Job을 타임라인 순서로 반환한다.
+     */
+    public List<DocumentVersionHistoryResponse> getDocumentVersions(Long userId, Long documentId) {
+        // 1. 상세 조회와 같은 권한·삭제 정책으로 타임라인 대상 문서를 확정한다.
+        Document document = getReadableDocument(userId, documentId);
+        List<DocumentVersion> versions = documentVersionRepository.findHistoryByDocumentId(documentId);
+        if (versions.isEmpty()) {
+            return List.of();
+        }
+
+        // 2. Version별 최신 Job을 한 번에 읽고 ID 역순의 첫 Job만 Snapshot으로 선택한다.
+        List<Long> versionIds = versions.stream().map(DocumentVersion::getId).toList();
+        Map<Long, EmbeddingJob> latestJobsByVersionId = new HashMap<>();
+        for (EmbeddingJob job : embeddingJobRepository.findHistoryJobsByDocumentVersionIds(versionIds)) {
+            latestJobsByVersionId.putIfAbsent(job.getDocumentVersion().getId(), job);
+        }
+
+        // 3. current_version_id를 기준으로 정상 v1과 실패 v2 같은 Fallback 상태를 명확히 표시한다.
+        Long currentVersionId = document.getCurrentVersion() != null ? document.getCurrentVersion().getId() : null;
+        return versions.stream()
+            .map(version -> documentVersionHistoryConverter.toResponse(
+                version,
+                currentVersionId,
+                latestJobsByVersionId.get(version.getId())
+            ))
+            .toList();
     }
 
     /**

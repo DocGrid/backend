@@ -31,7 +31,7 @@ export function McpTokensPage({ notify }: { notify: (message: string) => void })
     try {
       const response = await apiRequest<McpTokenIssue>("/mcp/tokens", { method: "POST" });
       setIssued(response);
-      notify("MCP 토큰을 발급했습니다. 원문은 지금 한 번만 확인할 수 있습니다.");
+      notify("MCP 토큰을 발급했습니다. 원문은 화면에 표시하지 않으며 한 번만 복사할 수 있습니다.");
       await load();
     } catch (reason) { setError(errorMessage(reason)); }
     finally { setBusy(false); }
@@ -46,16 +46,25 @@ export function McpTokensPage({ notify }: { notify: (message: string) => void })
 
   async function copy() {
     if (!issued) return;
-    await navigator.clipboard.writeText(issued.token);
-    notify("토큰을 클립보드에 복사했습니다.");
+    try {
+      await navigator.clipboard.writeText(issued.token);
+      setIssued(null);
+      notify("토큰을 클립보드에 복사했습니다. 안전한 비밀 저장소에 보관하세요.");
+    } catch {
+      setError("클립보드 복사에 실패했습니다. 브라우저 권한을 확인해 주세요.");
+    }
   }
 
   return <section className="content page-view">
     <PageHeading kicker="MCP INTEGRATION" title="MCP 토큰" description="Claude Desktop 등 MCP 클라이언트에서 사용할 장기 API 키를 관리하세요." actions={<button className="primary-button" disabled={busy} onClick={() => void issue()}>＋ 새 토큰 발급</button>} />
     {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
-    {issued ? <div className="token-reveal"><div><strong>한 번만 표시되는 토큰</strong><span>{issued.token}</span></div><button onClick={() => void copy()}>복사</button></div> : null}
+    {issued ? <div className="token-reveal"><div><strong>원문 비표시 · 1회 복사</strong><span>{maskToken(issued.token)}</span></div><button onClick={() => void copy()}>토큰 복사</button></div> : null}
     {loading ? <LoadingState label="MCP 토큰을 불러오는 중입니다." /> : null}
     {!loading && !tokens.length ? <EmptyState symbol="⌁" title="발급된 토큰이 없습니다" description="필요할 때 새 토큰을 발급하세요." /> : null}
-    {!loading && tokens.length ? <div className="detail-grid token-grid"><div className="panel-card"><div className="panel-heading"><div><h2>내 토큰</h2><p>원문은 보안상 다시 표시되지 않습니다.</p></div></div><div className="mini-table token-table"><div className="table-labels"><span>ID</span><span>발급</span><span>마지막 사용</span><span>상태</span><span /></div>{tokens.map((token) => <div key={token.tokenId}><b>#{token.tokenId}</b><span>{formatDate(token.createdAt)}</span><span>{formatDate(token.lastUsedAt)}</span><StatusPill value={token.revokedAt ? "폐기됨" : "사용 가능"} />{token.revokedAt ? <span /> : <button className="danger-text" disabled={busy} onClick={() => void revoke(token.tokenId)}>폐기</button>}</div>)}</div></div><div className="panel-card"><div className="panel-heading"><div><h2>연동 안내</h2><p>토큰은 내 DocGrid 권한으로 동작합니다.</p></div></div><div className="tool-list"><div><code>Authorization</code><span><code>Authorization: Bearer docgrid_mcp_xxxxx</code> 형식으로, <code>Bearer </code> 뒤에 발급된 MCP 토큰을 그대로 넣습니다.</span></div><div><code>보안</code><span>토큰을 소스 코드나 공개 설정 파일에 저장하지 마세요.</span></div><div><code>폐기</code><span>노출이 의심되면 즉시 폐기하고 새 토큰을 발급하세요.</span></div></div></div></div> : null}
+    {!loading && tokens.length ? <div className="detail-grid token-grid"><div className="panel-card"><div className="panel-heading"><div><h2>내 토큰</h2><p>원문은 보안상 다시 표시되지 않습니다.</p></div></div><div className="mini-table token-table"><div className="table-labels"><span>ID</span><span>발급</span><span>마지막 사용</span><span>상태</span><span /></div>{tokens.map((token) => <div key={token.tokenId}><b>#{token.tokenId}</b><span>{formatDate(token.createdAt)}</span><span>{formatDate(token.lastUsedAt)}</span><StatusPill value={token.revokedAt ? "폐기됨" : "사용 가능"} />{token.revokedAt ? <span /> : <button className="danger-text" disabled={busy} onClick={() => void revoke(token.tokenId)}>폐기</button>}</div>)}</div></div><div className="panel-card"><div className="panel-heading"><div><h2>연동 안내</h2><p>토큰은 내 DocGrid 권한으로 동작합니다.</p></div></div><div className="tool-list"><div><code>보관</code><span>복사한 토큰은 운영체제 Keychain이나 비밀번호 관리자 같은 안전한 비밀 저장소에 보관하세요.</span></div><div><code>설정</code><span>소스 코드나 공개 설정 파일에 토큰 원문을 넣지 마세요.</span></div><div><code>폐기</code><span>노출이 의심되면 즉시 폐기하고 새 토큰을 발급하세요.</span></div></div></div></div> : null}
   </section>;
+}
+
+function maskToken(token: string) {
+  return `docgrid_mcp_${"•".repeat(12)}${token.slice(-4)}`;
 }

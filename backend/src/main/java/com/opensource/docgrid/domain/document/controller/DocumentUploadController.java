@@ -49,7 +49,8 @@ public class DocumentUploadController {
 
     @Operation(
         summary = "문서 새 버전 업로드 접수",
-        description = "기존 문서에 새 파일 버전을 등록하고 비동기 인덱싱 작업을 생성합니다."
+        description = "기존 문서에 새 파일 버전을 등록하고 비동기 인덱싱 작업을 생성합니다. "
+            + "문서 소유자 또는 계산된 WRITE 권한이 필요합니다."
     )
     @PostMapping(value = "/{documentId}/versions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<DocumentVersionUploadResponse>> uploadVersion(

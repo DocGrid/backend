@@ -23,28 +23,7 @@ DocGrid는 조직에 흩어진 PDF·DOCX 문서를 자동으로 인덱싱하고,
 
 ## 아키텍처
 
-```mermaid
-flowchart LR
-    User[사용자] --> Web[React Web]
-    McpClient[MCP Client] --> Api[Spring Boot API]
-    Web --> Api
-
-    Api --> Redis[(Redis)]
-    Api --> Storage[(Local / MinIO / S3)]
-    Api --> Db[(OpenSQL / PostgreSQL 17<br/>pgvector)]
-    Api --> Bge[BGE-M3]
-
-    Db -- Indexing Job --> IndexWorker[Indexing Worker]
-    IndexWorker --> Storage
-    IndexWorker --> Bge
-    IndexWorker --> Db
-
-    Db -- RAG Job --> RagWorker[RAG Worker]
-    RagWorker --> Ollama[Ollama<br/>qwen2.5:7b]
-    RagWorker --> Db
-
-    Api -. WebSocket .-> Web
-```
+![DocGrid 아키텍처](docs/images/architecture.png)
 
 1. API가 업로드 원본을 파일 저장소에 보관하고 문서 Metadata와 인덱싱 Job을 DB에 기록합니다.
 2. Indexing Worker가 원본을 Parsing·Chunking하고 BGE-M3 Embedding을 pgvector에 저장합니다.

@@ -24,6 +24,19 @@ import com.opensource.docgrid.domain.document.enums.DocumentVersionStatus;
 public interface DocumentVersionRepository extends JpaRepository<DocumentVersion, Long> {
 
     /**
+     * 읽기 가능한 문서의 전체 버전을 파일과 생성자 정보까지 최신 번호순으로 조회한다.
+     */
+    @Query("""
+        SELECT version
+        FROM DocumentVersion version
+        LEFT JOIN FETCH version.fileObject
+        LEFT JOIN FETCH version.createdBy
+        WHERE version.document.id = :documentId
+        ORDER BY version.versionNo DESC
+        """)
+    List<DocumentVersion> findHistoryByDocumentId(@Param("documentId") Long documentId);
+
+    /**
      * Reconciler가 전체 Version을 Offset 없이 작은 ID Cursor Batch로 순회한다.
      */
     @Query("""

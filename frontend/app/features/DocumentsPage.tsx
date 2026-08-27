@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest, downloadBackendFile, errorMessage, previewBackendFile, toQuery } from "../lib/api";
-import type { DocumentContent, DocumentDetail, DocumentStatus, DocumentSummary, IndexingJob, PageResponse, PermissionSummary, UpdateDocumentMetadataRequest } from "../lib/api-types";
+import type { DocumentContent, DocumentDetail, DocumentStatus, DocumentSummary, DocumentVersionHistory, IndexingJob, PageResponse, PermissionSummary, UpdateDocumentMetadataRequest } from "../lib/api-types";
 import { DOCUMENT_STATUS_POLL_INTERVAL_MS, isDocumentProcessing } from "../lib/document-status";
 import { EmptyState, ErrorState, LoadingState, Notice, PageHeading, StatusPill, formatBytes, formatDate } from "../components/ui";
 import { useAuth } from "../components/AuthProvider";
@@ -62,6 +62,7 @@ export function DocumentDetailPage({ documentId, onVersionUpload, notify, refres
   const [document, setDocument] = useState<DocumentDetail | null>(null);
   const [content, setContent] = useState<DocumentContent | null>(null);
   const [status, setStatus] = useState<DocumentStatus | null>(null);
+  const [versions, setVersions] = useState<DocumentVersionHistory[]>([]);
   const [permission, setPermission] = useState<PermissionSummary | null>(null);
   const [failedJob, setFailedJob] = useState<IndexingJob | null>(null);
   const [loading, setLoading] = useState(true);
@@ -78,10 +79,11 @@ export function DocumentDetailPage({ documentId, onVersionUpload, notify, refres
     setError("");
     setContentError("");
     // 1. One unstable detail contract must not hide independently available status and permission data.
-    const [detailResult, statusResult, permissionResult] = await Promise.allSettled([
+    const [detailResult, statusResult, permissionResult, versionsResult] = await Promise.allSettled([
       apiRequest<DocumentDetail>(`/api/documents/${documentId}`),
       apiRequest<DocumentStatus>(`/api/documents/${documentId}/status`),
       apiRequest<PermissionSummary>(`/permissions/documents/${documentId}/me`),
+      apiRequest<DocumentVersionHistory[]>(`/api/documents/${documentId}/versions`),
     ]);
     const failures: string[] = [];
     let detail = detailResult.status === "fulfilled" ? detailResult.value : null;
@@ -100,11 +102,13 @@ export function DocumentDetailPage({ documentId, onVersionUpload, notify, refres
     setDocument(detail);
     setStatus(statusResult.status === "fulfilled" ? statusResult.value : null);
     setPermission(permissionResult.status === "fulfilled" ? permissionResult.value : null);
+    setVersions(versionsResult.status === "fulfilled" ? versionsResult.value : []);
     if (detailResult.status === "rejected") failures.push(detail
       ? "상세 메타데이터 일부를 불러오지 못해 문서 목록과 처리 상태 정보를 대신 표시합니다."
       : `문서 정보: ${errorMessage(detailResult.reason)}`);
     if (statusResult.status === "rejected") failures.push(`처리 상태: ${errorMessage(statusResult.reason)}`);
     if (permissionResult.status === "rejected") failures.push(`내 권한: ${errorMessage(permissionResult.reason)}`);
+    if (versionsResult.status === "rejected") failures.push(`버전 이력: ${errorMessage(versionsResult.reason)}`);
 
     // 3. Extracted content is optional until a readable current version finishes indexing.
     if (detail?.contentAvailable) {
@@ -242,6 +246,7 @@ export function DocumentDetailPage({ documentId, onVersionUpload, notify, refres
     {loading ? <LoadingState label="문서 상태를 확인하는 중입니다." /> : null}
     {!loading ? <>
       <div className="progress-card"><div className="panel-heading"><div><h2>인덱싱 진행 상태</h2><p>백엔드가 반환한 현재 버전과 처리 중 버전입니다.</p></div><span>실시간 조회</span></div><div className="status-flow"><div><span>현재 문서</span><strong>{status?.documentStatus ?? "—"}</strong></div><b>→</b><div><span>검색 가능 버전</span><strong>{status?.currentVersion ? `v${status.currentVersion.versionNo} · ${status.currentVersion.status}` : "없음"}</strong></div><b>→</b><div><span>처리 중 버전</span><strong>{status?.processingVersion ? `v${status.processingVersion.versionNo} · ${status.processingVersion.jobStatus}` : "없음"}</strong></div></div></div>
+      <div className="panel-card version-history-card"><div className="panel-heading"><div><h2>문서 버전 전체 이력</h2><p>현재 검색 버전과 실패한 새 버전을 함께 보존합니다.</p></div><button type="button" onClick={() => void load({ silent: true })}>↻ 새로고침 · {versions.length}개</button></div>{versions.length ? <div className="version-timeline">{versions.map((version) => <article className={`version-entry ${version.current ? "current" : ""} ${version.status === "FAILED" ? "failed" : ""}`} key={version.documentVersionId}><i aria-hidden="true" /><div className="version-entry-body"><div className="version-entry-head"><div><strong>v{version.versionNo}</strong>{version.current ? <span className="current-version-badge">현재 검색 버전</span> : null}<StatusPill value={version.status} />{version.latestJobStatus ? <StatusPill value={`JOB ${version.latestJobStatus}`} /> : null}</div><time>{formatDate(version.createdAt)}</time></div><div className="version-facts"><span><b>원본</b>{version.originalFilename ?? "—"} · {formatBytes(version.fileSize)}</span><span><b>업로더</b>{version.createdByName ? `${version.createdByName} (#${version.createdByUserId})` : version.createdByUserId ? `user #${version.createdByUserId}` : "—"}</span><span><b>Worker</b>{version.latestWorkerName ?? "미할당"}</span><span><b>SHA-256</b><code>{version.fileHash ? `${version.fileHash.slice(0, 12)}…` : "—"}</code></span></div>{version.errorCode ? <div className="version-error"><span>실패 코드</span><code>{version.errorCode}</code><small>retry {version.retryCount ?? 0}/{version.maxRetryCount ?? 0}</small>{isAdmin && version.latestJobId ? <a href={`/admin/indexing-jobs/${version.latestJobId}`} target="_top">Job #{version.latestJobId} 상세 →</a> : null}</div> : version.indexedAt ? <div className="version-indexed">✓ 인덱싱 완료 {formatDate(version.indexedAt)}</div> : null}</div></article>)}</div> : <EmptyState symbol="⑂" title="버전 이력이 없습니다" description="첫 문서 버전이 생성되면 여기에 표시됩니다." />}</div>
       {contentError ? <Notice>{contentError}</Notice> : null}
       <div className="detail-grid three"><div className="panel-card"><div className="panel-heading"><h2>문서 정보</h2></div><dl><div><dt>형식</dt><dd>{document?.documentType ?? "—"}</dd></div><div><dt>출처</dt><dd>{document?.sourceType ?? "—"}</dd></div><div><dt>공개 범위</dt><dd>{document?.visibility ?? "—"}</dd></div><div><dt>소유자</dt><dd>{document ? document.ownerName ? `${document.ownerName} (#${document.ownerUserId})` : `user #${document.ownerUserId}` : "—"}</dd></div><div><dt>최근 수정</dt><dd>{formatDate(document?.updatedAt)}</dd></div></dl></div><div className="panel-card"><div className="panel-heading"><h2>내 권한</h2></div><div className="permission-checks"><StatusPill value={`READ ${permission?.canRead ? "✓" : "✕"}`} /><StatusPill value={`WRITE ${permission?.canWrite ? "✓" : "✕"}`} /><StatusPill value={`ADMIN ${permission?.canAdmin ? "✓" : "✕"}`} /></div><span className="field-label">권한 경로</span><div className="source-chips">{permission?.sources.length ? permission.sources.map((source) => <b key={source}>{source}</b>) : <span>없음</span>}</div></div><div className="panel-card"><div className="panel-heading"><h2>현재 버전</h2></div><dl><div><dt>버전</dt><dd>{document?.currentVersion ? `v${document.currentVersion.versionNo}` : status?.currentVersion ? `v${status.currentVersion.versionNo}` : "—"}</dd></div><div><dt>원본 파일</dt><dd>{document?.currentVersion?.originalFilename ?? "—"}</dd></div><div><dt>파일 크기</dt><dd>{formatBytes(document?.currentVersion?.fileSize)}</dd></div><div><dt>청크 수</dt><dd>{content?.chunkCount ?? "—"}</dd></div><div><dt>인덱싱 완료</dt><dd>{formatDate(document?.currentVersion?.indexedAt)}</dd></div></dl></div></div>
       {document?.status === "FAILED" && isAdmin ? <div className="panel-card"><div className="panel-heading"><div><h2>실패 원인</h2><p>관리자 전용 — 최근 실패 Job 정보입니다.</p></div>{failedJob ? <a href={`/admin/indexing-jobs/${failedJob.jobId}`} target="_top">Job 상세 보기 →</a> : null}</div><dl><div><dt>Job</dt><dd>{failedJob ? `#${failedJob.jobId}` : "—"}</dd></div><div><dt>오류 코드</dt><dd><code>{failedJob?.errorCode ?? "—"}</code></dd></div><div><dt>실패 시각</dt><dd>{formatDate(failedJob?.failedAt)}</dd></div><div><dt>재시도</dt><dd>{failedJob ? `${failedJob.retryCount}/${failedJob.maxRetryCount}` : "—"}</dd></div></dl></div> : null}

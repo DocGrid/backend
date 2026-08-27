@@ -26,6 +26,20 @@ import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
  */
 public interface EmbeddingJobRepository extends JpaRepository<EmbeddingJob, Long> {
 
+    /**
+     * 버전 타임라인에 필요한 Job Snapshot을 최신 Job부터 Worker와 함께 일괄 조회한다.
+     */
+    @Query("""
+        SELECT job
+        FROM EmbeddingJob job
+        LEFT JOIN FETCH job.lockedByWorker
+        WHERE job.documentVersion.id IN :documentVersionIds
+        ORDER BY job.id DESC
+        """)
+    List<EmbeddingJob> findHistoryJobsByDocumentVersionIds(
+        @Param("documentVersionIds") Collection<Long> documentVersionIds
+    );
+
     Optional<EmbeddingJob> findBySourceEventId(UUID sourceEventId);
 
     Optional<EmbeddingJob> findTopByDocumentVersionIdAndEmbeddingModelIdOrderByIdDesc(

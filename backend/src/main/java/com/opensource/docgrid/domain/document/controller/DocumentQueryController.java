@@ -1,6 +1,7 @@
 package com.opensource.docgrid.domain.document.controller;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -20,6 +21,7 @@ import com.opensource.docgrid.domain.document.dto.response.DocumentContentRespon
 import com.opensource.docgrid.domain.document.dto.response.DocumentDetailResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentStatusResponse;
 import com.opensource.docgrid.domain.document.dto.response.DocumentSummaryResponse;
+import com.opensource.docgrid.domain.document.dto.response.DocumentVersionHistoryResponse;
 import com.opensource.docgrid.domain.document.enums.DocumentStatus;
 import com.opensource.docgrid.domain.document.service.DocumentFileDownload;
 import com.opensource.docgrid.domain.document.service.DocumentFileService;
@@ -74,6 +76,19 @@ public class DocumentQueryController {
         @Parameter(hidden = true) @CurrentUser Long userId
     ) {
         return ResponseUtils.ok(documentQueryService.getDocumentDetail(userId, documentId));
+    }
+
+    @Operation(
+        summary = "문서 버전 전체 이력 조회",
+        description = "읽기 가능한 문서의 모든 버전을 최신 번호순으로 조회합니다. 현재 검색 버전 여부, "
+            + "파일 Snapshot, 생성자, 버전 상태와 각 버전의 최신 인덱싱 Job 상태를 함께 반환합니다."
+    )
+    @GetMapping("/{documentId}/versions")
+    public ResponseEntity<ApiResponse<List<DocumentVersionHistoryResponse>>> getDocumentVersions(
+        @PathVariable Long documentId,
+        @Parameter(hidden = true) @CurrentUser Long userId
+    ) {
+        return ResponseUtils.ok(documentQueryService.getDocumentVersions(userId, documentId));
     }
 
     @Operation(

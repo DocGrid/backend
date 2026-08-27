@@ -114,6 +114,27 @@ export type DocumentStatus = {
   processingVersion: { versionNo: number; status: string; jobStatus: string } | null;
 };
 
+export type DocumentVersionHistory = {
+  documentVersionId: number;
+  versionNo: number;
+  status: string;
+  current: boolean;
+  originalFilename: string | null;
+  contentType: string | null;
+  fileSize: number | null;
+  fileHash: string | null;
+  createdByUserId: number | null;
+  createdByName: string | null;
+  createdAt: string;
+  indexedAt: string | null;
+  latestJobId: number | null;
+  latestJobStatus: string | null;
+  latestWorkerName: string | null;
+  errorCode: string | null;
+  retryCount: number | null;
+  maxRetryCount: number | null;
+};
+
 export type DocumentUploadResponse = {
   documentId: number;
   documentVersionId: number;

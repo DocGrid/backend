@@ -145,18 +145,30 @@ public class DocGridMcpTools {
      * 내부 정보가 클라이언트에 노출되지 않도록 INTERNAL_SERVER_ERROR로 치환한다.
      */
     private String executeTool(String toolName, int limitPerMinute, Function<Long, Object> action) {
+        long startedAt = System.nanoTime();
         Long userId = currentUserId();
-        rateLimiter.checkLimit(userId, toolName, limitPerMinute);
 
         try {
+            rateLimiter.checkLimit(userId, toolName, limitPerMinute);
             Object result = action.apply(userId);
-            return toJson(result);
+            String response = toJson(result);
+            log.info("[MCP] tool={} userId={} outcome=SUCCESS elapsedMs={}",
+                toolName, userId, elapsedMillis(startedAt));
+            return response;
         } catch (DocGridException e) {
+            // Query, 문서 본문, Authorization Header와 토큰 원문은 운영 로그에 절대 남기지 않는다.
+            log.warn("[MCP] tool={} userId={} outcome=DENIED errorCode={} elapsedMs={}",
+                toolName, userId, e.getErrorCode().getCode(), elapsedMillis(startedAt));
             throw e;
         } catch (Exception e) {
-            log.error("MCP 도구 실행 중 예상하지 못한 오류 toolName={}", toolName, e);
+            log.error("[MCP] tool={} userId={} outcome=ERROR errorCode={} elapsedMs={}",
+                toolName, userId, ErrorCode.INTERNAL_SERVER_ERROR.getCode(), elapsedMillis(startedAt));
             throw new DocGridException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
     // JSON 응답 크기 제한을 위해 chunkText가 너무 길면 잘라서 반환한다.

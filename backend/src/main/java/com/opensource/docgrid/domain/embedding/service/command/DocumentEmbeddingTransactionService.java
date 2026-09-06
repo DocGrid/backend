@@ -176,11 +176,19 @@ public class DocumentEmbeddingTransactionService {
         return result(jobId, attemptId, documentVersion, embeddingModel, chunks.size(), true);
     }
 
+    /**
+     * Job 행을 비관적 잠금으로 조회해 같은 인덱싱 작업의 저장 단계를 직렬화한다.
+     */
     private EmbeddingJob findLockedJob(Long jobId) {
         return embeddingJobRepository.findByIdForUpdate(jobId)
             .orElseThrow(() -> new DocGridException(ErrorCode.EMBEDDING_JOB_NOT_FOUND));
     }
 
+    /**
+     * Job에 고정된 문서 버전을 잠금 조회한다.
+     *
+     * <p>재인덱싱 중 문서의 currentVersion은 이전 공개 버전일 수 있으므로 Job의 직접 참조만 사용한다.
+     */
     private DocumentVersion findLockedJobVersion(EmbeddingJob embeddingJob) {
         if (embeddingJob.getDocumentVersion() == null
             || embeddingJob.getDocumentVersion().getId() == null) {
@@ -190,6 +198,9 @@ public class DocumentEmbeddingTransactionService {
             .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT));
     }
 
+    /**
+     * Job에 고정된 임베딩 모델이 외부 호출과 Vector 저장에 필요한 정보를 갖췄는지 확인한다.
+     */
     private EmbeddingModel findJobModel(EmbeddingJob embeddingJob) {
         EmbeddingModel embeddingModel = embeddingJob.getEmbeddingModel();
         if (embeddingModel == null
@@ -201,6 +212,12 @@ public class DocumentEmbeddingTransactionService {
         return embeddingModel;
     }
 
+    /**
+     * 요청 Attempt가 현재 Claim Token으로 시작됐고 같은 Worker에 속하는지 검증한다.
+     *
+     * <p>Lease가 교체된 뒤 이전 Worker가 늦게 반환한 Vector를 저장하지 못하도록 Attempt의
+     * ID, 상태, Worker 소유권을 모두 확인한다.
+     */
     private void validateAttempt(
         EmbeddingJob embeddingJob,
         Long attemptId,
@@ -219,6 +236,9 @@ public class DocumentEmbeddingTransactionService {
         }
     }
 
+    /**
+     * 문서 버전의 Chunk Set이 비어 있지 않고 ID·순서·내용·해시가 일관적인지 검증한다.
+     */
     private void validateChunks(
         DocumentVersion documentVersion,
         List<DocumentChunk> chunks
@@ -242,6 +262,9 @@ public class DocumentEmbeddingTransactionService {
         }
     }
 
+    /**
+     * 외부 호출 전에 만든 작업 Snapshot이 현재 잠근 버전과 Job 모델을 그대로 가리키는지 확인한다.
+     */
     private void validatePreparedTarget(
         EmbeddingWork preparedWork,
         DocumentVersion documentVersion,
@@ -256,6 +279,12 @@ public class DocumentEmbeddingTransactionService {
         }
     }
 
+    /**
+     * 외부 호출 도중 Chunk Set이 교체되거나 내용이 바뀌지 않았는지 Snapshot과 다시 비교한다.
+     *
+     * <p>Vector가 다른 텍스트에 연결되는 것을 막기 위해 개수뿐 아니라 ID, 순서, 본문과
+     * 내용 해시를 모두 일치시킨다.
+     */
     private void validatePreparedChunks(
         EmbeddingWork preparedWork,
         List<DocumentChunk> chunks
@@ -277,6 +306,12 @@ public class DocumentEmbeddingTransactionService {
         }
     }
 
+    /**
+     * 버전 상태와 현재 모델의 Vector 개수를 대조해 작업 필요 여부와 완료 재생을 판정한다.
+     *
+     * <p>Vector가 Chunk보다 많거나 허용되지 않은 버전에 Vector가 존재하면 저장 집합이
+     * 손상된 것으로 간주한다. EMBEDDING 상태의 부분 집합만 복구 작업으로 이어갈 수 있다.
+     */
     private EmbeddingState resolveState(
         DocumentVersion documentVersion,
         EmbeddingModel embeddingModel,
@@ -311,6 +346,12 @@ public class DocumentEmbeddingTransactionService {
         throw new DocGridException(ErrorCode.DOCUMENT_VERSION_EMBEDDING_NOT_ALLOWED);
     }
 
+    /**
+     * 검증된 Draft를 ACTIVE Embedding Entity로 변환하되 이미 저장된 Chunk Vector는 보존한다.
+     *
+     * <p>복구 Job에서는 누락된 Chunk만 추가해야 기존 Vector ID와 검색 참조가 유지되므로,
+     * 같은 버전·모델에 존재하는 Chunk ID를 먼저 읽고 나머지만 생성한다.
+     */
     private List<Embedding> toEntities(
         DocumentVersion documentVersion,
         EmbeddingModel embeddingModel,
@@ -353,6 +394,11 @@ public class DocumentEmbeddingTransactionService {
         return embeddings;
     }
 
+    /**
+     * Embedding Draft가 대상 Chunk와 일치하고 Vector 차원·유한성·해시가 올바른지 검증한다.
+     *
+     * @return 검증을 통과한 Vector 값
+     */
     private float[] validateDraft(
         DocumentEmbeddingDraft draft,
         DocumentChunk chunk,
@@ -375,6 +421,9 @@ public class DocumentEmbeddingTransactionService {
         return vector;
     }
 
+    /**
+     * 현재 버전·모델과 처리 개수를 Embedding 완료 결과로 조립한다.
+     */
     private CompletionResult result(
         Long jobId,
         Long attemptId,
@@ -411,6 +460,9 @@ public class DocumentEmbeddingTransactionService {
         List<ChunkSnapshot> chunks
     ) {
 
+        /**
+         * 호출자가 보관한 Chunk 목록 변경이 작업 Snapshot에 전파되지 않도록 방어 복사한다.
+         */
         public EmbeddingWork {
             chunks = List.copyOf(chunks);
         }
@@ -436,14 +488,23 @@ public class DocumentEmbeddingTransactionService {
         CompletionResult replayResult
     ) {
 
+        /**
+         * 외부 Embedding Provider 호출이 필요한 준비 결과를 생성한다.
+         */
         static PreparationResult work(EmbeddingWork work) {
             return new PreparationResult(work, null);
         }
 
+        /**
+         * 이미 완성된 Vector Set을 재사용하는 준비 결과를 생성한다.
+         */
         static PreparationResult replay(CompletionResult replayResult) {
             return new PreparationResult(null, replayResult);
         }
 
+        /**
+         * 외부 호출 없이 기존 완료 결과를 반환해야 하는지 확인한다.
+         */
         public boolean isReplay() {
             return replayResult != null;
         }

@@ -32,7 +32,8 @@ import org.hibernate.annotations.Type;
 /**
  * 임베딩(벡터) 테이블.
  *
- * <p>역할: OpenSQL 기반 vector search의 핵심 테이블로, chunk 하나를 특정 모델로 벡터화한 결과를 저장한다.
+ * <p>역할: OpenSQL의 PostgreSQL 호환 pgvector 검색에 사용하는 핵심 테이블로, Chunk 하나를 특정
+ * 모델로 벡터화한 결과를 {@code vector(1024)} 컬럼에 저장한다.
  * 이유: 검색 시 이 테이블을 대상으로 vector similarity search를 수행한 뒤, 반드시
  * users/roles/departments/permissions/user_document_access_cache로 권한 필터링을 거쳐야 한다.
  * 관계: chunk_id -> DocumentChunk(not null), embedding_model_id -> EmbeddingModel.
@@ -102,6 +103,9 @@ public class Embedding extends BaseEntity {
     @Column(nullable = false, length = 20)
     private EmbeddingStatus status;
 
+    /**
+     * 한 Chunk와 모델의 Vector 및 검색용 역정규화 문서 관계를 생성한다.
+     */
     @Builder
     public Embedding(DocumentChunk chunk, Document document, DocumentVersion documentVersion,
                       EmbeddingModel embeddingModel, float[] vector, int dimension, String vectorHash,
@@ -124,6 +128,9 @@ public class Embedding extends BaseEntity {
         return copyVector(vector);
     }
 
+    /**
+     * 가변 배열 참조가 Entity 안팎에서 공유되지 않도록 null을 보존하며 복사한다.
+     */
     private static float[] copyVector(float[] source) {
         return source == null ? null : Arrays.copyOf(source, source.length);
     }

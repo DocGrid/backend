@@ -51,11 +51,18 @@ public class SyncConsistencyInspector {
     private final EmbeddingRepository embeddingRepository;
     private final SyncReconciliationProperties properties;
 
+    /**
+     * 한 문서 버전의 원장 상태를 현재 활성 모델 기준의 Job·Chunk·Embedding 상태와 비교한다.
+     *
+     * <p>한 번의 검사에서 발견한 모든 문제를 반환하며, 서로 독립적인 이상을 첫 오류에서 중단하지 않는다.
+     * Observation의 repairable 값은 기존 데이터를 덮어쓰지 않고 안전하게 보완 가능한 경우에만 참이다.
+     */
     public List<SyncConsistencyObservation> inspect(
         DocumentVersion version,
         EmbeddingModel activeModel,
         LocalDateTime inspectedAt
     ) {
+        // 1. 검사 대상 원장과 반복 사용되는 파생 데이터 개수·활성 Job 존재 여부를 한 번씩 조회한다.
         Document document = version.getDocument();
         List<SyncConsistencyObservation> observations = new ArrayList<>();
         long chunkCount = documentChunkRepository.countByDocumentVersionId(version.getId());
@@ -67,14 +74,24 @@ public class SyncConsistencyInspector {
             version.getId(), LIVE_JOB_STATUSES
         );
 
+        // 2. 처리 중 버전이 실행 가능한 Job을 잃었는지 확인한다.
         inspectMissingJob(version, activeModel, liveJobExists, observations);
+
+        // 3. 버전 단계에 필요한 Chunk와 현재 모델의 활성 Vector Set이 완성됐는지 확인한다.
         inspectChunksAndEmbeddings(version, activeModel, chunkCount, activeModelEmbeddingCount, observations);
+
+        // 4. 검색 가능 문서의 currentVersion 포인터와 장기 정체 상태를 검사한다.
         inspectCurrentVersion(document, version, activeModel, observations);
         inspectStalledVersion(version, activeModel, liveJobExists, inspectedAt, observations);
+
+        // 5. 삭제 문서에 검색 가능한 Vector가 남아 있는지 확인하고 모든 관찰 결과를 반환한다.
         inspectDeletedResidue(document, version, activeModel, observations);
         return observations;
     }
 
+    /**
+     * 처리 중 버전에 PENDING 또는 PROCESSING Job이 하나도 없는 상태를 자동복구 후보로 보고한다.
+     */
     private void inspectMissingJob(
         DocumentVersion version,
         EmbeddingModel activeModel,
@@ -94,6 +111,12 @@ public class SyncConsistencyInspector {
         }
     }
 
+    /**
+     * 버전 상태에 필요한 Chunk 존재 여부와 currentVersion의 활성 모델 Embedding 완전성을 검사한다.
+     *
+     * <p>현재 모델 Vector가 없지만 다른 모델 Vector가 Chunk 수만큼 존재하면 모델 불일치로 분류한다.
+     * 일부 현재 모델 Vector만 누락된 경우에만 보존된 Vector를 유지하며 누락분을 채울 수 있다.
+     */
     private void inspectChunksAndEmbeddings(
         DocumentVersion version,
         EmbeddingModel activeModel,
@@ -142,6 +165,9 @@ public class SyncConsistencyInspector {
         }
     }
 
+    /**
+     * INDEXED 문서의 currentVersion이 존재하고 같은 문서에 속한 INDEXED 버전인지 검사한다.
+     */
     private void inspectCurrentVersion(
         Document document,
         DocumentVersion version,
@@ -173,6 +199,12 @@ public class SyncConsistencyInspector {
         }
     }
 
+    /**
+     * 처리 중 버전의 최종 갱신 시각이 허용 임계값보다 오래됐는지 검사한다.
+     *
+     * <p>활성 Job이 있으면 지연 가능성이 있어 WARNING, Job도 없으면 진행 수단을 잃은 상태로 보고
+     * ERROR 심각도를 사용한다. 정체 원인을 단정할 수 없으므로 자동복구 대상으로 표시하지 않는다.
+     */
     private void inspectStalledVersion(
         DocumentVersion version,
         EmbeddingModel activeModel,
@@ -197,6 +229,9 @@ public class SyncConsistencyInspector {
         ));
     }
 
+    /**
+     * 삭제된 문서의 currentVersion에 ACTIVE Embedding이 남아 검색될 가능성이 있는지 검사한다.
+     */
     private void inspectDeletedResidue(
         Document document,
         DocumentVersion version,
@@ -219,6 +254,11 @@ public class SyncConsistencyInspector {
         }
     }
 
+    /**
+     * 발견한 문제를 반복 실행에서도 동일하게 식별할 수 있는 Key와 함께 Observation으로 조립한다.
+     *
+     * <p>문서 포인터·삭제 잔여물은 문서 단위, 나머지 파생 상태는 버전·모델 단위 Key를 사용한다.
+     */
     private SyncConsistencyObservation observation(
         SyncConsistencyIssueType type,
         SyncConsistencySeverity severity,

@@ -32,6 +32,9 @@ public class PdfDocumentParser implements DocumentContentParser {
     private static final char REPLACEMENT_CHARACTER = '�';
     private static final double GARBLED_RATIO_THRESHOLD = 0.05;
 
+    /**
+     * 이 Parser가 PDF 문서만 처리함을 Registry에 알린다.
+     */
     @Override
     public Set<DocumentType> supportedTypes() {
         return SUPPORTED_TYPES;
@@ -87,10 +90,18 @@ public class PdfDocumentParser implements DocumentContentParser {
         }
     }
 
+    /**
+     * PDFBox 추출 Text의 플랫폼별 줄바꿈을 LF로 통일하고 Page 가장자리 공백을 제거한다.
+     */
     private String canonicalize(String text) {
         return text.replace("\r\n", "\n").replace('\r', '\n').strip();
     }
 
+    /**
+     * 전체 Page Text에서 Unicode 대체 문자 비율이 허용 임계값을 넘는지 검사한다.
+     *
+     * <p>짧은 한 Page가 아니라 문서 전체 문자 수를 기준으로 판단해 Page별 편차를 완화한다.
+     */
     static boolean isGarbled(List<ParsedDocumentSegment> segments) {
         long totalLength = 0;
         long replacementCount = 0;

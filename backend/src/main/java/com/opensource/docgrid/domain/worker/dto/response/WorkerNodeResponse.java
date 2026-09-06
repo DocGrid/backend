@@ -6,6 +6,11 @@ import com.opensource.docgrid.domain.worker.enums.WorkerStatus;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+/**
+ * 관리자에게 Worker 식별 정보와 Heartbeat 기준 실질 상태를 제공하는 조회 응답이다.
+ *
+ * <p>Job Claim Token이나 내부 오류 정보는 포함하지 않으며 Worker 운영 상태 확인에 필요한 시각만 노출한다.
+ */
 public record WorkerNodeResponse(
     @Schema(description = "Worker 식별자", example = "1")
     Long workerId,

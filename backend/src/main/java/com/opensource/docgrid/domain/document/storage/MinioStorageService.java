@@ -33,10 +33,16 @@ public class MinioStorageService implements FileStorageService {
     private final MinioClient minioClient;
     private final FileStorageProperties fileStorageProperties;
 
+    /**
+     * 설정 Bucket을 준비하고 입력 Stream을 지정 Object Key로 저장한다.
+     */
     @Override
     public StoredFile store(InputStream inputStream, long fileSize, String contentType, String objectKey) {
         try {
+            // 1. 최초 로컬 환경에서도 업로드할 수 있도록 Bucket 존재를 멱등 보장한다.
             ensureBucketExists();
+
+            // 2. 알려진 크기의 Stream과 Content-Type을 MinIO Object로 저장한다.
             minioClient.putObject(
                 PutObjectArgs.builder()
                     .bucket(fileStorageProperties.getBucket())
@@ -45,6 +51,8 @@ public class MinioStorageService implements FileStorageService {
                     .contentType(contentType)
                     .build()
             );
+
+            // 3. DB에는 Client 내부 주소가 아니라 Provider·Bucket·Object Key의 논리 위치만 반환한다.
             return new StoredFile(StorageProvider.MINIO, fileStorageProperties.getBucket(), objectKey);
         } catch (Exception e) {
             log.error("MinIO 파일 저장에 실패했습니다.", e);
@@ -52,18 +60,24 @@ public class MinioStorageService implements FileStorageService {
         }
     }
 
+    /**
+     * 현재 MinIO 설정에 속한 Object를 모두 읽고 SDK Stream을 메서드 안에서 닫는다.
+     */
     @Override
     public byte[] read(StoredFile storedFile) {
+        // 1. 다른 환경이나 Provider의 Object를 현재 Client로 읽지 않도록 위치를 확인한다.
         validateLocation(storedFile);
+
+        // 2. Object Stream을 Byte 배열로 소유권 이전한 뒤 즉시 닫는다.
         try (InputStream inputStream = minioClient.getObject(
             GetObjectArgs.builder()
                 .bucket(storedFile.bucketName())
                 .object(storedFile.objectKey())
                 .build()
         )) {
-            // Service 안에서 Stream을 모두 읽고 닫아 호출자가 MinIO 연결 Resource를 소유하지 않게 한다.
             return inputStream.readAllBytes();
         } catch (ErrorResponseException exception) {
+            // 3. Object 없음은 영구 파일 누락, 나머지 SDK 오류는 저장소 장애로 구분한다.
             if (isObjectNotFound(exception)) {
                 throw new DocGridException(ErrorCode.FILE_OBJECT_NOT_FOUND, exception);
             }
@@ -75,6 +89,9 @@ public class MinioStorageService implements FileStorageService {
         }
     }
 
+    /**
+     * 현재 MinIO 설정에 속한 Object를 삭제한다.
+     */
     @Override
     public void delete(StoredFile storedFile) {
         validateLocation(storedFile);
@@ -91,6 +108,9 @@ public class MinioStorageService implements FileStorageService {
         }
     }
 
+    /**
+     * 설정 Bucket이 없으면 생성하고 동시 생성 경쟁은 재조회로 멱등 처리한다.
+     */
     private void ensureBucketExists() throws Exception {
         BucketExistsArgs existsArgs = BucketExistsArgs.builder()
             .bucket(fileStorageProperties.getBucket())
@@ -113,11 +133,17 @@ public class MinioStorageService implements FileStorageService {
         }
     }
 
+    /**
+     * MinIO 호환 서버가 반환하는 대표 Object 없음 오류 코드를 판정한다.
+     */
     private boolean isObjectNotFound(ErrorResponseException exception) {
         String errorCode = exception.errorResponse().code();
         return "NoSuchKey".equals(errorCode) || "NoSuchObject".equals(errorCode);
     }
 
+    /**
+     * 저장 위치가 현재 MINIO Provider와 설정 Bucket에 속하는지 검증한다.
+     */
     private void validateLocation(StoredFile storedFile) {
         if (storedFile.storageProvider() == StorageProvider.MINIO
             && fileStorageProperties.getBucket().equals(storedFile.bucketName())) {
@@ -127,6 +153,9 @@ public class MinioStorageService implements FileStorageService {
         throw new DocGridException(ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH);
     }
 
+    /**
+     * 내부 Bucket·Object Key를 노출하지 않고 저장소 읽기 장애 원인만 기록한다.
+     */
     private void logStorageReadFailure(Exception exception) {
         // 원본 저장 위치는 내부 식별 정보이므로 장애 로그에는 예외 원인만 남긴다.
         log.error("MinIO 파일 읽기에 실패했습니다.", exception);

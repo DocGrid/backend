@@ -81,6 +81,9 @@ public class SyncEventDeliveryAttempt extends BaseEntity {
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
+    /**
+     * 유효한 Event Claim 실행 정보를 검증하고 STARTED 전달 Attempt를 생성한다.
+     */
     @Builder
     public SyncEventDeliveryAttempt(
         UUID eventId,
@@ -109,7 +112,10 @@ public class SyncEventDeliveryAttempt extends BaseEntity {
      * Handler 부작용과 Event 완료가 Commit될 때 현재 실행을 성공으로 종결한다.
      */
     public void succeed(LocalDateTime succeededAt) {
+        // 1. 아직 시작 상태이며 시작보다 빠르지 않은 완료 시각인지 확인한다.
         validateStarted(succeededAt);
+
+        // 2. 성공 상태와 완료 시각을 기록하고 실패 Snapshot을 남기지 않는다.
         status = SyncEventDeliveryAttemptStatus.SUCCEEDED;
         completedAt = succeededAt;
         errorCode = null;
@@ -120,19 +126,27 @@ public class SyncEventDeliveryAttempt extends BaseEntity {
      * Handler 실패나 Lease 만료 원인을 보존하고 현재 실행을 실패로 종결한다.
      */
     public void fail(String failureCode, String failureMessage, LocalDateTime failedAt) {
+        // 1. 현재 실행을 종결할 수 있는 상태와 시각인지 검증한다.
         validateStarted(failedAt);
+
+        // 2. 운영자가 추적할 제한된 오류 코드와 안전한 메시지가 모두 있는지 확인한다.
         if (failureCode == null
             || failureCode.isBlank()
             || failureMessage == null
             || failureMessage.isBlank()) {
             throw new IllegalArgumentException("실패 Attempt에는 오류 코드와 안전한 진단 문구가 필요합니다.");
         }
+
+        // 3. 실패 상태·완료 시각과 오류 Snapshot을 한 번에 기록한다.
         status = SyncEventDeliveryAttemptStatus.FAILED;
         completedAt = failedAt;
         errorCode = failureCode;
         errorMessage = failureMessage;
     }
 
+    /**
+     * STARTED Attempt만 시작 시각 이후의 유효한 시각으로 한 번 종결할 수 있게 검증한다.
+     */
     private void validateStarted(LocalDateTime completedAt) {
         if (status != SyncEventDeliveryAttemptStatus.STARTED
             || completedAt == null

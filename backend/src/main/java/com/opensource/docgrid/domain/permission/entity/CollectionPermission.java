@@ -36,9 +36,9 @@ import lombok.NoArgsConstructor;
  * 하나만 채워진다. granted_by -> User(부여자).
  * index: collection_id, (target_type, user_id), (target_type, department_id), (target_type, role_id), expires_at.
  *
- * <p>중요: target_type=USER면 user_id만, DEPARTMENT면 department_id만, ROLE이면 role_id만 채워져야 한다는
- * 개념적 CHECK 제약이 있으나 JPA/애플리케이션 레벨에서는 강제할 수 없다.
- * TODO: DB migration에서 CHECK 제약 추가 필요 (target_type별 단일 FK만 NOT NULL).
+ * <p>중요: target_type=USER면 user_id만, DEPARTMENT면 department_id만, ROLE이면 role_id만 채워져야 한다.
+ * 이 불변식은 DB의 {@code ck_collection_permissions_target_type_fk} CHECK 제약으로도 강제되므로
+ * 애플리케이션에서 잘못된 조합을 만들면 저장 시 거부된다.
  *
  * <p>주의사항: USER 대상 권한만 user_document_access_cache에 materialize(사전 계산)될 수 있다.
  * ROLE/DEPARTMENT 대상 권한은 캐시에 저장하지 않고 검색 시점에 live predicate로 판단해야 한다.

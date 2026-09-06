@@ -26,15 +26,22 @@ public class EmbeddingModelActivatedSyncEventHandler implements SyncEventHandler
 
     private final EmbeddingModelRepository embeddingModelRepository;
 
+    /** 이 Handler가 Embedding 모델 활성화 Event만 처리함을 선언한다. */
     @Override
     public Set<SyncEventType> supportedTypes() {
         return Set.of(SyncEventType.EMBEDDING_MODEL_ACTIVATED);
     }
 
+    /**
+     * Event의 모델이 현재도 활성·검색 가능한 원장 상태인지 확인한다.
+     */
     @Override
     public void handle(SyncOutboxEvent event) {
+        // 1. Event Aggregate ID로 최신 EmbeddingModel 원장을 다시 조회한다.
         EmbeddingModel model = embeddingModelRepository.findById(event.getAggregateId())
             .orElseThrow(() -> new DocGridException(ErrorCode.SYNC_EVENT_INCONSISTENT));
+
+        // 2. 비활성화되었거나 검색 불가능한 모델의 과거 Event를 성공 처리하지 않는다.
         if (!model.isActive() || !model.isSearchable()) {
             throw new DocGridException(ErrorCode.SYNC_EVENT_INCONSISTENT);
         }

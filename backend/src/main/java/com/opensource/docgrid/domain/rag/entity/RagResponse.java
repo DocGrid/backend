@@ -30,7 +30,8 @@ import lombok.NoArgsConstructor;
  * 관계: query_id -> SearchQuery(1:1에 가까운 1:N, 하나의 query에 하나의 응답을 기본으로 함).
  * index: query_id, status, created_at.
  *
- * <p>주의사항: MVP에서는 실제 LLM 대신 Mock LLM 답변을 저장하더라도 테이블 구조/흐름은 동일하게 유지한다.
+ * <p>현재 비동기 RAG Worker가 Ollama 응답을 기록하며, PROCESSING으로 먼저 생성한 뒤 성공·실패 또는
+ * Timeout Sweeper가 최종 상태를 확정한다.
  */
 @Getter
 @Entity

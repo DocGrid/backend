@@ -69,6 +69,9 @@ public class AdaptiveEmbeddingBatchPlanner {
         return List.copyOf(batches);
     }
 
+    /**
+     * 다음 Chunk를 현재 Batch에 추가하면 개수·Code Point·예상 Token 상한 중 하나라도 넘는지 계산한다.
+     */
     private boolean exceedsBudget(
         int currentSize,
         long currentCodePoints,
@@ -81,6 +84,9 @@ public class AdaptiveEmbeddingBatchPlanner {
             || currentTokens + nextTokens > properties.getMaxEstimatedTokens();
     }
 
+    /**
+     * Batch 계획에 사용할 Chunk에 검색 가능한 Text와 음수가 아닌 Token 추정치가 있는지 확인한다.
+     */
     private void validateChunk(ChunkSnapshot chunk) {
         if (chunk == null || !StringUtils.hasText(chunk.chunkText()) || chunk.tokenCount() < 0) {
             throw new DocGridException(ErrorCode.DOCUMENT_EMBEDDINGS_INCONSISTENT);

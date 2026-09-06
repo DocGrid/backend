@@ -98,6 +98,9 @@ public class WorkerIndexingPipeline {
         }
     }
 
+    /**
+     * Worker가 실행할 Claim 응답에 PROCESSING 상태와 필수 실행 식별자가 모두 있는지 확인한다.
+     */
     private void validateClaim(ClaimedEmbeddingJobResponse claimedJob) {
         if (claimedJob == null
             || claimedJob.status() != EmbeddingJobStatus.PROCESSING
@@ -109,6 +112,12 @@ public class WorkerIndexingPipeline {
         }
     }
 
+    /**
+     * 문서 버전의 현재 상태에 따라 완료된 단계를 건너뛰고 필요한 인덱싱 단계부터 재개한다.
+     *
+     * <p>각 외부 작업 전후에 Lease Handle을 확인하고, 실제 상태·소유권의 최종 판단은 단계별
+     * Transaction Service에 맡긴다. 이 메서드의 상태 Snapshot은 호출 경로 선택에만 사용한다.
+     */
     private void executeFromCurrentStage(
         ClaimedEmbeddingJobResponse claimedJob,
         Long attemptId,

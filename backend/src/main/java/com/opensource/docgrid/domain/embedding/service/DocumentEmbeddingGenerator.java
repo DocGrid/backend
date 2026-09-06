@@ -70,6 +70,9 @@ public class DocumentEmbeddingGenerator {
         return List.copyOf(drafts);
     }
 
+    /**
+     * 외부 Provider 호출에 필요한 버전·모델·차원과 비어 있지 않은 Chunk Snapshot을 검증한다.
+     */
     private void validateWork(EmbeddingWork work) {
         if (work == null
             || work.documentVersionId() == null

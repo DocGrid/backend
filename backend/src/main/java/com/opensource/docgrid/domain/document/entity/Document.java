@@ -108,6 +108,12 @@ public class Document extends BaseEntity {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    /**
+     * 문서 원장의 소유자·표시 Metadata·형식·공개 범위와 초기 상태를 생성한다.
+     *
+     * <p>최초 저장 전에는 순환 FK 때문에 currentVersion이 비어 있을 수 있으며, 버전 저장 후
+     * {@link #updateCurrentVersion(DocumentVersion)}으로 연결한다.
+     */
     @Builder
     public Document(User owner, DocumentVersion currentVersion, String title, String description,
                      DocumentType documentType, DocumentSourceType sourceType, DocumentStatus status,
@@ -122,6 +128,12 @@ public class Document extends BaseEntity {
         this.visibility = visibility;
     }
 
+    /**
+     * 최초 업로드 중 생성한 버전 또는 내부 복구 흐름의 대상 버전을 현재 포인터로 설정한다.
+     *
+     * <p>검색 가능한 완료 승격에는 상태·소유 관계를 검증하는
+     * {@link #activateIndexedVersion(DocumentVersion)}을 사용한다.
+     */
     public void updateCurrentVersion(DocumentVersion currentVersion) {
         this.currentVersion = currentVersion;
     }
@@ -136,6 +148,9 @@ public class Document extends BaseEntity {
         this.description = description == null || description.isBlank() ? null : description.trim();
     }
 
+    /**
+     * 문서의 공개 범위를 변경한다. 권한 검증과 접근 캐시 갱신은 호출 Service가 담당한다.
+     */
     public void updateVisibility(VisibilityType visibility) {
         this.visibility = visibility;
     }
@@ -168,22 +183,42 @@ public class Document extends BaseEntity {
         this.status = DocumentStatus.INDEXED;
     }
 
+    /**
+     * 검색 가능한 버전이 아직 없는 문서를 비동기 인덱싱 진행 상태로 표시한다.
+     */
     public void markIndexing() {
         this.status = DocumentStatus.INDEXING;
     }
 
+    /**
+     * 실패 문서에 새 버전이 접수됐음을 나타내도록 업로드 상태로 되돌린다.
+     */
     public void markUploaded() {
         this.status = DocumentStatus.UPLOADED;
     }
 
+    /**
+     * 문서에 검색 가능한 버전이 있음을 표시한다.
+     *
+     * <p>새 currentVersion과 함께 변경해야 하는 완료 경로에서는
+     * {@link #activateIndexedVersion(DocumentVersion)}을 사용한다.
+     */
     public void markIndexed() {
         this.status = DocumentStatus.INDEXED;
     }
 
+    /**
+     * 검색 가능한 버전 없이 인덱싱이 최종 실패한 문서를 실패 상태로 표시한다.
+     */
     public void markFailed() {
         this.status = DocumentStatus.FAILED;
     }
 
+    /**
+     * 문서를 Soft-delete하고 삭제 시각을 함께 기록한다.
+     *
+     * <p>Vector 비활성화와 권한 캐시 정리는 호출 Transaction의 Outbox Event가 후속 처리한다.
+     */
     public void markDeleted(LocalDateTime deletedAt) {
         this.status = DocumentStatus.DELETED;
         this.deletedAt = deletedAt;

@@ -184,17 +184,29 @@ public class DocumentIndexingFailureService {
         return attemptConverter.toFailureResponse(attempt);
     }
 
+    /**
+     * 완료·다른 실패·Lease 복구와의 경쟁을 직렬화하도록 Job을 비관적 잠금으로 조회한다.
+     */
     private EmbeddingJob findLockedJob(Long jobId) {
         return embeddingJobRepository.findByIdForUpdate(jobId)
             .orElseThrow(() -> new DocGridException(ErrorCode.EMBEDDING_JOB_NOT_FOUND));
     }
 
+    /**
+     * Job과 Claim Token에 대응하는 Attempt를 조회해 현재 또는 멱등 재생 실행을 식별한다.
+     */
     private EmbeddingJobAttempt findAttempt(EmbeddingJob embeddingJob, String claimToken) {
         return embeddingJobAttemptRepository
             .findByEmbeddingJobIdAndClaimToken(embeddingJob.getId(), claimToken)
             .orElseThrow(() -> new DocGridException(ErrorCode.EMBEDDING_JOB_ATTEMPT_INVALID));
     }
 
+    /**
+     * 이미 실패한 Attempt의 재요청이 최초 요청과 같은 실행 식별자·오류 내용인지 검증한다.
+     *
+     * <p>Job은 첫 실패 후 PENDING 또는 FAILED로 바뀔 수 있으므로 현재 Lease를 다시 요구하지 않는다.
+     * 대신 저장된 Attempt 종료 시각과 duration까지 확인해 손상되지 않은 최초 결과만 재생한다.
+     */
     private void validateFailureReplay(
         EmbeddingJob embeddingJob,
         EmbeddingJobAttempt attempt,
@@ -227,6 +239,11 @@ public class DocumentIndexingFailureService {
         }
     }
 
+    /**
+     * 실패 요청이 현재 Job의 동일 Worker·Token으로 시작된 Attempt인지 확인한다.
+     *
+     * <p>Attempt 시작 시각이 실패 기준 시각보다 뒤면 처리 시간을 신뢰할 수 없으므로 정합성 오류로 중단한다.
+     */
     private void validateStartedAttempt(
         EmbeddingJob embeddingJob,
         EmbeddingJobAttempt attempt,

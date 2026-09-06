@@ -19,6 +19,9 @@ public record WorkerIndexingFailure(
     Duration minimumRetryDelay
 ) {
 
+    /**
+     * 별도 Provider 최소 지연이 없는 보고 가능한 실패를 만든다.
+     */
     static WorkerIndexingFailure reportable(
         IndexingFailureType failureType,
         String diagnosticCode,
@@ -27,6 +30,9 @@ public record WorkerIndexingFailure(
         return reportable(failureType, diagnosticCode, safeMessage, Duration.ZERO);
     }
 
+    /**
+     * 정규화된 실패 유형과 안전한 메시지 및 Provider 최소 Retry 지연을 가진 보고 결과를 만든다.
+     */
     static WorkerIndexingFailure reportable(
         IndexingFailureType failureType,
         String diagnosticCode,
@@ -42,6 +48,9 @@ public record WorkerIndexingFailure(
         );
     }
 
+    /**
+     * 과거 Worker가 DB 실패 전이를 수행하면 안 되는 소유권 상실 결과를 만든다.
+     */
     static WorkerIndexingFailure ownershipLost(String diagnosticCode) {
         return new WorkerIndexingFailure(
             false,

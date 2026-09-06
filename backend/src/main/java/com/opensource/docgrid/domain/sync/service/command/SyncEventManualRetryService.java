@@ -28,12 +28,22 @@ public class SyncEventManualRetryService {
     private final SyncOutboxEventRepository syncOutboxEventRepository;
     private final Clock clock;
 
+    /**
+     * 최종 FAILED Event를 즉시 Claim 가능한 PENDING 상태로 되돌린다.
+     *
+     * @param eventId 관리자가 재처리할 Outbox Event 식별자
+     */
     public void retry(UUID eventId) {
+        // 1. Event 행을 잠가 다른 관리자 재시도나 상태 전이와 경쟁하지 않게 한다.
         SyncOutboxEvent event = syncOutboxEventRepository.findByEventIdForUpdate(eventId)
             .orElseThrow(() -> new DocGridException(ErrorCode.SYNC_EVENT_NOT_FOUND));
+
+        // 2. PROCESSING 소유권이나 자동 Retry 예약을 덮지 않도록 최종 FAILED 상태만 허용한다.
         if (event.getStatus() != SyncEventStatus.FAILED) {
             throw new DocGridException(ErrorCode.SYNC_EVENT_RETRY_NOT_ALLOWED);
         }
+
+        // 3. 과거 이력은 보존하고 최대 Retry 한도를 한 번 늘린 새 수동 실행 기회를 부여한다.
         event.requeueFailed(LocalDateTime.now(clock));
     }
 }

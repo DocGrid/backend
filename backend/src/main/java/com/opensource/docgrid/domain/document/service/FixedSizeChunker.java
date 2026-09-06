@@ -125,6 +125,9 @@ public class FixedSizeChunker {
         return codePoints.length;
     }
 
+    /**
+     * 한 번의 Chunk 계산에 사용할 크기와 Overlap을 읽고 전진 가능한 조합인지 검증한다.
+     */
     private ChunkSettings validatedSettings() {
         int chunkSize = properties.getChunkSize();
         int overlap = properties.getOverlap();
@@ -135,6 +138,11 @@ public class FixedSizeChunker {
         return new ChunkSettings(chunkSize, overlap);
     }
 
+    /**
+     * 연속된 비공백 Code Point 묶음 수로 저장·운영용 근사 Token 수를 계산한다.
+     *
+     * <p>모델 Tokenizer 결과가 아니므로 Vector 생성 입력 분할 기준으로 사용하지 않는다.
+     */
     private int estimateTokenCount(String text) {
         int tokenCount = 0;
         boolean insideToken = false;
@@ -151,6 +159,9 @@ public class FixedSizeChunker {
         return tokenCount;
     }
 
+    /**
+     * Chunk Text의 UTF-8 Byte를 SHA-256으로 해시해 내용 불변성 검증 값을 만든다.
+     */
     private String sha256(String text) {
         try {
             MessageDigest digest = MessageDigest.getInstance(HASH_ALGORITHM);

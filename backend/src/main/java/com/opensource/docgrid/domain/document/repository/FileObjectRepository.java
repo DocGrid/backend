@@ -9,10 +9,22 @@ import org.springframework.data.repository.query.Param;
 
 import com.opensource.docgrid.domain.document.entity.FileObject;
 
+/**
+ * 외부 저장소 파일의 메타데이터를 보존하고 내용 Hash 기반 중복 업로드를 조정한다.
+ *
+ * <p>동시 업로드는 PostgreSQL {@code ON CONFLICT DO NOTHING}으로 원자 수렴시키며, 호출 Service가
+ * 삽입 결과에 따라 승자 행을 다시 조회하고 불필요한 외부 Object를 정리한다.
+ */
 public interface FileObjectRepository extends JpaRepository<FileObject, Long> {
 
+    /** 같은 SHA-256과 파일 크기를 가진 재사용 가능한 FileObject를 조회한다. */
     Optional<FileObject> findByFileHashAndFileSize(String fileHash, Long fileSize);
 
+    /**
+     * Hash와 크기가 아직 없을 때만 FileObject 메타데이터를 원자 삽입한다.
+     *
+     * @return 새 행이 삽입되면 1, 동시 중복 행이 이미 있으면 0
+     */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = """
         INSERT INTO file_objects (

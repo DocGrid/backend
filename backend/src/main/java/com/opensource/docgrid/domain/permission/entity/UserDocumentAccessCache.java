@@ -104,6 +104,9 @@ public class UserDocumentAccessCache extends BaseEntity {
     @Column(name = "expires_at")
     private LocalDateTime expiresAt;
 
+    /**
+     * 한 사용자·문서·권한 출처 조합의 계산된 접근 비트와 유효 기간을 생성한다.
+     */
     @Builder
     public UserDocumentAccessCache(User user, Document document, boolean canRead, boolean canWrite,
                                     boolean canAdmin, AccessSourceType sourceType, Long sourceId,
@@ -120,15 +123,24 @@ public class UserDocumentAccessCache extends BaseEntity {
         this.expiresAt = expiresAt;
     }
 
+    /**
+     * 현재 권한 원장의 접근 비트와 만료 시각으로 기존 캐시를 다시 활성화한다.
+     */
     public void grant(boolean canRead, boolean canWrite, boolean canAdmin, LocalDateTime expiresAt) {
+        // 1. 읽기·쓰기·관리 권한을 원장의 현재 Snapshot으로 교체한다.
         this.canRead = canRead;
         this.canWrite = canWrite;
         this.canAdmin = canAdmin;
+
+        // 2. 무효화 표시를 제거하고 재계산 시각과 새 만료 시각을 기록한다.
         this.invalidatedAt = null;
         this.computedAt = LocalDateTime.now();
         this.expiresAt = expiresAt;
     }
 
+    /**
+     * 권한 원장 변경으로 더 이상 검색 pre-filter에 사용할 수 없는 캐시에 무효화 시각을 기록한다.
+     */
     public void invalidate() {
         this.invalidatedAt = LocalDateTime.now();
     }

@@ -82,6 +82,9 @@ public class DocumentCollection extends BaseEntity {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    /**
+     * 소유자, 선택적 상위 컬렉션과 공개 범위를 가진 활성 문서 그룹을 생성한다.
+     */
     @Builder
     public DocumentCollection(User owner, DocumentCollection parentCollection, String name, String description,
                                VisibilityType visibility, CollectionStatus status) {
@@ -93,11 +96,17 @@ public class DocumentCollection extends BaseEntity {
         this.status = status != null ? status : CollectionStatus.ACTIVE;
     }
 
+    /**
+     * 컬렉션을 Soft-delete하고 삭제 시각을 기록한다.
+     */
     public void markDeleted(LocalDateTime deletedAt) {
         this.status = CollectionStatus.DELETED;
         this.deletedAt = deletedAt;
     }
 
+    /**
+     * 컬렉션 공개 범위를 변경한다. 파생 권한 캐시 갱신은 호출 Service가 담당한다.
+     */
     public void updateVisibility(VisibilityType visibility) {
         this.visibility = visibility;
     }

@@ -34,8 +34,16 @@ public class WorkerNodeCommandService {
     private final WorkerNodeRepository workerNodeRepository;
     private final Clock clock;
 
+    /**
+     * 새 Worker 인스턴스를 ACTIVE 상태로 등록하고 Heartbeat 기준 시각을 초기화한다.
+     *
+     * @return 저장된 Worker 식별자
+     */
     public Long register(String workerName, String instanceId, String hostName, String ipAddress) {
+        // 1. 등록 시각과 최초 Heartbeat가 달라지지 않도록 동일한 기준 시각을 사용한다.
         LocalDateTime registeredAt = LocalDateTime.now(clock);
+
+        // 2. 재기동 인스턴스를 구분하는 instanceId와 실행 환경 정보를 새 Worker 행에 기록한다.
         WorkerNode workerNode = WorkerNode.builder()
             .workerName(workerName)
             .instanceId(instanceId)
@@ -46,20 +54,35 @@ public class WorkerNodeCommandService {
             .startedAt(registeredAt)
             .build();
 
+        // 3. 저장 후 생성된 식별자는 이후 Heartbeat와 Job Claim에서 Worker 소유권으로 사용된다.
         return workerNodeRepository.save(workerNode).getId();
     }
 
+    /**
+     * 현재 실행 인스턴스가 살아 있음을 기록한다.
+     *
+     * @return Worker와 instanceId가 일치하고 살아 있는 상태여서 갱신되었으면 {@code true}
+     */
     public boolean heartbeat(Long workerId, String instanceId) {
+        // 1. 조건부 UPDATE로 종료되거나 교체된 인스턴스의 늦은 Heartbeat가 상태를 되돌리지 못하게 한다.
         int updatedRows = workerNodeRepository.updateHeartbeat(
             workerId,
             instanceId,
             LocalDateTime.now(clock),
             LIVE_STATUSES
         );
+
+        // 2. 정확히 한 행이 변경된 경우에만 현재 인스턴스의 정상 Heartbeat로 인정한다.
         return updatedRows == 1;
     }
 
+    /**
+     * 현재 실행 인스턴스를 정상 종료 상태로 전환한다.
+     *
+     * @return Worker와 instanceId가 일치하고 살아 있는 상태에서 종료되었으면 {@code true}
+     */
     public boolean stop(Long workerId, String instanceId) {
+        // 1. ACTIVE/IDLE 상태만 STOPPED로 변경해 이미 DEAD로 확정된 Worker를 되살리지 않는다.
         int updatedRows = workerNodeRepository.markStopped(
             workerId,
             instanceId,
@@ -67,6 +90,8 @@ public class WorkerNodeCommandService {
             WorkerStatus.STOPPED,
             LIVE_STATUSES
         );
+
+        // 2. 조건을 충족한 단일 Worker가 종료된 경우에만 성공으로 응답한다.
         return updatedRows == 1;
     }
 

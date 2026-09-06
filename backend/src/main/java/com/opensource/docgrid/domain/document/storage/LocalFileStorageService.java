@@ -33,11 +33,17 @@ public class LocalFileStorageService implements FileStorageService {
     private final Path rootPath;
     private final String bucketName;
 
+    /**
+     * 설정 Bucket을 검증하고 Local Root를 생성·실경로 정규화해 이후 경로 검사의 기준으로 고정한다.
+     */
     public LocalFileStorageService(FileStorageProperties properties) {
         this.bucketName = requireBucket(properties.getBucket());
         this.rootPath = prepareRoot(properties.getLocal().getRoot());
     }
 
+    /**
+     * 입력 Stream을 Root 내부 임시 파일에 기록한 뒤 최종 Object Key로 교체한다.
+     */
     @Override
     public StoredFile store(InputStream inputStream, long fileSize, String contentType, String objectKey) {
         Path temporaryFile = null;
@@ -61,9 +67,15 @@ public class LocalFileStorageService implements FileStorageService {
         }
     }
 
+    /**
+     * 현재 Local 저장소에 속한 Object 전체를 Byte 배열로 읽는다.
+     */
     @Override
     public byte[] read(StoredFile storedFile) {
+        // 1. DB에 기록된 Provider와 Bucket이 현재 Adapter 설정과 같은지 확인한다.
         validateLocation(storedFile);
+
+        // 2. Symbolic Link와 Root 이탈을 검사한 실제 파일만 읽고, 없음과 저장소 장애를 구분한다.
         try {
             Path target = resolveExistingPath(storedFile.objectKey());
             return Files.readAllBytes(target);
@@ -75,9 +87,15 @@ public class LocalFileStorageService implements FileStorageService {
         }
     }
 
+    /**
+     * 현재 Local 저장소에 속한 Object를 멱등 삭제한다.
+     */
     @Override
     public void delete(StoredFile storedFile) {
+        // 1. 다른 Provider 또는 Bucket의 경로를 이 Adapter가 삭제하지 못하도록 차단한다.
         validateLocation(storedFile);
+
+        // 2. 존재하지 않으면 성공으로 끝내고, 존재하면 Link와 Root 경계를 검증한 뒤 삭제한다.
         try {
             Path target = resolvePath(storedFile.objectKey());
             if (Files.notExists(target, LinkOption.NOFOLLOW_LINKS)) {
@@ -91,6 +109,9 @@ public class LocalFileStorageService implements FileStorageService {
         }
     }
 
+    /**
+     * 설정 Root를 생성하고 Symbolic Link가 해석된 절대 실경로로 고정한다.
+     */
     private Path prepareRoot(Path configuredRoot) {
         if (configuredRoot == null) {
             throw new IllegalStateException("storage.local.root 설정이 필요합니다.");
@@ -104,6 +125,9 @@ public class LocalFileStorageService implements FileStorageService {
         }
     }
 
+    /**
+     * DB 저장 위치 식별에 사용할 논리 Bucket 설정이 비어 있지 않은지 검증한다.
+     */
     private String requireBucket(String configuredBucket) {
         if (!StringUtils.hasText(configuredBucket)) {
             throw new IllegalStateException("storage.bucket 설정이 필요합니다.");
@@ -111,6 +135,9 @@ public class LocalFileStorageService implements FileStorageService {
         return configuredBucket;
     }
 
+    /**
+     * 안전한 부모 디렉터리를 준비하고 새 Object를 쓸 최종 경로를 반환한다.
+     */
     private Path resolveWritablePath(String objectKey) throws IOException {
         Path target = resolvePath(objectKey);
         Path parent = target.getParent();
@@ -121,6 +148,9 @@ public class LocalFileStorageService implements FileStorageService {
         return safeParent.resolve(target.getFileName());
     }
 
+    /**
+     * 기존 Object 경로의 존재, Link 여부와 Root 경계를 검증해 읽기 가능한 경로를 반환한다.
+     */
     private Path resolveExistingPath(String objectKey) throws IOException {
         Path target = resolvePath(objectKey);
         if (Files.notExists(target, LinkOption.NOFOLLOW_LINKS)) {
@@ -130,6 +160,12 @@ public class LocalFileStorageService implements FileStorageService {
         return target;
     }
 
+    /**
+     * Root부터 부모 경로까지 각 Segment를 생성하되 기존 Symbolic Link를 따라가지 않는다.
+     *
+     * <p>동시 요청이 같은 디렉터리를 먼저 생성할 수 있으므로 AlreadyExists는 허용한 뒤 실제로
+     * Link가 아닌 디렉터리인지 매 단계 다시 확인한다.
+     */
     private Path createDirectoriesWithoutFollowingLinks(Path parent) throws IOException {
         Path current = rootPath;
         for (Path segment : rootPath.relativize(parent)) {
@@ -147,6 +183,9 @@ public class LocalFileStorageService implements FileStorageService {
         return current;
     }
 
+    /**
+     * 논리 Object Key를 정규화하고 절대 경로·상위 이동을 거부해 Root 내부 경로로 변환한다.
+     */
     private Path resolvePath(String objectKey) throws IOException {
         if (!StringUtils.hasText(objectKey)) {
             throw new IOException("Object Key가 비어 있습니다.");
@@ -162,6 +201,9 @@ public class LocalFileStorageService implements FileStorageService {
         return target;
     }
 
+    /**
+     * 기존 대상과 실경로 부모가 Symbolic Link를 통해 설정 Root 밖으로 벗어나지 않았는지 확인한다.
+     */
     private void validateExistingPath(Path target) throws IOException {
         if (Files.isSymbolicLink(target)) {
             throw new IOException("Symbolic Link는 파일 저장 위치로 사용할 수 없습니다.");
@@ -172,6 +214,9 @@ public class LocalFileStorageService implements FileStorageService {
         }
     }
 
+    /**
+     * 저장된 위치가 현재 LOCAL Provider와 설정 Bucket에 속하는지 검증한다.
+     */
     private void validateLocation(StoredFile storedFile) {
         if (storedFile.storageProvider() == StorageProvider.LOCAL
             && bucketName.equals(storedFile.bucketName())) {
@@ -183,6 +228,9 @@ public class LocalFileStorageService implements FileStorageService {
         throw new DocGridException(ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH);
     }
 
+    /**
+     * 임시 파일을 가능한 경우 원자적으로 교체하고 파일 시스템 미지원 시 일반 교체로 대체한다.
+     */
     private void moveAtomically(Path source, Path target) throws IOException {
         try {
             Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
@@ -191,6 +239,9 @@ public class LocalFileStorageService implements FileStorageService {
         }
     }
 
+    /**
+     * 저장 실패 뒤 남은 임시 파일을 최선 노력 방식으로 정리한다.
+     */
     private void deleteTemporaryFile(Path temporaryFile) {
         if (temporaryFile == null) {
             return;

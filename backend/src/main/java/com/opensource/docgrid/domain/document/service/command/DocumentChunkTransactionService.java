@@ -196,11 +196,19 @@ public class DocumentChunkTransactionService {
         );
     }
 
+    /**
+     * Job 행을 비관적 잠금으로 조회해 같은 Job의 상태 검증과 변경을 직렬화한다.
+     */
     private EmbeddingJob findLockedJob(Long jobId) {
         return embeddingJobRepository.findByIdForUpdate(jobId)
             .orElseThrow(() -> new DocGridException(ErrorCode.EMBEDDING_JOB_NOT_FOUND));
     }
 
+    /**
+     * Job에 고정된 문서 버전을 비관적 잠금으로 조회한다.
+     *
+     * <p>문서의 currentVersion은 재인덱싱 중에도 이전 공개 버전을 유지할 수 있으므로 사용하지 않는다.
+     */
     private DocumentVersion findLockedJobVersion(EmbeddingJob embeddingJob) {
         if (embeddingJob.getDocumentVersion() == null || embeddingJob.getDocumentVersion().getId() == null) {
             throw new DocGridException(ErrorCode.DOCUMENT_FILE_REFERENCE_MISSING);
@@ -209,6 +217,12 @@ public class DocumentChunkTransactionService {
             .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_FILE_REFERENCE_MISSING));
     }
 
+    /**
+     * 요청 Attempt가 현재 Claim Token으로 시작됐고 같은 Worker에 속하는지 검증한다.
+     *
+     * <p>Job 소유권만 확인하면 이전 Attempt가 새 Claim에서 결과를 저장할 수 있으므로
+     * Attempt ID, 상태, Worker를 모두 일치시킨다.
+     */
     private void validateAttempt(
         EmbeddingJob embeddingJob,
         Long attemptId,
@@ -227,6 +241,12 @@ public class DocumentChunkTransactionService {
         }
     }
 
+    /**
+     * 버전에 파싱 가능한 문서 형식과 유효한 파일 저장 위치가 연결되어 있는지 확인한다.
+     *
+     * <p>버전의 Content-Type이 없으면 FileObject 값을 사용하되, 문서 형식별 허용 목록과
+     * 일치해야 외부 파일 읽기 단계로 진행한다.
+     */
     private void validateSupportedFile(DocumentVersion documentVersion) {
         if (documentVersion.getDocument() == null
             || documentVersion.getDocument().getDocumentType() == null) {
@@ -252,6 +272,9 @@ public class DocumentChunkTransactionService {
         }
     }
 
+    /**
+     * 내부 문서 형식에 허용된 MIME Type 집합을 반환한다.
+     */
     private Set<String> allowedContentTypes(DocumentType documentType) {
         if (documentType == DocumentType.TXT) {
             return TXT_CONTENT_TYPES;
@@ -268,6 +291,12 @@ public class DocumentChunkTransactionService {
         return Set.of();
     }
 
+    /**
+     * 버전 상태와 실제 Chunk 존재 여부를 대조해 신규 작업, 완료 재생, 거부 상태를 판정한다.
+     *
+     * <p>CHUNKED인데 Chunk가 없거나 CHUNKED 이전인데 Chunk가 존재하는 조합은 부분 Commit 또는
+     * 외부 변조 가능성이 있으므로 단순 재시도하지 않고 데이터 불일치로 처리한다.
+     */
     private ChunkState resolveChunkState(DocumentVersion documentVersion) {
         boolean chunksExist = documentChunkRepository.existsByDocumentVersionId(documentVersion.getId());
         if (documentVersion.getStatus() == DocumentVersionStatus.CHUNKED) {
@@ -286,6 +315,11 @@ public class DocumentChunkTransactionService {
         return ChunkState.NOT_ALLOWED;
     }
 
+    /**
+     * 순서가 검증된 Draft 전체를 같은 문서 버전에 속한 영속 Chunk 목록으로 변환한다.
+     *
+     * <p>빈 Chunk Set은 검색 가능한 문서를 만들 수 없으므로 허용하지 않는다.
+     */
     private List<DocumentChunk> toEntities(
         DocumentVersion documentVersion,
         List<DocumentChunkDraft> drafts
@@ -314,6 +348,9 @@ public class DocumentChunkTransactionService {
         return chunks;
     }
 
+    /**
+     * Chunk Draft의 순서, 문자 범위, 선택 Metadata와 SHA-256 내용 해시 계약을 검증한다.
+     */
     private void validateDraft(DocumentChunkDraft draft, int expectedIndex) {
         if (draft == null
             || draft.chunkIndex() != expectedIndex
@@ -330,6 +367,9 @@ public class DocumentChunkTransactionService {
         }
     }
 
+    /**
+     * 이미 저장된 Chunk Set의 실제 개수를 사용해 멱등 재생 결과를 만든다.
+     */
     private ChunkResult replayResult(Long jobId, Long attemptId, DocumentVersion documentVersion) {
         return new ChunkResult(
             response(jobId, attemptId, documentVersion.getId(), existingChunkCount(documentVersion.getId())),
@@ -337,6 +377,9 @@ public class DocumentChunkTransactionService {
         );
     }
 
+    /**
+     * 기존 Chunk 수를 응답용 int로 안전하게 변환하고 비어 있는 완료 상태를 차단한다.
+     */
     private int existingChunkCount(Long documentVersionId) {
         long chunkCount = documentChunkRepository.countByDocumentVersionId(documentVersionId);
         if (chunkCount <= 0) {
@@ -345,6 +388,9 @@ public class DocumentChunkTransactionService {
         return Math.toIntExact(chunkCount);
     }
 
+    /**
+     * Chunk 처리 결과를 외부 응답 DTO로 조립한다.
+     */
     private DocumentChunksResponse response(
         Long jobId,
         Long attemptId,
@@ -384,10 +430,16 @@ public class DocumentChunkTransactionService {
         ChunkResult replayResult
     ) {
 
+        /**
+         * 외부 파싱이 필요한 준비 결과를 생성한다.
+         */
         static PreparationResult work(FileSnapshot fileSnapshot) {
             return new PreparationResult(fileSnapshot, null);
         }
 
+        /**
+         * 이미 완료된 Chunk 결과를 재사용하는 준비 결과를 생성한다.
+         */
         static PreparationResult replay(DocumentChunksResponse response) {
             return new PreparationResult(null, new ChunkResult(response, false));
         }

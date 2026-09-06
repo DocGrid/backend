@@ -20,6 +20,14 @@ import com.opensource.docgrid.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * 최초 문서 업로드의 파일 저장소 작업과 데이터베이스 트랜잭션을 조율한다.
+ *
+ * <p>파일 검증·해시 계산·중복 조회 후 필요할 때만 바이너리를 저장하고,
+ * {@link DocumentUploadService}에 데이터베이스 변경을 위임한다. 파일 저장소는 DB 트랜잭션에
+ * 참여하지 않으므로 DB 저장 실패 또는 중복 경쟁에서 사용되지 않은 후보 객체를 보상 삭제한다.
+ * 이 클래스는 업로드 순서와 보상 동작을 책임지며 문서 Entity를 직접 저장하지 않는다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -30,21 +38,33 @@ public class DocumentUploadFacade {
     private final FileStorageService fileStorageService;
     private final DocumentUploadService documentUploadService;
 
+    /**
+     * 업로드 파일을 검증하고 저장소와 데이터베이스에 최초 문서를 생성한다.
+     *
+     * @param userId 문서를 소유할 사용자 ID
+     * @param request 파일과 문서 메타데이터를 담은 요청
+     * @return 생성된 문서·버전·인덱싱 Job 정보
+     */
     public DocumentUploadResponse upload(Long userId, DocumentUploadRequest request) {
+        // 1. 저장 전에 파일 형식·크기·이름을 검증하고 동일 바이너리 판별용 해시를 계산한다.
         ValidatedFile validatedFile = fileValidationService.validate(request.file());
         String fileHash = fileHashService.calculateSha256(request.file());
         Optional<Long> existingFileObjectId = documentUploadService.findReusableFileObjectId(
             fileHash, validatedFile.fileSize()
         );
 
+        // 2. 같은 바이너리의 FileObject가 있으면 물리 파일을 다시 저장하지 않고 바로 DB Transaction을 실행한다.
         if (existingFileObjectId.isPresent()) {
             return documentUploadService.upload(createCommand(
                 userId, request, validatedFile, fileHash, existingFileObjectId.get(), null
             )).response();
         }
 
+        // 3. 중복 파일이 없으면 DB Transaction 밖에서 저장소 후보 객체를 먼저 생성한다.
         StoredFile candidate = storeCandidate(request, validatedFile);
         DocumentUploadTransactionResult result;
+
+        // 4. DB 저장이 실패하면 참조되지 않는 후보 파일이 남지 않도록 보상 삭제한 뒤 원래 예외를 전달한다.
         try {
             result = documentUploadService.upload(createCommand(
                 userId, request, validatedFile, fileHash, null, candidate
@@ -54,12 +74,16 @@ public class DocumentUploadFacade {
             throw e;
         }
 
+        // 5. 동시 업로드가 같은 FileObject를 먼저 만들었다면 이번 요청의 미사용 후보만 정리한다.
         if (!result.candidateClaimed()) {
             cleanupCandidate(candidate);
         }
         return result.response();
     }
 
+    /**
+     * 검증된 파일을 충돌 가능성이 낮은 임의 객체 키로 파일 저장소에 기록한다.
+     */
     private StoredFile storeCandidate(DocumentUploadRequest request, ValidatedFile validatedFile) {
         String objectKey = "documents/%s/%s.%s".formatted(
             UUID.randomUUID(), UUID.randomUUID(), validatedFile.extension()
@@ -77,6 +101,9 @@ public class DocumentUploadFacade {
         }
     }
 
+    /**
+     * Facade 단계의 값들을 DB 트랜잭션에 전달할 불변 명령 객체로 조립한다.
+     */
     private DocumentUploadCommand createCommand(
         Long userId,
         DocumentUploadRequest request,
@@ -97,6 +124,11 @@ public class DocumentUploadFacade {
         );
     }
 
+    /**
+     * DB Row에 연결되지 않은 저장소 후보를 최선 노력 방식으로 삭제한다.
+     *
+     * <p>정리 실패가 원래 업로드 결과나 예외를 덮지 않도록 기록만 남긴다.
+     */
     private void cleanupCandidate(StoredFile candidate) {
         try {
             fileStorageService.delete(candidate);

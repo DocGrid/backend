@@ -33,6 +33,14 @@ public class PermissionTargetUserQueryService {
     private final PermissionQueryService permissionQueryService;
     private final UserRepository userRepository;
 
+    /**
+     * 문서 권한을 관리할 수 있는 요청자에게 권한 부여 후보 사용자를 반환한다.
+     *
+     * @param requesterId 권한 관리 가능 여부를 검사할 요청자 식별자
+     * @param documentId 권한을 부여할 문서 식별자
+     * @param keyword 사용자 이름 검색어
+     * @return 이름순으로 정렬된 최대 20명의 활성 사용자
+     */
     public List<PermissionTargetUserResponse> searchForDocument(Long requesterId, Long documentId, String keyword) {
         // 1. 문서 권한을 부여할 수 있는 사용자에게만 조직 사용자 검색 결과를 공개한다.
         if (!permissionQueryService.canAdminDocument(requesterId, documentId)) {
@@ -43,6 +51,14 @@ public class PermissionTargetUserQueryService {
         return searchActiveUsers(keyword);
     }
 
+    /**
+     * 컬렉션 권한을 관리할 수 있는 요청자에게 권한 부여 후보 사용자를 반환한다.
+     *
+     * @param requesterId 권한 관리 가능 여부를 검사할 요청자 식별자
+     * @param collectionId 권한을 부여할 컬렉션 식별자
+     * @param keyword 사용자 이름 검색어
+     * @return 이름순으로 정렬된 최대 20명의 활성 사용자
+     */
     public List<PermissionTargetUserResponse> searchForCollection(
         Long requesterId,
         Long collectionId,
@@ -57,10 +73,17 @@ public class PermissionTargetUserQueryService {
         return searchActiveUsers(keyword);
     }
 
+    /**
+     * 공백이 아닌 이름 검색어로 활성 사용자 후보를 제한 조회한다.
+     *
+     * <p>빈 검색어로 조직의 전체 사용자 목록이 노출되는 것을 막고 선택 UI에 필요한 작은 결과만 반환한다.
+     */
     private List<PermissionTargetUserResponse> searchActiveUsers(String keyword) {
+        // 1. 앞뒤 공백을 제거한 뒤 실질적인 검색어가 없으면 DB 전체 검색을 수행하지 않는다.
         String normalizedKeyword = keyword.trim();
         if (normalizedKeyword.isEmpty()) return List.of();
 
+        // 2. 삭제되지 않은 ACTIVE 사용자만 조회하고 외부 노출 전용 응답으로 변환한다.
         return userRepository.findAdminUsers(
             normalizedKeyword,
             null,

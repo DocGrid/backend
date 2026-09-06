@@ -41,6 +41,9 @@ public class WorkerExecutionLifecycleManager {
     private final IndexingWorkerProperties workerProperties;
     private final AtomicBoolean closing = new AtomicBoolean(false);
 
+    /**
+     * Worker 실행과 Lease 갱신에 사용되는 두 Executor 및 종료 협력 객체를 연결한다.
+     */
     public WorkerExecutionLifecycleManager(
         WorkerJobPollingScheduler pollingScheduler,
         @Qualifier(WORKER_JOB_EXECUTOR) ThreadPoolExecutor jobExecutor,
@@ -61,23 +64,24 @@ public class WorkerExecutionLifecycleManager {
     @Order(Ordered.HIGHEST_PRECEDENCE)
     @EventListener(ContextClosedEvent.class)
     public void shutdown() {
+        // 1. 여러 종료 Event가 도착해도 정리 절차는 최초 호출에서만 수행한다.
         if (!closing.compareAndSet(false, true)) {
             return;
         }
 
-        // 1. 신규 Slot과 Claim을 막은 뒤 이미 제출된 실행만 완료할 수 있게 Executor를 닫는다.
+        // 2. 신규 Slot과 Claim을 막은 뒤 이미 제출된 실행만 완료할 수 있게 Executor를 닫는다.
         pollingScheduler.stopPolling();
         jobExecutor.shutdown();
 
-        // 2. 설정된 유예 시간 안에 모든 실행이 끝나면 interrupt 없이 Lease 자원만 정리한다.
+        // 3. 설정된 유예 시간 안에 모든 실행이 끝나면 interrupt 없이 Lease 자원만 정리한다.
         boolean terminated = awaitJobTermination(workerProperties.getShutdownGracePeriod());
         List<Runnable> cancelledTasks = List.of();
         if (!terminated) {
-            // 3. 시간 초과 실행은 interrupt하고 DB 상태를 직접 변경하지 않아 Lease 복구가 회수하게 한다.
+            // 4. 시간 초과 실행은 interrupt하고 DB 상태를 직접 변경하지 않아 Lease 복구가 회수하게 한다.
             cancelledTasks = jobExecutor.shutdownNow();
         }
 
-        // 4. Job Thread 정리 뒤 남은 갱신 Handle과 Scheduler를 닫고 Worker STOPPED Listener에 제어를 넘긴다.
+        // 5. Job Thread 정리 뒤 남은 갱신 Handle과 Scheduler를 닫고 Worker STOPPED Listener에 제어를 넘긴다.
         leaseRenewalManager.stopAll();
         leaseScheduler.shutdown();
         log.info(
@@ -88,6 +92,11 @@ public class WorkerExecutionLifecycleManager {
         );
     }
 
+    /**
+     * 활성 Job 실행이 설정된 유예 시간 안에 자연 종료되는지 기다린다.
+     *
+     * <p>대기 Thread가 interrupt되면 interrupt 상태를 복원하고 강제 종료 경로를 선택한다.
+     */
     private boolean awaitJobTermination(Duration gracePeriod) {
         try {
             return jobExecutor.awaitTermination(gracePeriod.toNanos(), TimeUnit.NANOSECONDS);

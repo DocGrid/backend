@@ -381,8 +381,8 @@ public class IndexingJobAdminController {
 
     @Operation(
         summary = "Document Chunk 생성",
-        description = "현재 PROCESSING Job의 유효한 Attempt 소유권을 검증하고 TXT·Markdown 원본을 "
-            + "Transaction 밖에서 읽고 파싱한 뒤 결정적인 Chunk Set으로 저장합니다. "
+        description = "현재 PROCESSING Job의 유효한 Attempt 소유권을 검증하고 TXT·Markdown·PDF·DOCX 원본을 "
+            + "설정된 파일 저장소에서 Transaction 밖으로 읽어 파싱한 뒤 결정적인 Chunk Set으로 저장합니다. "
             + "최초 저장은 201, 기존 완료 결과의 멱등 재생은 200을 반환합니다."
     )
     @ApiResponses({
@@ -406,7 +406,7 @@ public class IndexingJobAdminController {
         ),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
-            description = "Embedding Job 또는 MinIO Object 없음",
+            description = "Embedding Job 또는 원본 파일 Object 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))
         ),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -426,7 +426,7 @@ public class IndexingJobAdminController {
         ),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "503",
-            description = "MinIO 저장소 읽기 장애",
+            description = "설정된 파일 저장소 읽기 장애",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))
         )
     })

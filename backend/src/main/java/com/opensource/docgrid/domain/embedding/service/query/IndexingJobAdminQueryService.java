@@ -64,6 +64,9 @@ public class IndexingJobAdminQueryService {
     private final IndexingJobAdminConverter indexingJobAdminConverter;
     private final EmbeddingJobManualRetryPolicy manualRetryPolicy;
 
+    /**
+     * 선택적 상태·문서·Worker 조건으로 인덱싱 Job을 고정 정렬해 페이지 조회한다.
+     */
     public PageResponse<AdminIndexingJobResponse> getJobs(
         EmbeddingJobStatus status,
         Long documentId,
@@ -94,14 +97,23 @@ public class IndexingJobAdminQueryService {
         return PageResponse.from(jobs, content);
     }
 
+    /**
+     * 단일 인덱싱 Job의 문서·버전·모델·소유권·재시도 상태와 수동 재처리 가능 여부를 조회한다.
+     */
     public AdminIndexingJobResponse getJob(Long jobId) {
+        // 1. 관리자 상세에 필요한 연관관계를 함께 조회하고 존재하지 않는 Job을 구분한다.
         EmbeddingJob job = embeddingJobRepository.findAdminDetailById(jobId)
             .orElseThrow(() -> new DocGridException(ErrorCode.EMBEDDING_JOB_NOT_FOUND));
+
+        // 2. Command와 같은 정책으로 현재 수동 재처리 가능 사유를 계산해 공개 DTO로 변환한다.
         EmbeddingJobManualRetryEligibility eligibility = resolveRetryEligibilities(List.of(job))
             .getOrDefault(job.getId(), EmbeddingJobManualRetryEligibility.JOB_NOT_FAILED);
         return indexingJobAdminConverter.toJobResponse(job, eligibility);
     }
 
+    /**
+     * 지정한 Job의 실행 Attempt를 최근 시도 순으로 페이지 조회한다.
+     */
     public PageResponse<AdminIndexingJobAttemptResponse> getAttempts(Long jobId, int page, int size) {
         // 1. 이력이 비어 있어도 Job 없음과 정상 빈 Page를 구분한다.
         validateJobExists(jobId);
@@ -117,6 +129,9 @@ public class IndexingJobAdminQueryService {
         return PageResponse.from(attempts, content);
     }
 
+    /**
+     * 지정한 Job의 append-only 상태 전이 Event를 최근 발생 순으로 페이지 조회한다.
+     */
     public PageResponse<AdminIndexingEventResponse> getEvents(Long jobId, int page, int size) {
         // 1. Event가 없는 유효 Job과 존재하지 않는 Job을 명확히 구분한다.
         validateJobExists(jobId);
@@ -132,12 +147,20 @@ public class IndexingJobAdminQueryService {
         return PageResponse.from(events, content);
     }
 
+    /**
+     * 빈 이력 Page와 존재하지 않는 Job을 구분하기 위해 Job 존재 여부를 확인한다.
+     */
     private void validateJobExists(Long jobId) {
         if (!embeddingJobRepository.existsById(jobId)) {
             throw new DocGridException(ErrorCode.EMBEDDING_JOB_NOT_FOUND);
         }
     }
 
+    /**
+     * 화면에 포함된 FAILED Job들의 최신 버전·활성 Job 조건을 일괄 조회해 재처리 정책 결과를 계산한다.
+     *
+     * <p>Job마다 추가 Query를 실행하지 않도록 문서 ID와 버전 ID를 모아 두 번의 Bulk 조회로 해결한다.
+     */
     private Map<Long, EmbeddingJobManualRetryEligibility> resolveRetryEligibilities(
         List<EmbeddingJob> jobs
     ) {

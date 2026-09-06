@@ -50,6 +50,14 @@ public class IndexedVersionVectorRepairService {
     private final EmbeddingJobRepository embeddingJobRepository;
     private final EmbeddingRepository embeddingRepository;
 
+    /**
+     * 현재 INDEXED Version의 Vector 누락을 같은 모델의 새 Embedding Job으로 복구하도록 예약한다.
+     *
+     * @param documentVersionId 복구할 현재 문서 Version 식별자
+     * @param embeddingModel 누락 Vector를 생성할 활성 Embedding 모델
+     * @param sourceEventId 복구를 요청한 Outbox Event 식별자이자 재전달 멱등 키
+     * @return 기존 Chunk를 대상으로 새로 생성된 PENDING Job
+     */
     public EmbeddingJob repair(
         Long documentVersionId,
         EmbeddingModel embeddingModel,
@@ -79,11 +87,15 @@ public class IndexedVersionVectorRepairService {
         );
     }
 
+    /**
+     * 복구 대상이 현재 검색 Version이며 선택 모델의 Vector가 일부만 존재하는 상태인지 검증한다.
+     */
     private void validateTarget(
         Document document,
         DocumentVersion version,
         EmbeddingModel embeddingModel
     ) {
+        // 1. 검색 중인 현재 Version, 기존 Chunk, 중복되지 않은 Job이라는 구조적 조건을 함께 확인한다.
         if (version.getStatus() != DocumentVersionStatus.INDEXED
             || document.getStatus() != DocumentStatus.INDEXED
             || document.getCurrentVersion() == null
@@ -94,6 +106,8 @@ public class IndexedVersionVectorRepairService {
             )) {
             throw new DocGridException(ErrorCode.SYNC_EVENT_INCONSISTENT);
         }
+
+        // 2. 현재 모델 기준 전체 Chunk 수와 전체·ACTIVE Vector 수를 각각 계산한다.
         long chunkCount = documentChunkRepository.countByDocumentVersionId(version.getId());
         long allModelEmbeddingCount = embeddingRepository.countByDocumentVersionIdAndEmbeddingModelId(
             version.getId(),
@@ -105,6 +119,8 @@ public class IndexedVersionVectorRepairService {
                 embeddingModel.getId(),
                 EmbeddingStatus.ACTIVE
             );
+
+        // 3. 완전한 Set, ACTIVE가 이미 완전한 Set, 비활성 Vector가 섞인 Set은 이 부분 복구 경로에서 거부한다.
         if (allModelEmbeddingCount >= chunkCount
             || activeEmbeddingCount >= chunkCount
             || allModelEmbeddingCount != activeEmbeddingCount) {

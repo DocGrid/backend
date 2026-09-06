@@ -70,7 +70,7 @@ public class IndexingEvent extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String message;
 
-    // JSON 컬럼 임시 매핑(Hibernate JSON 타입 미설정) - 추후 OpenSQL JSON / Hibernate JSON 매핑으로 교체 필요
+    // 현재 Schema가 TEXT이므로 문자열로 보존한다. JSONB 전환 시 Flyway와 Hibernate 매핑을 함께 바꿔야 한다.
     @Column(name = "metadata_json", columnDefinition = "TEXT")
     private String metadataJson;
 

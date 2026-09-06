@@ -62,6 +62,7 @@ public class WorkerIndexingFailureClassifier {
      * 실행 예외를 실패 보고 가능 여부, 제한 유형과 고정 진단 메시지로 변환한다.
      */
     public WorkerIndexingFailure classify(RuntimeException exception) {
+        // 1. 도메인 오류가 아닌 예상 밖 Runtime 예외는 내부 오류로 제한해 보고한다.
         if (!(exception instanceof DocGridException docGridException)) {
             return WorkerIndexingFailure.reportable(
                 IndexingFailureType.WORKER_INTERNAL_ERROR,
@@ -70,10 +71,13 @@ public class WorkerIndexingFailureClassifier {
             );
         }
 
+        // 2. 과거 Claim이 상태를 덮어쓰면 안 되는 소유권 오류는 실패 보고 대상에서 제외한다.
         ErrorCode errorCode = docGridException.getErrorCode();
         if (OWNERSHIP_LOST_ERRORS.contains(errorCode)) {
             return WorkerIndexingFailure.ownershipLost(errorCode.getCode());
         }
+
+        // 3. 저장소·문서 내용·Provider·Vector 계약 오류를 재시도 정책별 공개 실패 유형으로 변환한다.
         if (errorCode == ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH) {
             return WorkerIndexingFailure.reportable(
                 IndexingFailureType.STORAGE_CONFIGURATION_INVALID,
@@ -156,6 +160,8 @@ public class WorkerIndexingFailureClassifier {
                 "인덱싱 Job과 문서 파이프라인 상태가 일치하지 않습니다."
             );
         }
+
+        // 4. 명시적으로 분류되지 않은 도메인 오류는 세부 정보를 숨긴 Worker 내부 오류로 처리한다.
         return WorkerIndexingFailure.reportable(
             IndexingFailureType.WORKER_INTERNAL_ERROR,
             errorCode.getCode(),
@@ -163,6 +169,9 @@ public class WorkerIndexingFailureClassifier {
         );
     }
 
+    /**
+     * Provider 예외에 포함된 Retry-After·Circuit 지연을 실패 보고 계약으로 전달한다.
+     */
     private Duration minimumRetryDelay(RuntimeException exception) {
         if (exception instanceof EmbeddingProviderException providerException) {
             return providerException.getMinimumRetryDelay();

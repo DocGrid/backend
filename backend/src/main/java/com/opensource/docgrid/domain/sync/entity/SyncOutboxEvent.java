@@ -116,6 +116,11 @@ public class SyncOutboxEvent extends BaseEntity {
     @Column(name = "last_error_message", columnDefinition = "TEXT")
     private String lastErrorMessage;
 
+    /**
+     * 도메인 변경과 함께 저장할 PENDING Outbox Event를 생성한다.
+     *
+     * <p>실행 가능 시각과 원래 발생 시각을 분리해 지연 재시도 중에도 사건 발생 순서를 보존한다.
+     */
     @Builder
     public SyncOutboxEvent(
         UUID eventId,
@@ -176,7 +181,10 @@ public class SyncOutboxEvent extends BaseEntity {
      * 현재 Claim이 Handler 부작용까지 Commit할 준비가 됐을 때 Event를 완료한다.
      */
     public void complete(UUID currentClaimToken, LocalDateTime completedAt) {
+        // 1. 아직 유효한 현재 Dispatcher만 Handler 부작용을 완료로 확정할 수 있게 한다.
         validateActiveOwnership(currentClaimToken, completedAt);
+
+        // 2. 완료 상태와 시각을 기록하고 과거 실패 Snapshot 및 Lease 소유권을 제거한다.
         status = SyncEventStatus.PROCESSED;
         processedAt = completedAt;
         lastErrorCode = null;
@@ -192,7 +200,10 @@ public class SyncOutboxEvent extends BaseEntity {
         LocalDateTime renewedAt,
         LocalDateTime renewedLockExpiresAt
     ) {
+        // 1. 현재 Token의 처리 중 Event이며 기존 Lease가 아직 유효한지 확인한다.
         validateActiveOwnership(currentClaimToken, renewedAt);
+
+        // 2. 같은 Claim 세대의 Lease를 실제로 늘리는 시각만 허용한다.
         if (renewedLockExpiresAt == null || !renewedLockExpiresAt.isAfter(lockExpiresAt)) {
             throw new IllegalArgumentException("새 Lease 만료 시각은 현재 Lease보다 늦어야 합니다.");
         }
@@ -209,10 +220,15 @@ public class SyncOutboxEvent extends BaseEntity {
         LocalDateTime failedAt,
         LocalDateTime nextAvailableAt
     ) {
+        // 1. 실패를 기록하려는 Dispatcher가 아직 유효한 현재 Claim 소유자인지 확인한다.
         validateActiveOwnership(currentClaimToken, failedAt);
+
+        // 2. 최종 실패 횟수에 도달하지 않았고 과거가 아닌 다음 실행 시각이 있는지 검증한다.
         if (retryCount + 1 >= maxRetryCount || nextAvailableAt == null || nextAvailableAt.isBefore(failedAt)) {
             throw new IllegalStateException("남은 Retry와 다음 실행 시각이 필요합니다.");
         }
+
+        // 3. 실패 Snapshot을 남기고 새 Dispatcher가 Claim할 수 있도록 PENDING 상태와 실행 시각을 설정한다.
         status = SyncEventStatus.PENDING;
         retryCount++;
         availableAt = nextAvailableAt;
@@ -230,7 +246,10 @@ public class SyncOutboxEvent extends BaseEntity {
         String errorMessage,
         LocalDateTime failedAt
     ) {
+        // 1. 유효한 현재 Claim만 Event를 최종 실패로 종결할 수 있게 한다.
         validateActiveOwnership(currentClaimToken, failedAt);
+
+        // 2. 마지막 실패 횟수와 안전한 오류 Snapshot을 남기고 Dispatcher 소유권을 해제한다.
         status = SyncEventStatus.FAILED;
         retryCount++;
         lastErrorCode = errorCode;
@@ -242,9 +261,12 @@ public class SyncOutboxEvent extends BaseEntity {
      * 관리자가 최종 실패 Event에 실행 기회 한 번을 추가해 Queue로 되돌린다.
      */
     public void requeueFailed(LocalDateTime requeuedAt) {
+        // 1. 최종 실패한 Event와 유효한 관리자 재처리 시각만 Queue로 되돌릴 수 있다.
         if (status != SyncEventStatus.FAILED || requeuedAt == null) {
             throw new IllegalStateException("FAILED Event만 수동 재처리할 수 있습니다.");
         }
+
+        // 2. 즉시 실행 가능한 PENDING 상태로 바꾸고 추가 실행 기회 한 번을 부여한다.
         status = SyncEventStatus.PENDING;
         availableAt = requeuedAt;
         maxRetryCount++;
@@ -288,6 +310,9 @@ public class SyncOutboxEvent extends BaseEntity {
         clearOwnership();
     }
 
+    /**
+     * 변경 요청자가 현재 PROCESSING Event의 같은 Claim Token을 가졌고 Lease가 유효한지 검증한다.
+     */
     private void validateActiveOwnership(UUID currentClaimToken, LocalDateTime operatedAt) {
         if (status != SyncEventStatus.PROCESSING
             || currentClaimToken == null
@@ -299,6 +324,9 @@ public class SyncOutboxEvent extends BaseEntity {
         }
     }
 
+    /**
+     * 완료·실패·재예약 뒤 이전 Dispatcher가 다시 Event를 변경하지 못하도록 Lease 소유권을 제거한다.
+     */
     private void clearOwnership() {
         lockedBy = null;
         claimToken = null;

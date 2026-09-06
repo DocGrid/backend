@@ -34,6 +34,11 @@ public class SyncEventDispatchService {
     private final SyncEventDeliveryAttemptService syncEventDeliveryAttemptService;
     private final Clock clock;
 
+    /**
+     * Claim된 Outbox Event의 Handler 부작용과 완료 전이를 독립 트랜잭션으로 실행한다.
+     *
+     * @param claimedEvent Poller가 획득한 Event ID와 Claim Token의 불변 Snapshot
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void dispatch(ClaimedSyncEvent claimedEvent) {
         // 1. Handler 실행 전 현재 Claim의 소유권을 검증한다.
@@ -61,6 +66,9 @@ public class SyncEventDispatchService {
         completionEvent.complete(claimedEvent.claimToken(), completedAt);
     }
 
+    /**
+     * Event가 아직 같은 Token의 PROCESSING Claim이고 작업 시각까지 Lease가 유효한지 확인한다.
+     */
     private void validateOwnership(
         SyncOutboxEvent event,
         ClaimedSyncEvent claimedEvent,

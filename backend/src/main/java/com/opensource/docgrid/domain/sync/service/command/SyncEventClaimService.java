@@ -31,12 +31,23 @@ public class SyncEventClaimService {
     private final SyncEventDeliveryAttemptService syncEventDeliveryAttemptService;
     private final Clock clock;
 
+    /**
+     * 현재 실행 가능한 우선 Event 하나를 Claim한다.
+     *
+     * @return Claim 세대 정보, 처리 가능한 PENDING Event가 없으면 빈 값
+     */
     public Optional<ClaimedSyncEvent> claim() {
+        // 1. Event 선택과 Lease 계산이 같은 시각을 사용하도록 기준 시각을 한 번만 구한다.
         LocalDateTime claimedAt = LocalDateTime.now(clock);
+
+        // 2. 잠기지 않은 다음 Event가 있을 때만 PROCESSING 전이와 응답 생성을 수행한다.
         return syncOutboxEventRepository.findNextPendingForUpdate(claimedAt)
             .map(event -> claim(event, claimedAt));
     }
 
+    /**
+     * 잠긴 Event에 새 Claim 세대를 부여하고 Delivery Attempt를 시작한다.
+     */
     private ClaimedSyncEvent claim(SyncOutboxEvent event, LocalDateTime claimedAt) {
         // 1. 이전 실행과 구분되는 Claim 세대 Token을 발급한다.
         UUID claimToken = UUID.randomUUID();

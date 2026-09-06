@@ -35,7 +35,11 @@ import com.opensource.docgrid.global.common.response.PageResponse;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 관리자 Dashboard용 Outbox 적체·처리 품질·정합성 Issue와 실행 이력을 읽기 전용으로 집계한다.
+ * 관리자 Dashboard용 Outbox 적체·처리 품질·정합성 Issue와 Reconciliation 실행 이력을 조회한다.
+ *
+ * <p>현재 Queue Snapshot과 최근 24시간 성공·실패를 읽기 전용으로 집계하고, Event·Issue 목록은
+ * 고정 정렬과 페이지 응답으로 변환한다. Claim Token, 내부 Payload와 오류 메시지는 공개 DTO에서 제외하며
+ * 상태 변경이나 복구 요청은 수행하지 않는다.
  */
 @Service
 @RequiredArgsConstructor
@@ -57,9 +61,15 @@ public class SyncAdminQueryService {
     private final SyncAdminConverter syncAdminConverter;
     private final Clock clock;
 
+    /**
+     * 현재 시각을 기준으로 Queue, Issue와 가장 최근 Reconciliation 실행 요약을 한 응답에 조립한다.
+     */
     public SyncAdminSummaryResponse getSummary() {
+        // 1. 모든 하위 집계가 같은 기준 시각과 최근 24시간 범위를 사용하도록 한 번만 계산한다.
         LocalDateTime capturedAt = LocalDateTime.now(clock);
         LocalDateTime since = capturedAt.minusHours(24);
+
+        // 2. 독립 집계를 공개 Dashboard 응답으로 결합한다.
         return new SyncAdminSummaryResponse(
             capturedAt,
             eventSummary(capturedAt, since),
@@ -68,6 +78,9 @@ public class SyncAdminQueryService {
         );
     }
 
+    /**
+     * 선택적 상태·종류 조건으로 Outbox Event를 최근 발생 순으로 페이지 조회한다.
+     */
     public PageResponse<SyncEventAdminResponse> getEvents(
         SyncEventStatus status,
         SyncEventType eventType,
@@ -85,6 +98,9 @@ public class SyncAdminQueryService {
         return PageResponse.from(events, content);
     }
 
+    /**
+     * 선택적 상태·유형·심각도 조건으로 정합성 Issue를 최근 탐지 순으로 페이지 조회한다.
+     */
     public PageResponse<SyncIssueAdminResponse> getIssues(
         SyncConsistencyIssueStatus status,
         SyncConsistencyIssueType issueType,
@@ -104,6 +120,9 @@ public class SyncAdminQueryService {
         return PageResponse.from(issues, content);
     }
 
+    /**
+     * 현재 Queue 개수와 최근 기간의 처리·실패·재시도 품질 지표를 집계한다.
+     */
     private SyncEventSummaryResponse eventSummary(LocalDateTime capturedAt, LocalDateTime since) {
         long processedCount = syncOutboxEventRepository.countByStatusAndProcessedAtGreaterThanEqual(
             SyncEventStatus.PROCESSED,
@@ -129,6 +148,9 @@ public class SyncAdminQueryService {
         );
     }
 
+    /**
+     * 활성 Issue와 최근 자동복구 성공·실패 수를 집계한다.
+     */
     private SyncIssueSummaryResponse issueSummary(LocalDateTime since) {
         return new SyncIssueSummaryResponse(
             syncConsistencyIssueRepository.countByStatus(SyncConsistencyIssueStatus.OPEN),
@@ -142,12 +164,18 @@ public class SyncAdminQueryService {
         );
     }
 
+    /**
+     * 가장 최근 Reconciliation 실행을 조회하고 이력이 없으면 빈 요약으로 남긴다.
+     */
     private SyncReconciliationSummaryResponse reconciliationSummary() {
         return syncReconciliationRunRepository.findTopByOrderByStartedAtDescIdDesc()
             .map(this::toReconciliationSummary)
             .orElse(null);
     }
 
+    /**
+     * 내부 실행 Entity에서 관리자에게 필요한 Cursor·집계·종결 정보만 추출한다.
+     */
     private SyncReconciliationSummaryResponse toReconciliationSummary(SyncReconciliationRun run) {
         return new SyncReconciliationSummaryResponse(
             run.getRunId(),
@@ -164,12 +192,18 @@ public class SyncAdminQueryService {
         );
     }
 
+    /**
+     * 가장 오래 대기 중인 Event의 발생 시각부터 현재까지 경과 초를 계산한다.
+     */
     private Long oldestPendingAgeSeconds(LocalDateTime capturedAt) {
         return syncOutboxEventRepository.findOldestOccurredAtByStatus(SyncEventStatus.PENDING)
             .map(occurredAt -> Math.max(0L, Duration.between(occurredAt, capturedAt).toSeconds()))
             .orElse(null);
     }
 
+    /**
+     * 완료된 Event 중 성공 비율을 소수점 첫째 자리 백분율로 계산하고 표본이 없으면 null을 반환한다.
+     */
     static Double successRate(long processedCount, long failedCount) {
         long completedCount = processedCount + failedCount;
         if (completedCount == 0) {

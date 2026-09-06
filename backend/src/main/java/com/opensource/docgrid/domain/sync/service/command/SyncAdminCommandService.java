@@ -43,6 +43,9 @@ public class SyncAdminCommandService {
     private final SyncAdminConverter syncAdminConverter;
     private final Clock clock;
 
+    /**
+     * 최종 실패한 Outbox Event를 즉시 재처리 가능 상태로 되돌리고 관리자 감사 Action을 기록한다.
+     */
     @Transactional
     public SyncAdminActionResponse retryEvent(UUID eventId, Long adminUserId) {
         // 1. FAILED Event를 즉시 Claim 가능한 Queue 상태로 되돌린다.
@@ -58,6 +61,9 @@ public class SyncAdminCommandService {
         ));
     }
 
+    /**
+     * 안전한 자동복구가 가능한 정합성 Issue에 재인덱싱 Event를 연결하고 복구 진행 상태로 전환한다.
+     */
     @Transactional
     public SyncAdminActionResponse repairIssue(Long issueId, Long adminUserId) {
         // 1. 같은 Issue의 동시 복구 요청을 행 잠금으로 직렬화한다.
@@ -88,12 +94,18 @@ public class SyncAdminCommandService {
         ));
     }
 
+    /**
+     * OPEN Issue를 관리자가 확인 후 무시 상태로 종결하고 정규화된 사유를 감사 기록에 남긴다.
+     */
     @Transactional
     public SyncAdminActionResponse ignoreIssue(Long issueId, Long adminUserId, String reason) {
+        // 1. Issue를 잠금 조회해 복구·다른 관리자 작업과 상태 변경을 직렬화한다.
         SyncConsistencyIssue issue = findLockedIssue(issueId);
         if (issue.getStatus() != SyncConsistencyIssueStatus.OPEN) {
             throw new DocGridException(ErrorCode.SYNC_ISSUE_IGNORE_NOT_ALLOWED);
         }
+
+        // 2. 입력 사유의 가장자리 공백을 제거하고 Issue 종결과 감사 Action을 같은 Transaction에 저장한다.
         String normalizedReason = reason.trim();
         issue.ignore(LocalDateTime.now(clock), normalizedReason);
         return actionResponse(syncAdminActionWriter.record(
@@ -106,13 +118,18 @@ public class SyncAdminCommandService {
         ));
     }
 
+    /**
+     * 지정 Cursor와 모드로 Reconciliation Batch를 실행하고 성공 결과를 관리자 감사 Action에 연결한다.
+     */
     public SyncReconciliationAdminResponse reconcile(
         long cursor,
         SyncReconciliationMode mode,
         Long adminUserId
     ) {
-        // Reconciler가 실행/실패 이력을 자체 Transaction으로 확정한 뒤 성공 실행만 관리자 감사에 연결한다.
+        // 1. Reconciler가 실행·실패 이력을 자체 Transaction으로 확정하도록 Batch를 호출한다.
         SyncReconciliationBatchResult result = syncReconciliationOrchestrator.reconcileBatch(cursor, mode);
+
+        // 2. 성공한 실행만 관리자·모드·Cursor와 함께 독립 감사 Action에 연결한다.
         SyncAdminAction action = syncAdminActionWriter.record(
             adminUserId,
             SyncAdminActionType.RECONCILIATION_REQUESTED,
@@ -134,11 +151,17 @@ public class SyncAdminCommandService {
         );
     }
 
+    /**
+     * 동시에 같은 Issue를 복구·무시하지 못하도록 행 잠금으로 조회한다.
+     */
     private SyncConsistencyIssue findLockedIssue(Long issueId) {
         return syncConsistencyIssueRepository.findByIdForUpdate(issueId)
             .orElseThrow(() -> new DocGridException(ErrorCode.SYNC_ISSUE_NOT_FOUND));
     }
 
+    /**
+     * Issue가 OPEN이며 Inspector가 안전한 복구 대상으로 표시했고 버전·모델 근거를 보유하는지 확인한다.
+     */
     private void validateRepairable(SyncConsistencyIssue issue) {
         if (issue.getStatus() != SyncConsistencyIssueStatus.OPEN
             || !issue.isRepairable()
@@ -148,6 +171,9 @@ public class SyncAdminCommandService {
         }
     }
 
+    /**
+     * 저장된 감사 Action을 외부 응답 DTO로 변환한다.
+     */
     private SyncAdminActionResponse actionResponse(SyncAdminAction action) {
         return syncAdminConverter.toActionResponse(action);
     }

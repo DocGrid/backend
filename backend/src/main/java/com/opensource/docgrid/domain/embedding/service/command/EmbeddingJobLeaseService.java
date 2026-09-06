@@ -81,8 +81,14 @@ public class EmbeddingJobLeaseService {
         return embeddingJobConverter.toRenewedLeaseResponse(embeddingJob, renewedAt);
     }
 
+    /**
+     * Worker의 저장 상태와 Heartbeat를 기준으로 현재 Claim의 Lease를 갱신할 수 있는지 검증한다.
+     */
     private void validateRenewable(WorkerNode workerNode, LocalDateTime renewedAt) {
+        // 1. 서버 설정의 DEAD 임계값을 현재 갱신 시각에 적용한다.
         LocalDateTime heartbeatDeadline = renewedAt.minus(workerProperties.getDeadThreshold());
+
+        // 2. DB 상태 반영이 늦더라도 실질적으로 만료된 Worker의 Lease 연장을 거부한다.
         WorkerStatus effectiveStatus = workerNode.resolveEffectiveStatus(heartbeatDeadline);
         if (!RENEWABLE_WORKER_STATUSES.contains(effectiveStatus)) {
             throw new DocGridException(ErrorCode.WORKER_NOT_AVAILABLE);

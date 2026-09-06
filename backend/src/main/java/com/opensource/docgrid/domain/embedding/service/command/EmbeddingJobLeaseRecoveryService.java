@@ -87,12 +87,21 @@ public class EmbeddingJobLeaseRecoveryService {
         return RecoveryResult.recovered(embeddingJob);
     }
 
+    /**
+     * Scheduler가 전달한 복구 대상 ID와 기준 시각의 최소 형식을 검증한다.
+     */
     private void validateRequest(Long jobId, LocalDateTime recoveredAt) {
         if (jobId == null || jobId <= 0 || recoveredAt == null) {
             throw new DocGridException(ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT);
         }
     }
 
+    /**
+     * 잠근 Job이 여전히 동일한 PROCESSING Claim이며 기준 시각에 실제로 만료됐는지 검증한다.
+     *
+     * <p>Worker, canonical UUID Token, 잠금 시각 범위와 처리 버전 참조까지 확인해 손상된 소유권
+     * 데이터를 단순 Retry로 숨기지 않는다.
+     */
     private void validateExpiredOwnership(
         EmbeddingJob embeddingJob,
         Long jobId,
@@ -114,6 +123,9 @@ public class EmbeddingJobLeaseRecoveryService {
         }
     }
 
+    /**
+     * Claim Token이 소문자 표준 UUID 문자열 형식인지 확인한다.
+     */
     private boolean isCanonicalUuid(String value) {
         if (value == null || value.length() != 36) {
             return false;
@@ -125,6 +137,9 @@ public class EmbeddingJobLeaseRecoveryService {
         }
     }
 
+    /**
+     * 만료 Claim으로 시작된 Attempt가 Job의 Worker·Token과 일치하고 아직 STARTED인지 확인한다.
+     */
     private void validateStartedAttempt(
         EmbeddingJob embeddingJob,
         EmbeddingJobAttempt attempt,
@@ -147,6 +162,9 @@ public class EmbeddingJobLeaseRecoveryService {
         }
     }
 
+    /**
+     * 실패 전이 전에 만료 당시 Worker·Attempt·Retry Snapshot을 LEASE_EXPIRED 이벤트로 저장한다.
+     */
     private void saveLeaseExpiredEvent(
         EmbeddingJob embeddingJob,
         Optional<EmbeddingJobAttempt> attempt,
@@ -163,6 +181,11 @@ public class EmbeddingJobLeaseRecoveryService {
             .build());
     }
 
+    /**
+     * Claim Token을 제외한 Lease 만료 진단 정보를 이벤트 Metadata JSON으로 생성한다.
+     *
+     * <p>Attempt가 시작되기 전에 Worker가 멈춘 경우에는 존재하지 않는 Attempt 정보를 만들지 않는다.
+     */
     private String leaseExpiredMetadata(
         EmbeddingJob embeddingJob,
         Optional<EmbeddingJobAttempt> attempt
@@ -201,10 +224,16 @@ public class EmbeddingJobLeaseRecoveryService {
         EmbeddingJobStatus status
     ) {
 
+        /**
+         * 잠금 경쟁 또는 갱신으로 더 이상 만료되지 않은 후보의 건너뜀 결과를 생성한다.
+         */
         private static RecoveryResult skipped(Long jobId) {
             return new RecoveryResult(jobId, false, null);
         }
 
+        /**
+         * 실제 실패 전이를 수행한 Job의 최종 상태를 복구 결과로 생성한다.
+         */
         private static RecoveryResult recovered(EmbeddingJob embeddingJob) {
             return new RecoveryResult(embeddingJob.getId(), true, embeddingJob.getStatus());
         }

@@ -106,9 +106,14 @@ public class EmbeddingJobClaimService {
         return embeddingJobConverter.toClaimedResponse(embeddingJob);
     }
 
+    /**
+     * 저장 상태와 Heartbeat를 함께 계산한 Worker의 실질 상태가 Claim 가능한지 검증한다.
+     */
     private void validateClaimable(WorkerNode workerNode, LocalDateTime claimedAt) {
-        // DEAD 기준 시각과 같거나 오래된 Heartbeat는 만료로 처리한다.
+        // 1. DEAD 기준 시각과 같거나 오래된 Heartbeat는 만료로 처리한다.
         LocalDateTime heartbeatDeadline = claimedAt.minus(indexingWorkerProperties.getDeadThreshold());
+
+        // 2. 아직 DB에 DEAD가 반영되지 않았더라도 실질 상태가 만료되었으면 새 Job을 배정하지 않는다.
         WorkerStatus effectiveStatus = workerNode.resolveEffectiveStatus(heartbeatDeadline);
         if (!CLAIMABLE_WORKER_STATUSES.contains(effectiveStatus)) {
             throw new DocGridException(ErrorCode.WORKER_NOT_AVAILABLE);

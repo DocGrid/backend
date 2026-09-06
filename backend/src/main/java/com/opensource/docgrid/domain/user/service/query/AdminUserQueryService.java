@@ -38,6 +38,16 @@ public class AdminUserQueryService {
     private final UserRoleRepository userRoleRepository;
     private final AdminUserConverter adminUserConverter;
 
+    /**
+     * 관리자 화면의 사용자 검색 조건과 페이지 정보를 적용해 역할이 포함된 목록을 반환한다.
+     *
+     * @param keyword 이름 또는 이메일 검색어, 공백이면 필터를 적용하지 않음
+     * @param departmentId 소속 부서 식별자, {@code null}이면 전체 부서
+     * @param status 사용자 상태, {@code null}이면 삭제 사용자를 제외한 전체 상태
+     * @param page 0부터 시작하는 페이지 번호
+     * @param size 한 페이지의 사용자 수
+     * @return 사용자 정보와 역할 코드가 결합된 페이지 응답
+     */
     public PageResponse<AdminUserResponse> getUsers(
             String keyword,
             Long departmentId,

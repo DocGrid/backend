@@ -38,8 +38,8 @@ import lombok.NoArgsConstructor;
  * index: document_id, (target_type, user_id), (target_type, department_id), (target_type, role_id), expires_at.
  *
  * <p>중요: CollectionPermission과 동일하게, target_type=USER면 user_id만, DEPARTMENT면 department_id만,
- * ROLE이면 role_id만 채워져야 한다는 개념적 CHECK 제약이 있으나 JPA에서는 강제할 수 없다.
- * TODO: DB migration에서 CHECK 제약 추가 필요 (target_type별 단일 FK만 NOT NULL).
+ * ROLE이면 role_id만 채워져야 한다. 이 불변식은 DB의 {@code ck_document_permissions_target_type_fk}
+ * CHECK 제약으로도 강제되므로 애플리케이션에서 잘못된 조합을 만들면 저장 시 거부된다.
  *
  * <p>주의사항: USER 대상 권한만 user_document_access_cache에 캐시 가능하고,
  * ROLE/DEPARTMENT 대상은 live predicate로 판단해야 한다.

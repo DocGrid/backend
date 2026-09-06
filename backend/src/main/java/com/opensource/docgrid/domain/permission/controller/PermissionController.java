@@ -34,6 +34,12 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * 문서·컬렉션의 현재 권한 조회, 직접 권한 관리와 권한 부여 대상 사용자 검색을 HTTP API로 제공한다.
+ *
+ * <p>HTTP 입력 검증과 응답 상태만 담당하며 ADMIN 가능 여부, 권한 상속·캐시와 Sync Event 기록은
+ * Command·Query Service에 위임한다.
+ */
 @Tag(name = "Permission", description = "권한 관련 API")
 @Validated
 @RestController

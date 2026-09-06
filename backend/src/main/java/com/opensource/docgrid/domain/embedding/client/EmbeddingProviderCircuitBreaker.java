@@ -33,6 +33,9 @@ public class EmbeddingProviderCircuitBreaker {
     private long generation;
     private boolean halfOpenProbeInProgress;
 
+    /**
+     * Circuit 임계값·개방 시간 설정과 테스트 가능한 기준 Clock을 연결한다.
+     */
     public EmbeddingProviderCircuitBreaker(
         EmbeddingProviderCircuitBreakerProperties properties,
         Clock clock
@@ -45,10 +48,12 @@ public class EmbeddingProviderCircuitBreaker {
      * 현재 상태에서 실제 Provider 호출 Permission을 발급하거나 Open 오류로 빠르게 거절한다.
      */
     public synchronized CallPermission acquirePermission() {
+        // 1. 기능이 꺼져 있으면 상태 변경에서 제외되는 비활성 Permission을 발급한다.
         if (!properties.isEnabled()) {
             return new CallPermission(generation, false, true);
         }
 
+        // 2. Open 유예 시간이 지나면 단일 Probe만 허용하는 HALF_OPEN 상태로 전환한다.
         Instant now = clock.instant();
         if (state == CircuitState.OPEN) {
             if (now.isBefore(openUntil)) {
@@ -57,6 +62,8 @@ public class EmbeddingProviderCircuitBreaker {
             state = CircuitState.HALF_OPEN;
             halfOpenProbeInProgress = false;
         }
+
+        // 3. HALF_OPEN에서는 한 호출에만 Probe 소유권을 주고 나머지는 빠르게 거절한다.
         if (state == CircuitState.HALF_OPEN) {
             if (halfOpenProbeInProgress) {
                 throw circuitOpen(HALF_OPEN_RETRY_DELAY);
@@ -64,6 +71,8 @@ public class EmbeddingProviderCircuitBreaker {
             halfOpenProbeInProgress = true;
             return new CallPermission(generation, true, false);
         }
+
+        // 4. CLOSED 상태에서는 현재 세대를 표시한 일반 호출 Permission을 발급한다.
         return new CallPermission(generation, false, false);
     }
 
@@ -126,6 +135,11 @@ public class EmbeddingProviderCircuitBreaker {
         return Duration.ZERO;
     }
 
+    /**
+     * Circuit을 설정 기간 동안 OPEN으로 전환하고 이전 세대의 늦은 결과를 무효화한다.
+     *
+     * @return 호출 실패에 합산할 최소 Retry 지연
+     */
     private Duration openCircuit() {
         state = CircuitState.OPEN;
         openUntil = clock.instant().plus(properties.getOpenDuration());
@@ -139,6 +153,9 @@ public class EmbeddingProviderCircuitBreaker {
         return properties.getOpenDuration();
     }
 
+    /**
+     * 성공한 Half-open Probe로 Circuit을 CLOSED 초기 상태로 복구하고 세대를 증가시킨다.
+     */
     private void closeCircuit() {
         state = CircuitState.CLOSED;
         openUntil = null;
@@ -148,6 +165,9 @@ public class EmbeddingProviderCircuitBreaker {
         log.info("Embedding Provider Circuit이 정상 호출로 닫혔습니다.");
     }
 
+    /**
+     * 실제 HTTP 호출 없이 빠르게 거절된 요청에 반환할 Retry 가능 예외를 생성한다.
+     */
     private EmbeddingProviderException circuitOpen(Duration retryDelay) {
         return new EmbeddingProviderException(
             ErrorCode.EMBEDDING_PROVIDER_CIRCUIT_OPEN,
@@ -156,6 +176,9 @@ public class EmbeddingProviderCircuitBreaker {
         );
     }
 
+    /**
+     * 현재 OPEN 또는 HALF_OPEN 상태가 다음 호출에 요구하는 남은 최소 지연을 계산한다.
+     */
     private Duration remainingOpenDelay() {
         if (state == CircuitState.OPEN && openUntil != null) {
             Duration remaining = Duration.between(clock.instant(), openUntil);

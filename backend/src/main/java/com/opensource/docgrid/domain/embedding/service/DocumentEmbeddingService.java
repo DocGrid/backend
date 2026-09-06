@@ -60,6 +60,9 @@ public class DocumentEmbeddingService {
         ));
     }
 
+    /**
+     * Transaction 완료 결과를 HTTP 응답 DTO와 생성·재생 구분 값으로 변환한다.
+     */
     private EmbeddingResult result(CompletionResult completion) {
         return new EmbeddingResult(
             new DocumentEmbeddingsResponse(

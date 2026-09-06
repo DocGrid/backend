@@ -103,6 +103,9 @@ public class DocumentVersion extends BaseEntity {
     @JoinColumn(name = "created_by")
     private User createdBy;
 
+    /**
+     * 한 시점의 파일과 문서 Metadata Snapshot을 초기 처리 상태로 생성한다.
+     */
     @Builder
     public DocumentVersion(Document document, FileObject fileObject, int versionNo, String titleSnapshot,
                             String contentHash, String fileHash, String originalFilename, String contentType,
@@ -119,6 +122,9 @@ public class DocumentVersion extends BaseEntity {
         this.createdBy = createdBy;
     }
 
+    /**
+     * 최초 업로드된 버전을 텍스트 파싱 진행 상태로 전환한다.
+     */
     public void markParsing() {
         // UPLOADED에서 시작한 최초 파싱만 허용하고 재개 여부 판단은 Command Service가 담당한다.
         if (status != DocumentVersionStatus.UPLOADED) {
@@ -127,6 +133,9 @@ public class DocumentVersion extends BaseEntity {
         this.status = DocumentVersionStatus.PARSING;
     }
 
+    /**
+     * 파싱 결과의 전체 Chunk Set 저장이 끝난 버전을 CHUNKED 상태로 전환한다.
+     */
     public void markChunked() {
         // Chunk Set 저장과 같은 Transaction에서 PARSING Version만 완료 상태로 전환한다.
         if (status != DocumentVersionStatus.PARSING) {
@@ -135,6 +144,9 @@ public class DocumentVersion extends BaseEntity {
         this.status = DocumentVersionStatus.CHUNKED;
     }
 
+    /**
+     * Chunk Set이 확정된 버전을 Vector 생성 진행 상태로 전환한다.
+     */
     public void markEmbedding() {
         // Chunk Set이 확정된 Version만 Embedding 생성 단계에 진입할 수 있다.
         if (status != DocumentVersionStatus.CHUNKED) {
@@ -190,6 +202,9 @@ public class DocumentVersion extends BaseEntity {
         this.status = resumeStatus;
     }
 
+    /**
+     * 아직 검색 완료되지 않은 처리 중 버전을 최종 실패 상태로 전환한다.
+     */
     public void markFailed() {
         // 처리 중인 Version만 실패할 수 있고 완료되거나 이미 실패한 결과는 덮어쓰지 않는다.
         if (status == DocumentVersionStatus.INDEXED || status == DocumentVersionStatus.FAILED) {

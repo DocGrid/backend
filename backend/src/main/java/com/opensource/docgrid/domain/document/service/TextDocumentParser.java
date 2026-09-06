@@ -25,6 +25,9 @@ public class TextDocumentParser implements DocumentContentParser {
     private static final char BYTE_ORDER_MARK = '\uFEFF';
     private static final Set<DocumentType> SUPPORTED_TYPES = Set.of(DocumentType.TXT, DocumentType.MD);
 
+    /**
+     * 이 Parser가 일반 Text와 Markdown 원본을 함께 처리함을 Registry에 알린다.
+     */
     @Override
     public Set<DocumentType> supportedTypes() {
         return SUPPORTED_TYPES;
@@ -63,6 +66,9 @@ public class TextDocumentParser implements DocumentContentParser {
         return canonicalText;
     }
 
+    /**
+     * 원본 Byte를 대체 문자 삽입 없이 엄격한 UTF-8 Text로 Decode한다.
+     */
     private String decodeStrictly(byte[] content) {
         if (content == null) {
             throw new DocGridException(ErrorCode.DOCUMENT_TEXT_DECODING_FAILED);

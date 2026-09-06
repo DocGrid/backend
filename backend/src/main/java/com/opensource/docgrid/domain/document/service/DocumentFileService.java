@@ -23,6 +23,11 @@ public class DocumentFileService {
     private final DocumentQueryService documentQueryService;
     private final FileStorageService fileStorageService;
 
+    /**
+     * 읽기 권한이 있는 문서의 현재 원본 파일과 안전한 응답 Metadata를 반환한다.
+     *
+     * <p>DB Snapshot의 파일 크기와 실제 Byte 수가 다르면 손상 또는 잘못된 저장 위치로 판단한다.
+     */
     public DocumentFileDownload getDocumentFile(Long userId, Long documentId) {
         // 1. 짧은 DB Transaction에서 권한을 확인하고 현재 버전의 파일 위치를 Snapshot으로 고정한다.
         DocumentFileSnapshot snapshot = documentQueryService.getDocumentFileSnapshot(userId, documentId);

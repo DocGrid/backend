@@ -73,6 +73,9 @@ public class CollectionDocument extends BaseEntity {
     @Column(name = "added_at", nullable = false)
     private LocalDateTime addedAt;
 
+    /**
+     * 문서를 컬렉션에 추가한 사용자와 시각을 포함한 유일한 N:M 연결을 생성한다.
+     */
     @Builder
     public CollectionDocument(DocumentCollection collection, Document document, User addedBy, LocalDateTime addedAt) {
         this.collection = collection;

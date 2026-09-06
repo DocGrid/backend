@@ -26,12 +26,25 @@ public class FileObjectResolutionService {
     private final FileObjectRepository fileObjectRepository;
     private final FileStorageProperties fileStorageProperties;
 
+    /**
+     * 해시와 크기가 같은 FileObject 중 현재 저장소 설정에서 실제로 사용할 수 있는 객체를 찾는다.
+     *
+     * @return 재사용 가능한 FileObject ID, 없으면 빈 값
+     * @throws DocGridException 같은 바이너리가 다른 Provider 또는 Bucket에 있어 재사용할 수 없는 경우
+     */
     public Optional<Long> findReusableFileObjectId(String fileHash, long fileSize) {
         return fileObjectRepository.findByFileHashAndFileSize(fileHash, fileSize)
             .map(this::requireActiveLocation)
             .map(FileObject::getId);
     }
 
+    /**
+     * 사전 조회된 FileObject를 재사용하거나 새 저장소 후보를 데이터베이스의 대표 객체로 확정한다.
+     *
+     * <p>동일 해시·크기의 동시 Insert는 Repository의 원자적 Insert로 경쟁시키고, 실제 Row를
+     * 다시 조회해 어느 후보가 채택됐는지 판별한다. 반환되는 {@code candidateClaimed}는 상위 Facade가
+     * 미사용 저장소 객체를 삭제할지 결정하는 근거다.
+     */
     public Resolution resolve(
         Long userId,
         ValidatedFile validatedFile,
@@ -63,6 +76,9 @@ public class FileObjectResolutionService {
         return new Resolution(fileObject, inserted == 1);
     }
 
+    /**
+     * FileObject가 현재 활성화된 저장소 Provider와 Bucket에 속하는지 확인한다.
+     */
     private FileObject requireActiveLocation(FileObject fileObject) {
         StorageProvider activeProvider = StorageProvider.valueOf(fileStorageProperties.getType().name());
         if (fileObject.getStorageProvider() == activeProvider
@@ -72,6 +88,9 @@ public class FileObjectResolutionService {
         throw new DocGridException(ErrorCode.FILE_STORAGE_CONFIGURATION_MISMATCH);
     }
 
+    /**
+     * 동시 Insert 후 조회한 FileObject가 이번 후보와 같은 실제 저장 위치를 가리키는지 확인한다.
+     */
     private void requireStoredLocation(FileObject fileObject, StoredFile storedFile) {
         if (fileObject.getStorageProvider() == storedFile.storageProvider()
             && fileObject.getBucketName().equals(storedFile.bucketName())) {

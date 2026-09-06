@@ -9,6 +9,12 @@ import com.opensource.docgrid.domain.document.enums.VisibilityType;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+/**
+ * 문서 목록에서 원장 상태와 현재 검색 가능한 Version을 함께 보여주는 요약 응답이다.
+ *
+ * <p>아직 인덱싱 완료 Version이 없는 문서는 currentVersion 필드가 {@code null}이며 처리 중 상태는 별도
+ * 문서 상태 API에서 조회한다.
+ */
 public record DocumentSummaryResponse(
     @Schema(description = "문서 ID") Long documentId,
     @Schema(description = "문서 제목") String title,

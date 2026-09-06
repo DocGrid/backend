@@ -29,8 +29,8 @@ import lombok.NoArgsConstructor;
  *
  * <p>주의사항: 이 엔티티는 상태(status) 필드를 두지 않는다 — 한번 생성되면 변경되지 않는 불변 데이터이기 때문이다.
  * 문서 내용이 수정되면 기존 chunk를 고치지 않고 새 document_version 아래에 새 chunk를 생성한다.
- * metadataJson은 이 프로젝트에 Hibernate JSON 타입 매핑이 아직 없어 TEXT 컬럼으로 임시 매핑한 것이며,
- * 추후 OpenSQL JSON / Hibernate JSON 매핑으로 교체가 필요하다.
+ * metadataJson은 현재 Flyway Schema와 동일하게 TEXT 컬럼으로 매핑하며, 구조 기반 조회가 필요해지면
+ * PostgreSQL JSONB와 Hibernate JSON 매핑으로 함께 변경해야 한다.
  */
 @Getter
 @Entity
@@ -85,7 +85,7 @@ public class DocumentChunk extends BaseEntity {
     @Column(name = "content_hash", length = 128)
     private String contentHash;
 
-    // JSON 컬럼 임시 매핑(Hibernate JSON 타입 미설정) - 추후 OpenSQL JSON / Hibernate JSON 매핑으로 교체 필요
+    // 현재 Schema가 TEXT이므로 문자열로 보존한다. JSONB 전환 시 Flyway와 Hibernate 매핑을 함께 바꿔야 한다.
     @Column(name = "metadata_json", columnDefinition = "TEXT")
     private String metadataJson;
 

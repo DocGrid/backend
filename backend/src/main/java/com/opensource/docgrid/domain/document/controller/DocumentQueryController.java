@@ -38,6 +38,13 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * 로그인 사용자의 문서 목록·상세·버전·추출 본문·원본 파일·인덱싱 상태 조회 API를 제공한다.
+ *
+ * <p>HTTP 파라미터와 파일 응답 Header 조립만 담당하며, 문서 접근 권한과 조회 규칙은
+ * {@link DocumentQueryService} 및 {@link DocumentFileService}에 위임한다. Entity와 저장소 내부 위치는
+ * 외부에 노출하지 않는다.
+ */
 @Tag(name = "Document", description = "문서 관련 API")
 @Validated
 @RestController
@@ -48,6 +55,9 @@ public class DocumentQueryController {
     private final DocumentQueryService documentQueryService;
     private final DocumentFileService documentFileService;
 
+    /**
+     * 사용자가 읽을 수 있는 문서를 선택적 상태 조건과 페이지 단위로 조회한다.
+     */
     @Operation(
         summary = "내 문서 목록 조회",
         description = "로그인한 사용자가 읽을 수 있는 문서를 최신 등록순으로 조회합니다. "
@@ -65,6 +75,9 @@ public class DocumentQueryController {
         return ResponseUtils.ok(documentQueryService.getMyDocuments(userId, status, page, size));
     }
 
+    /**
+     * 읽기 권한이 있는 문서의 Metadata와 현재 버전 요약을 조회한다.
+     */
     @Operation(
         summary = "문서 상세 조회",
         description = "문서 Metadata, 소유자와 현재 버전 정보를 조회합니다. 추출 본문과 원본 파일은 포함하지 않습니다. "
@@ -78,6 +91,9 @@ public class DocumentQueryController {
         return ResponseUtils.ok(documentQueryService.getDocumentDetail(userId, documentId));
     }
 
+    /**
+     * 읽기 권한이 있는 문서의 전체 버전과 각 인덱싱 상태를 최신 순으로 조회한다.
+     */
     @Operation(
         summary = "문서 버전 전체 이력 조회",
         description = "읽기 가능한 문서의 모든 버전을 최신 번호순으로 조회합니다. 현재 검색 버전 여부, "
@@ -91,6 +107,9 @@ public class DocumentQueryController {
         return ResponseUtils.ok(documentQueryService.getDocumentVersions(userId, documentId));
     }
 
+    /**
+     * 현재 검색 버전의 Chunk를 문서 순서로 복원한 추출 본문을 조회한다.
+     */
     @Operation(
         summary = "문서 추출 본문 조회",
         description = "현재 버전의 Chunk 중복을 제거하고 페이지·섹션 순서대로 복원한 정규화 Text 전체를 반환합니다. "
@@ -104,6 +123,9 @@ public class DocumentQueryController {
         return ResponseUtils.ok(documentQueryService.getDocumentContent(userId, documentId));
     }
 
+    /**
+     * 현재 문서 버전의 원본 파일을 브라우저 표시 또는 첨부 다운로드 응답으로 반환한다.
+     */
     @Operation(
         summary = "문서 원본 파일 조회",
         description = "현재 버전의 원본 PDF·DOCX·TXT 파일을 반환합니다. disposition은 inline 또는 attachment이며 "
@@ -131,6 +153,9 @@ public class DocumentQueryController {
         return ResponseEntity.ok().headers(headers).body(download.content());
     }
 
+    /**
+     * 현재 검색 버전과 별도로 처리 중인 버전·Job 상태를 조회한다.
+     */
     @Operation(
         summary = "문서 인덱싱 상태 조회",
         description = "현재 검색 가능한 INDEXED 버전과 처리 중인 버전 및 임베딩 작업 상태를 함께 조회합니다. "
@@ -144,6 +169,9 @@ public class DocumentQueryController {
         return ResponseUtils.ok(documentQueryService.getDocumentStatus(userId, documentId));
     }
 
+    /**
+     * 저장된 Content-Type을 HTTP MediaType으로 변환하고 비어 있거나 잘못된 값은 안전한 Binary 형식으로 대체한다.
+     */
     private MediaType resolveMediaType(String contentType) {
         if (!StringUtils.hasText(contentType)) {
             return MediaType.APPLICATION_OCTET_STREAM;

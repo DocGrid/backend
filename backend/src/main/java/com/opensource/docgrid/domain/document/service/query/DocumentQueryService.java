@@ -44,6 +44,13 @@ import com.opensource.docgrid.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * 사용자 권한을 적용해 문서 목록·상세·버전 이력·추출 본문·원본 파일 Snapshot·인덱싱 상태를 조회한다.
+ *
+ * <p>모든 Entity 접근을 읽기 전용 트랜잭션 안에서 DTO 또는 불변 Snapshot으로 변환해 Lazy 연관관계가
+ * 외부 계층으로 새지 않게 한다. 삭제 문서는 존재하지 않는 것처럼 처리하고, 접근 가능성은 검색과 같은
+ * 권한 계산을 사용한다. 실제 파일 저장소 I/O는 {@code DocumentFileService}가 트랜잭션 밖에서 수행한다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -84,6 +91,11 @@ public class DocumentQueryService {
     private final DocumentSummaryConverter documentSummaryConverter;
     private final DocumentVersionHistoryConverter documentVersionHistoryConverter;
 
+    /**
+     * 사용자가 읽을 수 있는 문서를 선택한 상태와 페이지 조건으로 조회한다.
+     *
+     * <p>상태를 생략하면 삭제 문서를 제외하되 처리 중·실패 문서도 진행 확인을 위해 포함한다.
+     */
     public PageResponse<DocumentSummaryResponse> getMyDocuments(
         Long userId,
         DocumentStatus status,
@@ -211,11 +223,16 @@ public class DocumentQueryService {
         );
     }
 
+    /**
+     * 문서의 현재 검색 버전과 별도로 처리 중인 버전·Job 상태를 일관된 Projection으로 조회한다.
+     */
     public DocumentStatusResponse getDocumentStatus(Long userId, Long documentId) {
+        // 1. 상태 정보도 문서 본문과 같은 읽기 권한 경계를 적용한다.
         if (!permissionQueryService.canReadDocument(userId, documentId)) {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 
+        // 2. 현재 버전과 진행 버전을 한 Query 결과로 조회하고 행 수·필드 조합의 일관성을 확인한다.
         List<DocumentStatusProjection> rows = documentRepository.findDocumentStatus(
             documentId,
             PROCESSING_VERSION_STATUSES,
@@ -229,6 +246,7 @@ public class DocumentQueryService {
             throw new DocGridException(ErrorCode.INDEXING_STATUS_INCONSISTENT);
         }
 
+        // 3. 삭제 문서는 존재하지 않는 것으로 숨기고 검증된 Projection만 외부 DTO로 변환한다.
         DocumentStatusProjection projection = rows.get(0);
         if (projection.getDocumentStatus() == DocumentStatus.DELETED) {
             throw new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND);
@@ -236,6 +254,9 @@ public class DocumentQueryService {
         return documentStatusConverter.toResponse(projection);
     }
 
+    /**
+     * 읽기 권한과 삭제 상태를 공통 검증하고 현재 버전을 함께 조회한 문서 Entity를 반환한다.
+     */
     private Document getReadableDocument(Long userId, Long documentId) {
         if (!permissionQueryService.canReadDocument(userId, documentId)) {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
@@ -250,6 +271,12 @@ public class DocumentQueryService {
         return document;
     }
 
+    /**
+     * 순서와 Code Point Offset이 검증된 Chunk에서 겹치는 구간을 제거해 원래 정규화 본문을 복원한다.
+     *
+     * <p>Chunk 범위는 UTF-16 char가 아니라 Unicode Code Point 기준이다. 연속 Segment 사이에는
+     * 정규화 과정에서 제거된 LF 한 칸만 복원하며, 그보다 큰 공백이나 역방향 범위는 데이터 손상으로 본다.
+     */
     private String restoreContent(Long documentVersionId, List<DocumentChunk> chunks) {
         StringBuilder restored = new StringBuilder();
         int previousEnd = 0;
@@ -285,12 +312,18 @@ public class DocumentQueryService {
         return restored.toString();
     }
 
+    /**
+     * Chunk 복원 불변식 위반을 내부 식별자와 제한된 사유로 기록하고 공통 도메인 예외를 생성한다.
+     */
     private DocGridException inconsistentChunks(Long documentVersionId, String reason) {
         log.error("문서 본문 Chunk 데이터가 일관되지 않습니다. documentVersionId={}, reason={}",
             documentVersionId, reason);
         return new DocGridException(ErrorCode.DOCUMENT_CHUNKS_INCONSISTENT);
     }
 
+    /**
+     * 상태 Projection의 현재 버전 필드와 처리 중 버전·Job 필드가 각각 함께 존재하는지 검사한다.
+     */
     private boolean isInconsistent(DocumentStatusProjection projection) {
         boolean hasCurrentVersionNo = projection.getCurrentVersionNo() != null;
         boolean hasCurrentVersionStatus = projection.getCurrentVersionStatus() != null;

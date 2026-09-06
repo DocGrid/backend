@@ -9,6 +9,12 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+/**
+ * 새 문서 업로드 API가 받는 파일과 문서 메타데이터 입력이다.
+ *
+ * <p>파일 내용·확장자·크기 검증은 저장 전 FileValidationService가 담당하고, 이 요청은 HTTP 필수값과
+ * 제목 길이 같은 형식 검증만 선언한다.
+ */
 public record DocumentUploadRequest(
     @NotNull
     @Schema(description = "업로드할 TXT, Markdown, PDF 또는 DOCX 파일", type = "string", format = "binary")

@@ -5,6 +5,9 @@ import com.opensource.docgrid.domain.embedding.enums.EmbeddingJobStatus;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+/**
+ * 최초 문서 업로드로 함께 생성·연결된 Document, Version, FileObject와 Embedding Job 결과를 반환한다.
+ */
 public record DocumentUploadResponse(
     @Schema(description = "생성된 문서 ID")
     Long documentId,

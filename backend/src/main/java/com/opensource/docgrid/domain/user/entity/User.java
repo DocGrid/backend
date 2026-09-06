@@ -97,14 +97,25 @@ public class User extends BaseEntity {
         this.status = status != null ? status : UserStatus.ACTIVE;
     }
 
+    /**
+     * 인증에 성공한 시각을 마지막 로그인 기록으로 갱신한다.
+     */
     public void recordLogin(LocalDateTime loginAt) {
         this.lastLoginAt = loginAt;
     }
 
+    /**
+     * 사용자의 소속 부서를 변경하거나 {@code null}로 미배정 상태로 전환한다.
+     */
     public void changeDepartment(Department department) {
         this.department = department;
     }
 
+    /**
+     * 사용자를 논리 삭제 상태로 전환하고 삭제 시각을 함께 기록한다.
+     *
+     * <p>상태와 삭제 시각을 한 메서드에서 변경해 {@code DELETED}인데 삭제 시각이 없는 상태를 방지한다.
+     */
     public void markDeleted(LocalDateTime deletedAt) {
         this.status = UserStatus.DELETED;
         this.deletedAt = deletedAt;

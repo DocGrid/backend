@@ -34,6 +34,12 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * 권한이 적용된 Vector 검색, 비동기 RAG 답변 조회와 사용자별 검색 대화 기록을 HTTP API로 제공한다.
+ *
+ * <p>요청 검증과 HTTP 응답 조립만 담당하며 검색 Transaction, 답변 Queue와 소유권 검증은 각 Service에
+ * 위임한다.
+ */
 @Tag(name = "Search", description = "벡터 검색 API")
 @RestController
 @RequestMapping("/search")
@@ -64,14 +70,21 @@ public class SearchController {
         @Parameter(hidden = true) @CurrentUser Long userId,
         @RequestBody @Valid SearchRequest request
     ) {
+        // 1. Query Vector를 생성하고 권한이 있는 문서의 pgvector 검색 후보와 검색 원장을 만든다.
         SearchOutcome outcome = searchFacade.search(userId, request);
+
+        // 2. 검색 후보가 있으면 비동기 RAG 실행을 예약하고, 없으면 즉시 반환할 안내 답변을 받는다.
         RagEnqueueOutcome ragOutcome = ragFacade.enqueue(
             outcome.response().conversationId(), outcome.response().queryId(),
             request.queryText(), outcome.candidates()
         );
+
+        // 3. 비동기 실행은 검색 결과만 먼저 반환하고 WebSocket 완료 알림 이후 재조회하도록 한다.
         if (ragOutcome.pending()) {
             return ResponseUtils.ok(outcome.response());
         }
+
+        // 4. 검색 Context가 없으면 Queue를 만들지 않고 확정 안내 답변을 같은 응답에 결합한다.
         return ResponseUtils.ok(outcome.response().withAnswer(
             ResultStatus.SUCCESS, ragOutcome.immediateAnswer().answerText(), ragOutcome.immediateAnswer().citations()
         ));

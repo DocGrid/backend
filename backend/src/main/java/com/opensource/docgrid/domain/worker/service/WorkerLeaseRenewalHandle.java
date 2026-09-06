@@ -24,6 +24,9 @@ public final class WorkerLeaseRenewalHandle implements AutoCloseable {
     private final AtomicBoolean ownershipLost = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
+    /**
+     * Job 실행 식별자와 비활성화 시 Manager Map에서 제거할 Callback을 보관한다.
+     */
     WorkerLeaseRenewalHandle(
         Long jobId,
         Long workerId,
@@ -58,6 +61,9 @@ public final class WorkerLeaseRenewalHandle implements AutoCloseable {
         }
     }
 
+    /**
+     * 권위 있는 Lease 갱신 거부를 한 번만 소유권 상실로 기록하고 예약을 취소한다.
+     */
     void markOwnershipLost() {
         if (ownershipLost.compareAndSet(false, true)) {
             cancelScheduledTask();
@@ -65,26 +71,44 @@ public final class WorkerLeaseRenewalHandle implements AutoCloseable {
         }
     }
 
+    /**
+     * Pipeline이 Handle 수명을 종료했는지 반환한다.
+     */
     boolean isClosed() {
         return closed.get();
     }
 
+    /**
+     * 갱신 과정에서 Job 소유권을 확정적으로 잃었는지 반환한다.
+     */
     boolean isOwnershipLost() {
         return ownershipLost.get();
     }
 
+    /**
+     * Lease를 갱신할 Job ID를 반환한다.
+     */
     Long jobId() {
         return jobId;
     }
 
+    /**
+     * Claim을 소유한 Worker ID를 반환한다.
+     */
     Long workerId() {
         return workerId;
     }
 
+    /**
+     * Lease 갱신 요청에만 사용할 Claim Token을 반환한다.
+     */
     String claimToken() {
         return claimToken;
     }
 
+    /**
+     * Pipeline 종료 시 예약을 취소하고 Manager의 활성 Handle 목록에서 자신을 제거한다.
+     */
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
@@ -93,6 +117,9 @@ public final class WorkerLeaseRenewalHandle implements AutoCloseable {
         }
     }
 
+    /**
+     * 연결된 갱신 예약이 있으면 실행 중 Task를 강제 중단하지 않고 이후 실행만 취소한다.
+     */
     private void cancelScheduledTask() {
         ScheduledFuture<?> future = scheduledFuture.get();
         if (future != null) {

@@ -67,6 +67,9 @@ public class EmbeddingJobAttemptService {
             .orElseGet(() -> create(embeddingJob, request.claimToken(), startedAt));
     }
 
+    /**
+     * 현재 Claim에 대응하는 새 Attempt 번호를 할당하고 실행 시작 이력을 저장한다.
+     */
     private StartResult create(EmbeddingJob embeddingJob, String claimToken, LocalDateTime startedAt) {
         // 4. Job 행 잠금 안에서 최신 번호를 읽어 같은 Job의 다음 Attempt 번호를 결정한다.
         int nextAttemptNo = embeddingJobAttemptRepository
@@ -91,7 +94,11 @@ public class EmbeddingJobAttemptService {
         );
     }
 
+    /**
+     * 같은 Claim Token으로 반복된 시작 요청이 원래 Worker의 Attempt인지 확인한 뒤 기존 응답을 재사용한다.
+     */
     private StartResult replay(EmbeddingJobAttempt embeddingJobAttempt, Long workerId) {
+        // 1. Token이 같더라도 저장된 Worker가 다르면 손상되거나 충돌한 소유권 데이터로 간주한다.
         if (embeddingJobAttempt.getWorkerNode() == null
             || !workerId.equals(embeddingJobAttempt.getWorkerNode().getId())) {
             log.error(
@@ -103,6 +110,7 @@ public class EmbeddingJobAttemptService {
             throw new DocGridException(ErrorCode.EMBEDDING_JOB_OWNERSHIP_INCONSISTENT);
         }
 
+        // 2. 정상 재전송에는 기존 Attempt를 반환하고 Controller가 200 응답을 선택하도록 생성 여부를 내린다.
         return new StartResult(
             embeddingJobAttemptConverter.toStartedResponse(embeddingJobAttempt),
             false

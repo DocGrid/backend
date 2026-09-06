@@ -35,8 +35,8 @@ import lombok.NoArgsConstructor;
  * <p>주의사항: 1단계 MVP는 active이면서 searchable인 모델을 단 1개만 사용하는 것을 전제로 한다.
  * active이면서 searchable인 모델은 DB partial unique index와 조회 서비스의 개수 검증으로 중복을 방지한다.
  * dimension은 모델별로 고정된 값이며 embeddings.dimension과 반드시 일치해야 한다.
- * configJson은 Hibernate JSON 타입 매핑이 없어 TEXT로 임시 매핑했으며, 추후 OpenSQL JSON / Hibernate JSON
- * 매핑으로 교체가 필요하다.
+ * configJson은 현재 Flyway Schema와 동일하게 TEXT로 매핑하며, 구조 기반 조회가 필요해지면 PostgreSQL
+ * JSONB와 Hibernate JSON 매핑으로 함께 변경해야 한다.
  */
 @Getter
 @Entity
@@ -87,10 +87,13 @@ public class EmbeddingModel extends BaseEntity {
     @Column(name = "vector_storage_strategy", nullable = false, length = 30)
     private VectorStorageStrategy vectorStorageStrategy;
 
-    // JSON 컬럼 임시 매핑(Hibernate JSON 타입 미설정) - 추후 OpenSQL JSON / Hibernate JSON 매핑으로 교체 필요
+    // 현재 Schema가 TEXT이므로 문자열로 보존한다. JSONB 전환 시 Flyway와 Hibernate 매핑을 함께 바꿔야 한다.
     @Column(name = "config_json", columnDefinition = "TEXT")
     private String configJson;
 
+    /**
+     * Vector 생성·검색 계약을 결정하는 Provider, 모델 버전, 차원과 저장 전략을 검증해 생성한다.
+     */
     @Builder
     public EmbeddingModel(EmbeddingProvider provider, String modelName, String modelVersion, int dimension,
                            DistanceMetric distanceMetric, boolean isActive, boolean isSearchable,
@@ -113,6 +116,9 @@ public class EmbeddingModel extends BaseEntity {
         this.configJson = configJson;
     }
 
+    /**
+     * 모델 식별 문자열이 null 또는 공백이 아닌지 검증하고 원래 값을 반환한다.
+     */
     private static String requireText(String value, String fieldName) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(fieldName + "은(는) 공백일 수 없습니다.");

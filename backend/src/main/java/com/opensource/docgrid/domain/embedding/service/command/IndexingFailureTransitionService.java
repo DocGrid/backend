@@ -119,6 +119,12 @@ public class IndexingFailureTransitionService {
         );
     }
 
+    /**
+     * 공통 실패 전이를 시작하기 위한 Job 상태와 오류 정보의 최소 계약을 검증한다.
+     *
+     * <p>호출 경로에 따라 Attempt가 없을 수 있지만 Optional 자체는 항상 전달되어야 한다.
+     * 재시도 최소 지연은 현재 시각보다 앞선 예약을 만들지 않도록 음수를 허용하지 않는다.
+     */
     private void validateTransitionInput(
         EmbeddingJob embeddingJob,
         Optional<EmbeddingJobAttempt> attempt,
@@ -141,6 +147,9 @@ public class IndexingFailureTransitionService {
         }
     }
 
+    /**
+     * Job이 직접 참조하는 처리 버전을 비관적 잠금으로 조회한다.
+     */
     private DocumentVersion findLockedVersion(EmbeddingJob embeddingJob) {
         if (embeddingJob.getDocumentVersion() == null
             || embeddingJob.getDocumentVersion().getId() == null) {
@@ -150,6 +159,9 @@ public class IndexingFailureTransitionService {
             .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT));
     }
 
+    /**
+     * 버전의 문서 원장을 잠금 조회해 실패 시 문서 검색 상태 변경을 직렬화한다.
+     */
     private Document findLockedDocument(DocumentVersion documentVersion) {
         if (documentVersion.getDocument() == null
             || documentVersion.getDocument().getId() == null) {
@@ -159,6 +171,9 @@ public class IndexingFailureTransitionService {
             .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT));
     }
 
+    /**
+     * Job·Version·Document 관계가 일치하고 현재 버전 상태가 실패 전이를 허용하는지 확인한다.
+     */
     private void validateFailureTarget(
         EmbeddingJob embeddingJob,
         DocumentVersion documentVersion,
@@ -173,6 +188,9 @@ public class IndexingFailureTransitionService {
         resolveStageEventType(documentVersion.getStatus());
     }
 
+    /**
+     * 시작된 Attempt를 실패 시각과 실행 시간, 제한된 오류 정보로 종결한다.
+     */
     private void markAttemptFailed(
         EmbeddingJobAttempt attempt,
         String failureCode,
@@ -186,6 +204,11 @@ public class IndexingFailureTransitionService {
         attempt.markFailed(failedAt, durationMs, failureCode, failureMessage);
     }
 
+    /**
+     * 실패 당시 Version 상태를 파싱 또는 임베딩 단계 실패 이벤트로 분류한다.
+     *
+     * <p>완료·최종 실패처럼 처리 단계 밖의 상태는 이 전이의 입력이 될 수 없다.
+     */
     private IndexingEventType resolveStageEventType(DocumentVersionStatus versionStatus) {
         return switch (versionStatus) {
             case UPLOADED, PARSING -> IndexingEventType.PARSE_FAILED;
@@ -194,6 +217,12 @@ public class IndexingFailureTransitionService {
         };
     }
 
+    /**
+     * Version의 재개 지점을 유지한 채 Job을 지연된 PENDING 상태로 되돌리고 실패·재시도 이벤트를 남긴다.
+     *
+     * <p>Attempt가 시작됐다면 단계 실패 이벤트에 실행 식별자를 포함하고, Provider가 제시한 최소
+     * 지연과 지수 Backoff 중 안전한 값을 다음 실행 시각에 반영한다.
+     */
     private void scheduleRetry(
         EmbeddingJob embeddingJob,
         Optional<EmbeddingJobAttempt> attempt,
@@ -211,7 +240,7 @@ public class IndexingFailureTransitionService {
         LocalDateTime nextRetryAt = failedAt.plus(retryDelay);
         embeddingJob.scheduleRetry(failureCode, failureMessage, nextRetryAt);
 
-        // Version 상태는 재개 지점으로 보존하고 같은 시각에 단계 실패와 Queue 재예약 이벤트를 남긴다.
+        // 1. Version 상태는 재개 지점으로 보존한 채 현재 처리 단계의 실패 이벤트를 기록한다.
         saveStageFailureEvent(
             embeddingJob,
             attempt,
@@ -221,6 +250,8 @@ public class IndexingFailureTransitionService {
             failureCode,
             failedAt
         );
+
+        // 2. 계산된 재실행 시각과 증가한 Retry 횟수를 Queue 재예약 이벤트에 남긴다.
         indexingEventRepository.save(IndexingEvent.builder()
             .embeddingJob(embeddingJob)
             .eventType(IndexingEventType.RETRY)
@@ -232,6 +263,9 @@ public class IndexingFailureTransitionService {
             .build());
     }
 
+    /**
+     * 재시도할 수 없는 실행의 Vector·Version·Document·Job을 최종 실패 상태로 일관되게 종결한다.
+     */
     private void terminateFailure(
         EmbeddingJob embeddingJob,
         Optional<EmbeddingJobAttempt> attempt,
@@ -270,6 +304,12 @@ public class IndexingFailureTransitionService {
             .build());
     }
 
+    /**
+     * 실패한 버전이 문서의 검색 가용성에 미치는 범위를 판단해 문서 상태를 전이한다.
+     *
+     * <p>재인덱싱 실패이고 이전 INDEXED currentVersion이 남아 있으면 문서는 계속 검색 가능하므로
+     * INDEXED 상태와 포인터를 유지한다. 검색 가능한 버전이 없는 최초 처리 실패만 문서를 FAILED로 바꾼다.
+     */
     private void transitionDocumentOnTerminalFailure(
         Document document,
         DocumentVersion failedVersion
@@ -301,6 +341,9 @@ public class IndexingFailureTransitionService {
         throw new DocGridException(ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT);
     }
 
+    /**
+     * 실패한 처리 단계와 선택적인 Attempt 정보를 파싱·임베딩 실패 이벤트로 저장한다.
+     */
     private void saveStageFailureEvent(
         EmbeddingJob embeddingJob,
         Optional<EmbeddingJobAttempt> attempt,
@@ -324,6 +367,9 @@ public class IndexingFailureTransitionService {
             .build());
     }
 
+    /**
+     * 단계 실패 이벤트에 기록할 Attempt와 실패 유형 Metadata JSON을 생성한다.
+     */
     private String stageFailureMetadata(
         Optional<EmbeddingJobAttempt> attempt,
         String failureCode
@@ -343,12 +389,18 @@ public class IndexingFailureTransitionService {
                 """.formatted(failureCode).strip());
     }
 
+    /**
+     * 재시도 횟수와 다음 실행 시각을 이벤트 Metadata JSON으로 생성한다.
+     */
     private String retryMetadata(EmbeddingJob embeddingJob, LocalDateTime nextRetryAt) {
         return """
             {"retryCount":%d,"nextRetryAt":"%s"}
             """.formatted(embeddingJob.getRetryCount(), nextRetryAt).strip();
     }
 
+    /**
+     * 최종 실패 시점의 사용한 Retry 횟수와 허용 한도를 Metadata JSON으로 생성한다.
+     */
     private String terminalFailureMetadata(EmbeddingJob embeddingJob) {
         return """
             {"retryCount":%d,"maxRetryCount":%d}

@@ -119,11 +119,17 @@ public class EmbeddingJobManualRetryService {
         );
     }
 
+    /**
+     * Claim·완료·실패·복구와 수동 재처리 경쟁을 직렬화하도록 Job을 비관적 잠금으로 조회한다.
+     */
     private EmbeddingJob findLockedJob(Long jobId) {
         return embeddingJobRepository.findByIdForUpdate(jobId)
             .orElseThrow(() -> new DocGridException(ErrorCode.EMBEDDING_JOB_NOT_FOUND));
     }
 
+    /**
+     * Job이 처리한 실패 버전을 기존 전이 경로와 같은 순서로 잠금 조회한다.
+     */
     private DocumentVersion findLockedVersion(EmbeddingJob embeddingJob) {
         if (embeddingJob.getDocumentVersion() == null
             || embeddingJob.getDocumentVersion().getId() == null) {
@@ -133,6 +139,9 @@ public class EmbeddingJobManualRetryService {
             .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT));
     }
 
+    /**
+     * 실패 버전이 속한 문서를 잠금 조회해 검색 상태와 currentVersion 보존 여부를 확정한다.
+     */
     private Document findLockedDocument(DocumentVersion documentVersion) {
         if (documentVersion.getDocument() == null
             || documentVersion.getDocument().getId() == null) {
@@ -142,6 +151,9 @@ public class EmbeddingJobManualRetryService {
             .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_INDEXING_FAILURE_INCONSISTENT));
     }
 
+    /**
+     * 종료 데이터 불변식과 최신 버전·활성 Job 조건을 단계적으로 확인해 수동 재처리 가능 여부를 판정한다.
+     */
     private void validateRetryTarget(
         EmbeddingJob embeddingJob,
         DocumentVersion documentVersion,
@@ -171,6 +183,9 @@ public class EmbeddingJobManualRetryService {
         ));
     }
 
+    /**
+     * 정책의 재처리 불가 사유를 호출자에게 노출할 적절한 도메인 오류 범주로 변환한다.
+     */
     private void throwWhenRetryBlocked(EmbeddingJobManualRetryEligibility eligibility) {
         switch (eligibility) {
             case ELIGIBLE -> {
@@ -198,16 +213,23 @@ public class EmbeddingJobManualRetryService {
             : DocumentVersionStatus.UPLOADED;
     }
 
+    /**
+     * 재처리 중에도 이전 검색 버전이 있으면 가용성을 유지하고, 없으면 문서를 INDEXING으로 되돌린다.
+     */
     private void restoreDocumentStatus(Document document, DocumentVersion retriedVersion) {
-        // 이전 INDEXED Version이 현재 검색 대상이면 포인터와 문서 상태를 그대로 보존한다.
+        // 1. 이전 INDEXED Version이 현재 검색 대상이면 포인터와 문서 상태를 그대로 보존한다.
         if (document.getStatus() == DocumentStatus.INDEXED
             && !Objects.equals(document.getCurrentVersion().getId(), retriedVersion.getId())) {
             return;
         }
-        // 그 밖의 경우 검색 가능한 Version이 없으므로 완료 Transaction이 확정할 수 있는 처리 중 상태로 되돌린다.
+
+        // 2. 그 밖의 경우 검색 가능한 Version이 없으므로 완료 Transaction이 확정할 처리 중 상태로 되돌린다.
         document.markIndexing();
     }
 
+    /**
+     * 수동 재처리의 재개 상태, Retry 횟수와 삭제한 Vector 수를 감사 이벤트 Metadata로 생성한다.
+     */
     private String manualRetryMetadata(
         EmbeddingJob embeddingJob,
         DocumentVersionStatus resumeStatus,

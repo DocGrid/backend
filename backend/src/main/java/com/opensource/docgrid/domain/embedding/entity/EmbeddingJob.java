@@ -124,6 +124,11 @@ public class EmbeddingJob extends BaseEntity {
     @Column(name = "source_event_id", unique = true)
     private UUID sourceEventId;
 
+    /**
+     * 특정 문서 버전과 모델을 처리할 PENDING Queue Job을 생성한다.
+     *
+     * <p>Retry 횟수는 0부터 시작하며 sourceEventId는 Outbox 재전달로 동일 Job이 중복 생성되는 것을 막는다.
+     */
     @Builder
     public EmbeddingJob(DocumentVersion documentVersion, EmbeddingModel embeddingModel, EmbeddingJobStatus status,
                         int priority, int maxRetryCount, UUID sourceEventId) {
@@ -222,6 +227,9 @@ public class EmbeddingJob extends BaseEntity {
         this.lockExpiresAt = null;
     }
 
+    /**
+     * 현재 실패 뒤 자동 재시도를 한 번 더 예약할 수 있는지 반환한다.
+     */
     public boolean hasRemainingRetries() {
         return retryCount < maxRetryCount;
     }
@@ -289,11 +297,18 @@ public class EmbeddingJob extends BaseEntity {
         this.lockExpiresAt = null;
     }
 
+    /**
+     * 자동 재시도 불가 또는 횟수 소진된 현재 PROCESSING Job을 최종 실패로 종결한다.
+     *
+     * <p>완료 재생과 감사에서 실패 실행을 식별할 수 있도록 마지막 Claim 소유권은 보존한다.
+     */
     public void markFailed(String errorCode, String errorMessage, LocalDateTime failedAt) {
-        // 현재 Claim을 보유한 처리 중 Job만 최종 실패로 종결할 수 있다.
+        // 1. 현재 Claim을 보유한 처리 중 Job만 최종 실패로 종결할 수 있다.
         if (status != EmbeddingJobStatus.PROCESSING) {
             throw new IllegalStateException("PROCESSING 상태의 Job만 FAILED로 전환할 수 있습니다.");
         }
+
+        // 2. 최종 오류 Snapshot과 실패 시각을 기록하고 더 이상 Queue 예약 시각을 유지하지 않는다.
         this.status = EmbeddingJobStatus.FAILED;
         this.errorCode = errorCode;
         this.errorMessage = errorMessage;

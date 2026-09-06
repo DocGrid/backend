@@ -163,6 +163,13 @@ public class DocumentIndexingCompletionService {
         );
     }
 
+    /**
+     * 동일한 Worker·Claim·Attempt가 이미 완료한 요청이면 최초 저장 결과를 멱등하게 재생한다.
+     *
+     * <p>완료 후 Lease 만료나 최신 버전 변경은 정상적인 시간 경과이므로 다시 검증하지 않는다.
+     * 대신 완료 시 보존한 실행 식별자와 시각·상태·이벤트가 서로 일치하는지 확인해 다른 실행이
+     * 완료 결과를 가장하거나 손상된 결과가 성공으로 노출되는 것을 막는다.
+     */
     private DocumentIndexingCompletionResponse replayIndexedJob(
         EmbeddingJob embeddingJob,
         Long attemptId,
@@ -206,11 +213,20 @@ public class DocumentIndexingCompletionService {
         );
     }
 
+    /**
+     * 완료와 실패가 같은 Job을 동시에 종결하지 못하도록 Job 행을 비관적 잠금으로 조회한다.
+     */
     private EmbeddingJob findLockedJob(Long jobId) {
         return embeddingJobRepository.findByIdForUpdate(jobId)
             .orElseThrow(() -> new DocGridException(ErrorCode.EMBEDDING_JOB_NOT_FOUND));
     }
 
+    /**
+     * 완료 요청이 현재 Job에서 시작된 동일 Worker의 유효한 Attempt인지 확인한다.
+     *
+     * <p>Attempt 시작 시각은 완료 기준 시각보다 늦을 수 없으며, 이 검증을 통과한 실행만
+     * SUCCESS로 종결되고 처리 시간이 계산된다.
+     */
     private EmbeddingJobAttempt resolveStartedAttempt(
         EmbeddingJob embeddingJob,
         Long attemptId,
@@ -237,6 +253,11 @@ public class DocumentIndexingCompletionService {
         return attempt;
     }
 
+    /**
+     * Job에 고정된 문서 버전을 비관적 잠금으로 조회한다.
+     *
+     * <p>완료·실패 경로가 공유하는 Job → Version → Document 잠금 순서를 유지한다.
+     */
     private DocumentVersion findLockedVersion(EmbeddingJob embeddingJob) {
         if (embeddingJob.getDocumentVersion() == null
             || embeddingJob.getDocumentVersion().getId() == null) {
@@ -247,6 +268,9 @@ public class DocumentIndexingCompletionService {
                 new DocGridException(ErrorCode.DOCUMENT_INDEXING_COMPLETION_INCONSISTENT));
     }
 
+    /**
+     * 버전에 연결된 문서 원장을 비관적 잠금으로 조회해 currentVersion 변경을 직렬화한다.
+     */
     private Document findLockedDocument(DocumentVersion documentVersion) {
         if (documentVersion.getDocument() == null
             || documentVersion.getDocument().getId() == null) {
@@ -257,6 +281,9 @@ public class DocumentIndexingCompletionService {
                 new DocGridException(ErrorCode.DOCUMENT_INDEXING_COMPLETION_INCONSISTENT));
     }
 
+    /**
+     * 신규 완료에 사용할 Job 모델이 활성·검색 가능 상태이며 유효한 차원을 갖는지 검증한다.
+     */
     private EmbeddingModel validateModel(EmbeddingJob embeddingJob) {
         EmbeddingModel embeddingModel = embeddingJob.getEmbeddingModel();
         if (embeddingModel == null
@@ -269,6 +296,11 @@ public class DocumentIndexingCompletionService {
         return embeddingModel;
     }
 
+    /**
+     * 완료 재생에 필요한 저장 당시 모델 참조가 남아 있는지 확인한다.
+     *
+     * <p>완료 후 모델 운영 상태가 바뀔 수 있으므로 active/searchable 값은 재검증하지 않는다.
+     */
     private EmbeddingModel findCompletedModel(EmbeddingJob embeddingJob) {
         EmbeddingModel embeddingModel = embeddingJob.getEmbeddingModel();
         if (embeddingModel == null || embeddingModel.getId() == null) {
@@ -277,6 +309,9 @@ public class DocumentIndexingCompletionService {
         return embeddingModel;
     }
 
+    /**
+     * 완료된 Job에 보존된 Worker와 Claim Token이 재요청의 실행 식별자와 같은지 확인한다.
+     */
     private void validateCompletedIdentity(
         EmbeddingJob embeddingJob,
         Long workerId,
@@ -293,6 +328,9 @@ public class DocumentIndexingCompletionService {
         }
     }
 
+    /**
+     * 완료 재생 요청이 실제 SUCCESS Attempt와 동일한 ID·Worker·Token을 제시했는지 검증한다.
+     */
     private EmbeddingJobAttempt resolveCompletedAttempt(
         EmbeddingJob embeddingJob,
         Long attemptId,
@@ -314,6 +352,12 @@ public class DocumentIndexingCompletionService {
         return attempt;
     }
 
+    /**
+     * 완료된 Job, Attempt, Version과 INDEXED 이벤트의 상태·시각 불변식을 검증한다.
+     *
+     * <p>최초 완료 시각은 Job 완료, Attempt 종료, Version 인덱싱 시각에 동일하게 기록되어야 하며
+     * 계산된 실행 시간과 저장된 duration도 일치해야 한다. INDEXED 이벤트는 정확히 하나만 허용한다.
+     */
     private void validateCompletedState(
         EmbeddingJob embeddingJob,
         EmbeddingJobAttempt attempt,
@@ -341,6 +385,12 @@ public class DocumentIndexingCompletionService {
         }
     }
 
+    /**
+     * 처리 중 버전이 현재 문서의 최신 완료 대상이며 오래된 실행이 아닌지 확인한다.
+     *
+     * <p>재인덱싱 동안 currentVersion은 이전 INDEXED 버전일 수 있지만, 그 버전 번호가 완료 대상보다
+     * 앞서야 한다. DB의 최종 버전이 별도로 존재하면 늦게 도착한 완료로 판단해 포인터 교체를 막는다.
+     */
     private void validateCompletionTarget(
         EmbeddingJob embeddingJob,
         DocumentVersion documentVersion,
@@ -378,6 +428,12 @@ public class DocumentIndexingCompletionService {
         }
     }
 
+    /**
+     * 완료 대상의 Chunk와 활성 Embedding이 모델·차원·소유 관계까지 일대일로 완성됐는지 검증한다.
+     *
+     * <p>같은 버전의 활성 Job도 현재 실행 하나만 존재해야 한다. 전체 Embedding 수는 진단 로그에
+     * 포함하되, 완료 기준은 현재 Job 모델의 ACTIVE Vector가 모든 Chunk에 정확히 하나씩 있는지다.
+     */
     private CompletionCounts validateEmbeddingSet(
         EmbeddingJob embeddingJob,
         DocumentVersion documentVersion,
@@ -432,6 +488,9 @@ public class DocumentIndexingCompletionService {
         return new CompletionCounts(chunkCount, modelEmbeddingCount);
     }
 
+    /**
+     * 신규 완료 전에는 해당 Job의 INDEXED 이벤트가 존재하지 않는지 확인한다.
+     */
     private void validateNoIndexedEvent(EmbeddingJob embeddingJob) {
         if (indexingEventRepository.countByEmbeddingJobIdAndEventType(
             embeddingJob.getId(),
@@ -441,6 +500,11 @@ public class DocumentIndexingCompletionService {
         }
     }
 
+    /**
+     * 새 버전이 공개되기 직전에 이전 currentVersion의 활성 Vector를 STALE로 전환한다.
+     *
+     * <p>최초 버전 완료처럼 대상 자체가 이미 currentVersion이면 불필요한 갱신을 수행하지 않는다.
+     */
     private void stalePreviousEmbeddings(
         Document document,
         DocumentVersion documentVersion
@@ -453,6 +517,9 @@ public class DocumentIndexingCompletionService {
         }
     }
 
+    /**
+     * Version·Document·Attempt·Job을 동일 완료 시각으로 종결하고 단일 INDEXED 이벤트를 저장한다.
+     */
     private void transitionAndRecordEvent(
         EmbeddingJob embeddingJob,
         EmbeddingJobAttempt attempt,
@@ -480,6 +547,9 @@ public class DocumentIndexingCompletionService {
             .build());
     }
 
+    /**
+     * 신규 완료와 완료 재생이 공유하는 응답 형식으로 현재 상태를 조립한다.
+     */
     private DocumentIndexingCompletionResponse response(
         EmbeddingJob embeddingJob,
         EmbeddingJobAttempt attempt,

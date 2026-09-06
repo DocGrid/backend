@@ -89,6 +89,9 @@ public class WorkerLeaseRecoveryScheduler {
         );
     }
 
+    /**
+     * Heartbeat 만료 Worker의 일괄 상태 전이를 시도하고 실패 시 이번 주기의 Job 복구는 계속 허용한다.
+     */
     private int markDeadWorkers() {
         try {
             return workerNodeCommandService.markDeadWorkers(workerProperties.getDeadThreshold());
@@ -101,6 +104,11 @@ public class WorkerLeaseRecoveryScheduler {
         }
     }
 
+    /**
+     * 한 주기에서 처리할 만료 Job 식별자 Snapshot을 설정된 Batch 크기만큼 조회한다.
+     *
+     * @return 후보 식별자 목록, 조회 자체가 실패하면 주기 중단을 뜻하는 {@code null}
+     */
     private List<Long> findCandidateJobIds(LocalDateTime recoveredAt) {
         try {
             return recoveryQueryService.findExpiredJobIds(
@@ -116,6 +124,9 @@ public class WorkerLeaseRecoveryScheduler {
         }
     }
 
+    /**
+     * 운영 로그에 예외 메시지 대신 애플리케이션 오류 코드 또는 예외 유형만 남긴다.
+     */
     private String resolveFailureCategory(RuntimeException exception) {
         if (exception instanceof DocGridException docGridException) {
             return docGridException.getErrorCode().getCode();

@@ -20,6 +20,12 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * 문서 인덱싱과 검색이 공통으로 사용할 활성 임베딩 모델 설정을 조회하는 API를 제공한다.
+ *
+ * <p>모델 실행이나 설정 변경은 수행하지 않고, 외부에 공개 가능한 설정 DTO 조회만
+ * {@link EmbeddingModelQueryService}에 위임한다.
+ */
 @Tag(
     name = "Embedding Model",
     description = "문서 인덱싱과 검색에서 사용할 임베딩 모델 설정 조회 API"
@@ -31,6 +37,9 @@ public class EmbeddingModelController {
 
     private final EmbeddingModelQueryService embeddingModelQueryService;
 
+    /**
+     * 유일한 active·searchable 임베딩 모델 설정을 조회한다.
+     */
     @Operation(
         summary = "기본 임베딩 모델 조회",
         description = """

@@ -32,7 +32,10 @@ public class WorkerIndexingFailureReporter {
         Long attemptId,
         RuntimeException exception
     ) {
+        // 1. 원본 예외를 저장 가능한 실패 유형·안전한 메시지와 소유권 상실 여부로 정규화한다.
         WorkerIndexingFailure failure = failureClassifier.classify(exception);
+
+        // 2. 소유권 상실은 새 소유자의 상태 전이를 침범하지 않도록 실패 API에 보고하지 않는다.
         if (!failure.reportable()) {
             log.warn(
                 "소유권을 잃은 Worker 인덱싱 실행을 중단합니다. workerId={}, jobId={}, attemptId={}, errorCode={}",
@@ -44,6 +47,7 @@ public class WorkerIndexingFailureReporter {
             return;
         }
 
+        // 3. 현재 소유권에서 발생한 오류만 공통 실패 전이 Service에 전달한다.
         try {
             failureService.fail(
                 claimedJob.jobId(),
@@ -65,6 +69,7 @@ public class WorkerIndexingFailureReporter {
                 failure.diagnosticCode()
             );
         } catch (RuntimeException reportException) {
+            // 4. 보고 실패를 실행 Thread 밖으로 다시 던지지 않아 Lease 복구라는 최종 안전망을 유지한다.
             log.error(
                 "Worker 인덱싱 실패를 기록하지 못했습니다. workerId={}, jobId={}, attemptId={}, "
                     + "originalErrorCode={}, reportErrorCode={}",
@@ -77,6 +82,9 @@ public class WorkerIndexingFailureReporter {
         }
     }
 
+    /**
+     * 로그에 원본 메시지나 Provider 응답을 노출하지 않고 안정적인 오류 식별자만 추출한다.
+     */
     private String diagnosticCode(RuntimeException exception) {
         if (exception instanceof DocGridException docGridException) {
             return docGridException.getErrorCode().getCode();

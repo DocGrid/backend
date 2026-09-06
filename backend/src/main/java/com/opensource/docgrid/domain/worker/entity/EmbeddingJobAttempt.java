@@ -100,6 +100,9 @@ public class EmbeddingJobAttempt extends BaseEntity {
     @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
 
+    /**
+     * 한 Job Claim 세대의 실행 주체·순번·시작 시각과 선택적 기존 결과를 생성한다.
+     */
     @Builder
     public EmbeddingJobAttempt(EmbeddingJob embeddingJob, WorkerNode workerNode, int attemptNo, String claimToken,
                                AttemptStatus status, LocalDateTime startedAt, LocalDateTime endedAt, Long durationMs,
@@ -129,6 +132,9 @@ public class EmbeddingJobAttempt extends BaseEntity {
         this.durationMs = durationMs;
     }
 
+    /**
+     * 실행 중인 Attempt를 최초 오류 Snapshot과 함께 실패 상태로 종결한다.
+     */
     public void markFailed(LocalDateTime endedAt, Long durationMs, String errorCode, String errorMessage) {
         // 한 Attempt의 최초 실패 내용이 멱등 재생 중 다른 값으로 덮이지 않도록 종결 상태를 차단한다.
         if (status != AttemptStatus.STARTED) {

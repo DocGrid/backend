@@ -45,7 +45,10 @@ public class SyncEventWriter {
         DocumentVersion documentVersion,
         EmbeddingModel embeddingModel
     ) {
+        // 1. 도메인 변경과 같은 Clock 기준으로 Event 발생 시각을 고정한다.
         LocalDateTime occurredAt = LocalDateTime.now(clock);
+
+        // 2. 버전별 생성 Event가 재호출돼도 같은 논리 Event에 수렴하도록 결정적 Key를 만든다.
         String idempotencyKey = String.format(
             "%s:%d:%s:%d",
             SyncAggregateType.DOCUMENT_VERSION,
@@ -55,7 +58,7 @@ public class SyncEventWriter {
         );
         String payloadJson = String.format("{\"embeddingModelId\":%d}", embeddingModel.getId());
 
-        // Version·Job 생성 Transaction과 함께 Commit돼야 Dispatcher가 부분 상태를 관측하지 않는다.
+        // 3. Version·Job 생성 Transaction과 함께 저장해 Dispatcher가 부분 상태를 관측하지 않게 한다.
         return saveEvent(
             idempotencyKey,
             SyncAggregateType.DOCUMENT_VERSION,
@@ -71,13 +74,18 @@ public class SyncEventWriter {
      * Soft-delete된 문서의 검색 Vector를 비활성화할 의도를 같은 Transaction에 기록한다.
      */
     public SyncOutboxEvent recordDocumentDeleted(Document document) {
+        // 1. 삭제 상태 전이와 동일한 Event 발생 시각을 기록한다.
         LocalDateTime occurredAt = LocalDateTime.now(clock);
+
+        // 2. 한 문서의 삭제 의도가 여러 번 기록돼도 하나의 Event만 남도록 Key를 생성한다.
         String idempotencyKey = String.format(
             "%s:%d:%s",
             SyncAggregateType.DOCUMENT,
             document.getId(),
             SyncEventType.DOCUMENT_DELETED
         );
+
+        // 3. 별도 Payload가 필요 없는 삭제 Event를 호출 Transaction에 저장한다.
         return saveEvent(
             idempotencyKey,
             SyncAggregateType.DOCUMENT,
@@ -97,7 +105,10 @@ public class SyncEventWriter {
         Long sourceId,
         SyncPermissionOperation operation
     ) {
+        // 1. 권한 원장 변경과 함께 기록할 Event 발생 시각을 고정한다.
         LocalDateTime occurredAt = LocalDateTime.now(clock);
+
+        // 2. 권한 출처와 작업 종류까지 Key에 포함해 부여와 회수를 서로 다른 의도로 구분한다.
         String idempotencyKey = String.format(
             "%s:%s:%d:%s:%s",
             SyncAggregateType.PERMISSION,
@@ -106,11 +117,15 @@ public class SyncEventWriter {
             SyncEventType.PERMISSION_CACHE_REFRESH_REQUESTED,
             operation
         );
+
+        // 3. Handler가 원장 종류와 갱신 방향을 재구성할 최소 Payload를 만든다.
         String payloadJson = String.format(
             "{\"sourceType\":\"%s\",\"operation\":\"%s\"}",
             sourceType,
             operation
         );
+
+        // 4. 권한 변경과 같은 Transaction에 캐시 재투영 의도를 저장한다.
         return saveEvent(
             idempotencyKey,
             SyncAggregateType.PERMISSION,
@@ -130,7 +145,10 @@ public class SyncEventWriter {
         EmbeddingModel embeddingModel,
         String requestKey
     ) {
+        // 1. 복구 또는 모델 전환 명령과 공유할 Event 발생 시각을 고정한다.
         LocalDateTime occurredAt = LocalDateTime.now(clock);
+
+        // 2. 호출 목적의 requestKey를 포함해 같은 재인덱싱 명령만 멱등 처리한다.
         String idempotencyKey = String.format(
             "%s:%d:%s:%d:%s",
             SyncAggregateType.DOCUMENT_VERSION,
@@ -139,6 +157,8 @@ public class SyncEventWriter {
             embeddingModel.getId(),
             requestKey
         );
+
+        // 3. 대상 버전·모델을 재구성할 Event를 호출 Transaction에 저장한다.
         return saveEvent(
             idempotencyKey,
             SyncAggregateType.DOCUMENT_VERSION,
@@ -150,6 +170,12 @@ public class SyncEventWriter {
         );
     }
 
+    /**
+     * 논리 Event를 멱등 Insert하고 DB가 선택한 기존 또는 신규 행의 내용이 요청과 같은지 검증한다.
+     *
+     * <p>애플리케이션의 사전 조회 없이 {@code ON CONFLICT}를 사용하므로 동시 요청도 유일 Key 위반
+     * 예외 없이 하나의 Outbox 행에 수렴한다.
+     */
     private SyncOutboxEvent saveEvent(
         String idempotencyKey,
         SyncAggregateType aggregateType,
@@ -180,6 +206,11 @@ public class SyncEventWriter {
         return event;
     }
 
+    /**
+     * 같은 멱등 Key로 조회된 Event가 동일한 Aggregate·Version·Type·Payload를 표현하는지 확인한다.
+     *
+     * <p>Key 충돌이 다른 명령을 가리키면 성공으로 숨기지 않고 원장 불일치로 중단한다.
+     */
     private void validateExistingEvent(
         SyncOutboxEvent event,
         SyncAggregateType aggregateType,
@@ -188,7 +219,6 @@ public class SyncEventWriter {
         SyncEventType eventType,
         String payloadJson
     ) {
-        // 같은 Key가 다른 명령을 가리키면 중복 성공으로 숨기지 않고 원장 충돌로 중단한다.
         if (event.getAggregateType() != aggregateType
             || !Objects.equals(event.getAggregateId(), aggregateId)
             || !Objects.equals(event.getAggregateVersion(), aggregateVersion)

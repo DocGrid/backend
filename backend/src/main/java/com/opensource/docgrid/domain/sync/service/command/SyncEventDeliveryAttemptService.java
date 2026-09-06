@@ -27,7 +27,11 @@ public class SyncEventDeliveryAttemptService {
 
     private final SyncEventDeliveryAttemptRepository repository;
 
+    /**
+     * 새 Event Claim 세대의 Delivery Attempt를 현재 Retry 순번으로 시작한다.
+     */
     public void start(SyncOutboxEvent event, UUID claimToken, LocalDateTime startedAt) {
+        // 1. Queue Entity의 현재 PROCESSING 소유권과 전달받은 Claim 정보가 일치하는지 확인한다.
         if (event == null
             || event.getStatus() != SyncEventStatus.PROCESSING
             || event.getEventId() == null
@@ -37,6 +41,8 @@ public class SyncEventDeliveryAttemptService {
             || startedAt == null) {
             throw new IllegalArgumentException("현재 Event Claim과 일치하는 실행 정보가 필요합니다.");
         }
+
+        // 2. 현재 Retry 횟수의 다음 순번과 Dispatcher 이름을 불변 실행 이력으로 저장한다.
         repository.save(SyncEventDeliveryAttempt.builder()
             .eventId(event.getEventId())
             .claimToken(claimToken)
@@ -46,11 +52,18 @@ public class SyncEventDeliveryAttemptService {
             .build());
     }
 
+    /**
+     * Event와 Claim Token이 일치하는 Delivery Attempt가 있으면 성공 시각으로 종결한다.
+     */
     public void succeed(UUID eventId, UUID claimToken, LocalDateTime succeededAt) {
+        // Claim별 유일 Attempt를 잠근 뒤 존재하는 경우에만 멱등하게 성공 상태를 반영한다.
         repository.findByEventIdAndClaimTokenForUpdate(eventId, claimToken)
             .ifPresent(attempt -> attempt.succeed(succeededAt));
     }
 
+    /**
+     * Event와 Claim Token이 일치하는 Delivery Attempt가 있으면 제한된 실패 정보로 종결한다.
+     */
     public void fail(
         UUID eventId,
         UUID claimToken,
@@ -58,6 +71,7 @@ public class SyncEventDeliveryAttemptService {
         String errorMessage,
         LocalDateTime failedAt
     ) {
+        // Claim별 유일 Attempt를 잠가 성공 처리와 충돌하지 않는 동일 Transaction 안에서 실패시킨다.
         repository.findByEventIdAndClaimTokenForUpdate(eventId, claimToken)
             .ifPresent(attempt -> attempt.fail(errorCode, errorMessage, failedAt));
     }

@@ -29,14 +29,25 @@ public class SyncEventLeaseRecoveryService {
     private final SyncEventRetrySchedule syncEventRetrySchedule;
     private final SyncEventDeliveryAttemptService syncEventDeliveryAttemptService;
 
+    /**
+     * 만료 후보 Event를 다시 확인해 실제로 만료된 현재 Claim만 회수한다.
+     *
+     * @param eventId Snapshot 조회에서 발견한 만료 후보 Event 식별자
+     * @param recoveredAt 후보 조회와 재검증에 사용할 동일한 회수 기준 시각
+     * @return 실제 회수 여부와 회수 후 Queue 상태
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public RecoveryResult recover(UUID eventId, LocalDateTime recoveredAt) {
+        // 1. 후보를 다시 잠그고 아직 PROCESSING이며 Lease가 만료된 경우에만 회수 대상으로 채택한다.
         Optional<SyncOutboxEvent> candidate = syncOutboxEventRepository
             .findExpiredByEventIdForUpdateSkipLocked(eventId, recoveredAt);
+
+        // 2. 다른 Dispatcher가 이미 처리·회수했거나 잠금을 보유한 후보는 정상적인 건너뜀으로 응답한다.
         if (candidate.isEmpty()) {
             return new RecoveryResult(eventId, false, null);
         }
 
+        // 3. 만료 Claim의 Delivery Attempt를 동일한 고정 오류로 실패 종결한다.
         SyncOutboxEvent event = candidate.get();
         syncEventDeliveryAttemptService.fail(
             event.getEventId(),
@@ -45,12 +56,16 @@ public class SyncEventLeaseRecoveryService {
             LEASE_EXPIRED_MESSAGE,
             recoveredAt
         );
+
+        // 4. Queue Event는 Retry 정책에 따라 재예약하거나 최대 횟수 도달 시 최종 실패로 전환한다.
         event.recoverExpiredLease(
             LEASE_EXPIRED_CODE,
             LEASE_EXPIRED_MESSAGE,
             recoveredAt,
             syncEventRetrySchedule.nextAvailableAt(event, recoveredAt)
         );
+
+        // 5. Scheduler가 회수 결과를 집계할 수 있도록 변경 후 상태를 반환한다.
         return new RecoveryResult(eventId, true, event.getStatus());
     }
 

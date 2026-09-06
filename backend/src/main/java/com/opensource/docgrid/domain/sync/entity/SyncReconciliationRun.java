@@ -79,6 +79,9 @@ public class SyncReconciliationRun extends BaseEntity {
     @Column(name = "error_code", length = 100)
     private String errorCode;
 
+    /**
+     * 지정 Cursor와 모드에서 시작한 RUNNING Reconciliation 실행 이력을 생성한다.
+     */
     @Builder
     public SyncReconciliationRun(
         UUID runId,
@@ -94,6 +97,9 @@ public class SyncReconciliationRun extends BaseEntity {
         this.startedAt = startedAt;
     }
 
+    /**
+     * Batch가 정상 종료한 Cursor와 검사·탐지·복구 요청 집계를 기록하고 실행을 완료한다.
+     */
     public void complete(
         long completedCursor,
         int scanned,
@@ -101,8 +107,11 @@ public class SyncReconciliationRun extends BaseEntity {
         int repairRequested,
         LocalDateTime completedAt
     ) {
+        // 1. 실행 상태와 다음 Batch가 이어갈 마지막 Cursor를 확정한다.
         status = SyncReconciliationStatus.COMPLETED;
         endCursor = completedCursor;
+
+        // 2. 운영 Dashboard에 노출할 결과 집계와 완료 시각을 저장하고 과거 오류를 제거한다.
         scannedCount = scanned;
         detectedCount = detected;
         repairRequestedCount = repairRequested;
@@ -110,6 +119,9 @@ public class SyncReconciliationRun extends BaseEntity {
         errorCode = null;
     }
 
+    /**
+     * 실행 중 발생한 제한된 오류 코드와 종결 시각을 기록하고 FAILED로 종료한다.
+     */
     public void fail(String errorCode, LocalDateTime failedAt) {
         status = SyncReconciliationStatus.FAILED;
         this.errorCode = errorCode;

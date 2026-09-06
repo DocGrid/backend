@@ -111,6 +111,9 @@ public class SyncConsistencyIssue extends BaseEntity {
     @Column(name = "resolution_message", columnDefinition = "TEXT")
     private String resolutionMessage;
 
+    /**
+     * Reconciler가 처음 발견한 불일치를 OPEN Issue와 최초 기대·실제 Snapshot으로 생성한다.
+     */
     @Builder
     public SyncConsistencyIssue(
         String issueKey,
@@ -138,6 +141,12 @@ public class SyncConsistencyIssue extends BaseEntity {
         this.lastDetectedAt = detectedAt;
     }
 
+    /**
+     * 반복 검사에서 같은 issueKey가 다시 발견됐을 때 최신 심각도·Snapshot·복구 가능성을 반영한다.
+     *
+     * <p>이전에 자동 해결된 문제가 재발하면 OPEN으로 되돌리되, 관리자가 명시적으로 무시한 Issue는
+     * 상태를 유지하면서 마지막 관찰 정보만 갱신한다.
+     */
     public void detectAgain(
         SyncConsistencySeverity newSeverity,
         String newExpectedJson,
@@ -145,11 +154,14 @@ public class SyncConsistencyIssue extends BaseEntity {
         boolean newRepairable,
         LocalDateTime detectedAgainAt
     ) {
+        // 1. 이번 검사에서 관찰한 진단 정보와 마지막 발견 시각을 갱신한다.
         severity = newSeverity;
         expectedJson = newExpectedJson;
         actualJson = newActualJson;
         repairable = newRepairable;
         lastDetectedAt = detectedAgainAt;
+
+        // 2. 해결 뒤 다시 발견된 문제는 과거 해결 정보를 지우고 새로운 OPEN 생명주기를 시작한다.
         if (status == SyncConsistencyIssueStatus.RESOLVED) {
             status = SyncConsistencyIssueStatus.OPEN;
             resolvedAt = null;
@@ -157,6 +169,9 @@ public class SyncConsistencyIssue extends BaseEntity {
         }
     }
 
+    /**
+     * 안전한 복구 Event를 Issue에 연결하고 복구 시도 횟수를 증가시킨다.
+     */
     public void markRepairing(UUID newRepairEventId, LocalDateTime requestedAt) {
         if (status == SyncConsistencyIssueStatus.IGNORED || newRepairEventId == null || requestedAt == null) {
             throw new IllegalStateException("무시되지 않은 Issue에 유효한 Repair Event가 필요합니다.");
@@ -167,6 +182,9 @@ public class SyncConsistencyIssue extends BaseEntity {
         lastDetectedAt = requestedAt;
     }
 
+    /**
+     * 후속 검사에서 문제가 사라졌거나 Repair Event가 성공한 Issue를 해결 상태로 종결한다.
+     */
     public void resolve(LocalDateTime resolvedAt, String message) {
         if (status == SyncConsistencyIssueStatus.IGNORED || resolvedAt == null) {
             throw new IllegalStateException("무시된 Issue는 자동 해결할 수 없습니다.");
@@ -176,6 +194,9 @@ public class SyncConsistencyIssue extends BaseEntity {
         this.resolutionMessage = message;
     }
 
+    /**
+     * 관리자가 더 이상 경고하지 않기로 결정한 Issue를 사유와 함께 IGNORED로 종결한다.
+     */
     public void ignore(LocalDateTime ignoredAt, String message) {
         status = SyncConsistencyIssueStatus.IGNORED;
         resolvedAt = ignoredAt;

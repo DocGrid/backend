@@ -46,11 +46,19 @@ public class SyncReconciliationBatchService {
     private final SyncReconciliationProperties properties;
     private final Clock clock;
 
+    /**
+     * Cursor 이후의 문서 버전을 한 Batch 검사하고 Issue 및 선택적 Repair Event를 원자적으로 기록한다.
+     *
+     * @param runId 상위 Orchestrator가 생성한 전체 실행 식별자
+     * @param startCursor 직전 Batch가 마지막으로 처리한 DocumentVersion ID
+     * @param mode 검사만 수행하거나 안전한 문제의 복구까지 요청할 실행 모드
+     */
     public SyncReconciliationBatchResult reconcile(
         UUID runId,
         long startCursor,
         SyncReconciliationMode mode
     ) {
+        // 1. Batch 전체가 공유할 검사 시각, 활성 모델과 ID Cursor 대상 버전을 고정한다.
         LocalDateTime inspectedAt = LocalDateTime.now(clock);
         EmbeddingModel activeModel = embeddingModelQueryService.getActiveModel();
         List<DocumentVersion> versions = documentVersionRepository.findReconciliationBatchAfterId(
@@ -60,7 +68,7 @@ public class SyncReconciliationBatchService {
         int detectedCount = 0;
         int repairRequestedCount = 0;
 
-        // 1. 첫 Cursor에서는 Version FK 밖의 전역 고아 데이터도 한 번 검사한다.
+        // 2. 첫 Cursor에서는 Version FK 밖의 전역 고아 데이터도 한 번 검사한다.
         if (startCursor == 0L) {
             Set<String> orphanIssueKeys = new HashSet<>();
             for (SyncConsistencyObservation observation : syncOrphanInspector.inspect()) {
@@ -71,7 +79,7 @@ public class SyncReconciliationBatchService {
             syncConsistencyIssueService.resolveMissingGlobalObservations(orphanIssueKeys, inspectedAt);
         }
 
-        // 2. 각 Version을 독립 Issue Key 집합으로 검사해 반복 실행을 같은 Issue 행에 수렴시킨다.
+        // 3. 각 Version을 독립 Issue Key 집합으로 검사해 반복 실행을 같은 Issue 행에 수렴시킨다.
         for (DocumentVersion version : versions) {
             List<SyncConsistencyObservation> observations = syncConsistencyInspector.inspect(
                 version,
@@ -84,7 +92,7 @@ public class SyncReconciliationBatchService {
                 SyncConsistencyIssue issue = syncConsistencyIssueService.detect(observation, inspectedAt);
                 detectedCount++;
 
-                // 3. REPAIR 모드에서도 명시적으로 안전하다고 판정된 OPEN Issue만 Outbox에 기록한다.
+                // 4. REPAIR 모드에서도 명시적으로 안전하다고 판정된 OPEN Issue만 Outbox에 기록한다.
                 if (mode == SyncReconciliationMode.REPAIR
                     && observation.repairable()
                     && issue.getStatus() == SyncConsistencyIssueStatus.OPEN) {
@@ -98,7 +106,7 @@ public class SyncReconciliationBatchService {
                 }
             }
 
-            // 4. 이전 실행의 활성 Issue가 이번 검사에서 사라졌다면 정상화된 것으로 종결한다.
+            // 5. 이전 실행의 활성 Issue가 이번 검사에서 사라졌다면 정상화된 것으로 종결한다.
             syncConsistencyIssueService.resolveMissingObservations(
                 version.getId(),
                 detectedIssueKeys,
@@ -106,7 +114,7 @@ public class SyncReconciliationBatchService {
             );
         }
 
-        // 5. 마지막 ID를 다음 Cursor로 반환해 다음 Batch가 Offset 재탐색 없이 이어지게 한다.
+        // 6. 마지막 ID를 다음 Cursor로 반환해 다음 Batch가 Offset 재탐색 없이 이어지게 한다.
         long endCursor = versions.isEmpty()
             ? startCursor
             : versions.get(versions.size() - 1).getId();
@@ -121,6 +129,9 @@ public class SyncReconciliationBatchService {
         );
     }
 
+    /**
+     * Issue와 복구 시도 번호를 결합해 반복 실행에서도 같은 요청만 중복 제거되는 Key를 생성한다.
+     */
     private String repairRequestKey(SyncConsistencyIssue issue) {
         return "reconcile:%s:attempt:%d".formatted(
             issue.getIssueKey(),

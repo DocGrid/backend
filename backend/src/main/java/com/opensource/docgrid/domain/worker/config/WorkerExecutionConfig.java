@@ -30,7 +30,10 @@ public class WorkerExecutionConfig {
      */
     @Bean(name = WORKER_JOB_EXECUTOR, destroyMethod = "shutdownNow")
     public ThreadPoolExecutor workerJobExecutor(IndexingWorkerProperties properties) {
+        // 1. DB Claim 수와 실제 실행 Thread 수가 같은 상한을 공유하도록 설정값을 사용한다.
         int maxConcurrency = properties.getMaxConcurrency();
+
+        // 2. SynchronousQueue와 AbortPolicy로 실행 여력이 없을 때 Task를 적재하지 않고 즉시 거부한다.
         return new ThreadPoolExecutor(
             maxConcurrency,
             maxConcurrency,
@@ -47,14 +50,20 @@ public class WorkerExecutionConfig {
      */
     @Bean(name = WORKER_LEASE_SCHEDULER, destroyMethod = "shutdownNow")
     public ScheduledThreadPoolExecutor workerLeaseScheduler() {
+        // 1. 짧은 Lease 갱신 DB 작업만 순차 수행하는 단일 Thread Scheduler를 만든다.
         ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(
             1,
             new CustomizableThreadFactory("indexing-worker-lease-")
         );
-        // 취소된 실행별 갱신 작업이 Scheduler Queue에 남아 종료와 메모리 회수를 늦추지 않게 한다.
+
+        // 2. 취소된 실행별 갱신 작업이 Scheduler Queue에 남아 종료와 메모리 회수를 늦추지 않게 한다.
         scheduler.setRemoveOnCancelPolicy(true);
+
+        // 3. 종료가 시작되면 지연·주기 작업을 추가 실행하지 않고 현재 Worker 수명에서 끝낸다.
         scheduler.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
         scheduler.setContinueExistingPeriodicTasksAfterShutdownPolicy(false);
+
+        // 4. Lifecycle Manager가 같은 Scheduler 인스턴스를 사용하도록 Bean으로 반환한다.
         return scheduler;
     }
 
@@ -63,6 +72,7 @@ public class WorkerExecutionConfig {
      */
     @Bean
     public WorkerExecutionSlotPool workerExecutionSlotPool(IndexingWorkerProperties properties) {
+        // Job Executor와 같은 동시성 상한으로 Claim 전 예약 슬롯을 구성한다.
         return new WorkerExecutionSlotPool(properties.getMaxConcurrency());
     }
 }

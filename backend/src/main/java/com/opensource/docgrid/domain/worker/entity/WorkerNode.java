@@ -75,6 +75,9 @@ public class WorkerNode extends BaseEntity {
     @Column(name = "stopped_at")
     private LocalDateTime stoppedAt;
 
+    /**
+     * 애플리케이션 프로세스 하나를 식별하는 Worker와 최초 생존 시각을 생성한다.
+     */
     @Builder
     public WorkerNode(String workerName, String instanceId, String hostName, String ipAddress, WorkerStatus status,
                        LocalDateTime lastHeartbeatAt, LocalDateTime startedAt) {
@@ -87,6 +90,11 @@ public class WorkerNode extends BaseEntity {
         this.startedAt = startedAt;
     }
 
+    /**
+     * ACTIVE 또는 IDLE Worker의 마지막 생존 확인 시각을 갱신한다.
+     *
+     * <p>종료·사망이 확정된 Worker를 늦은 Heartbeat가 되살리지 못하도록 종결 상태에서는 무시한다.
+     */
     public void updateHeartbeat(LocalDateTime heartbeatAt) {
         if (!isLive()) {
             return;
@@ -94,6 +102,9 @@ public class WorkerNode extends BaseEntity {
         this.lastHeartbeatAt = heartbeatAt;
     }
 
+    /**
+     * 생존 상태의 Worker를 Heartbeat 만료로 인한 DEAD 상태로 전환한다.
+     */
     public void markDead() {
         if (!isLive()) {
             return;
@@ -101,6 +112,9 @@ public class WorkerNode extends BaseEntity {
         this.status = WorkerStatus.DEAD;
     }
 
+    /**
+     * 정상 종료되는 생존 Worker를 STOPPED로 전환하고 종료 시각을 기록한다.
+     */
     public void markStopped(LocalDateTime stoppedAt) {
         if (!isLive()) {
             return;
@@ -109,6 +123,11 @@ public class WorkerNode extends BaseEntity {
         this.stoppedAt = stoppedAt;
     }
 
+    /**
+     * 저장 상태와 Heartbeat 임계 시각을 결합해 조회 시점의 실효 Worker 상태를 계산한다.
+     *
+     * <p>조회 전용 계산이므로 오래된 Heartbeat를 발견해도 Entity 상태 자체는 변경하지 않는다.
+     */
     public WorkerStatus resolveEffectiveStatus(LocalDateTime heartbeatDeadline) {
         if (status == WorkerStatus.STOPPED || status == WorkerStatus.DEAD) {
             return status;
@@ -121,6 +140,9 @@ public class WorkerNode extends BaseEntity {
         return status;
     }
 
+    /**
+     * Heartbeat 또는 정상 종료 전이를 받을 수 있는 생존 상태인지 확인한다.
+     */
     private boolean isLive() {
         return status == WorkerStatus.ACTIVE || status == WorkerStatus.IDLE;
     }

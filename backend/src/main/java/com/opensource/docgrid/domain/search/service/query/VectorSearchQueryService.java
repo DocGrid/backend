@@ -32,6 +32,9 @@ public class VectorSearchQueryService {
     private final VectorSearchRepository vectorSearchRepository;
     private final VectorSearchProperties vectorSearchProperties;
 
+    /**
+     * 접근 허용 문서 안에서 Query Vector와 같은 모델의 후보를 검색하고 관련성·문서 다양성 정책을 적용한다.
+     */
     public List<VectorSearchCandidate> search(
         float[] queryVector,
         Long modelId,
@@ -69,6 +72,9 @@ public class VectorSearchQueryService {
         return selected;
     }
 
+    /**
+     * 거리순 후보에서 최소 유사도와 문서별 Chunk 상한을 만족하는 Top-K를 순서대로 선택한다.
+     */
     private List<VectorSearchCandidate> selectCandidates(
         List<VectorSearchCandidate> candidates,
         int topK,
@@ -79,17 +85,18 @@ public class VectorSearchQueryService {
         Map<Long, Integer> documentCounts = new HashMap<>();
 
         for (VectorSearchCandidate candidate : candidates) {
-            // 1) 유사도 기준 필터링 — minSimilarity 미만은 무조건 제외
+            // 1. 최소 유사도보다 낮은 후보는 검색 결과에서 제외한다.
             if (candidate.similarityScore().compareTo(minSimilarity) < 0) {
                 continue;
             }
 
-            // 2) 문서별 청크 상한 필터링 — maxChunksPerDocument개 이상이면 제외
+            // 2. 한 문서의 Chunk가 결과를 독점하지 않도록 문서별 상한을 적용한다.
             int documentCount = documentCounts.getOrDefault(candidate.documentId(), 0);
             if (documentCount >= maxChunksPerDocument) {
                 continue;
             }
 
+            // 3. 원래 Vector 유사도 순서를 유지하며 선택하고 요청한 Top-K가 차면 즉시 끝낸다.
             selected.add(candidate);
             documentCounts.put(candidate.documentId(), documentCount + 1);
             if (selected.size() == topK) {
@@ -99,6 +106,9 @@ public class VectorSearchQueryService {
         return List.copyOf(selected);
     }
 
+    /**
+     * float 배열을 pgvector Native Query가 CAST할 수 있는 대괄호 Vector 문자열로 직렬화한다.
+     */
     private String toVectorString(float[] vector) {
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < vector.length; i++) {

@@ -51,6 +51,9 @@ public class SearchConversation extends BaseEntity {
     @Column(name = "last_message_at", nullable = false)
     private LocalDateTime lastMessageAt;
 
+    /**
+     * 사용자 소유의 검색 대화방을 첫 질문 제목과 활동 시각으로 생성한다.
+     */
     @Builder
     public SearchConversation(User user, String title, LocalDateTime lastMessageAt) {
         this.user = user;

@@ -94,7 +94,7 @@ public class SearchQuery extends BaseEntity {
     @Column(name = "top_k", nullable = false)
     private int topK;
 
-    // JSON 컬럼 임시 매핑(Hibernate JSON 타입 미설정) - 추후 OpenSQL JSON / Hibernate JSON 매핑으로 교체 필요
+    // 현재 Schema가 TEXT이므로 문자열로 보존한다. JSONB 전환 시 Flyway와 Hibernate 매핑을 함께 바꿔야 한다.
     @Column(name = "filters_json", columnDefinition = "TEXT")
     private String filtersJson;
 
@@ -108,16 +108,25 @@ public class SearchQuery extends BaseEntity {
     @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
 
+    /**
+     * 검색 실행을 성공으로 종결하고 전체 지연 시간을 기록한다.
+     */
     public void updateToSuccess(int latencyMs) {
         this.status = ResultStatus.SUCCESS;
         this.latencyMs = latencyMs;
     }
 
+    /**
+     * 검색 실행을 실패로 종결하고 외부 노출 전에 제한된 오류 메시지를 기록한다.
+     */
     public void updateToFailed(String errorMessage) {
         this.status = ResultStatus.FAILED;
         this.errorMessage = errorMessage;
     }
 
+    /**
+     * 사용자의 대화·선택 컬렉션과 Query Vector를 포함한 검색 실행 원장을 생성한다.
+     */
     @Builder
     public SearchQuery(User user, SearchConversation conversation, DocumentCollection collection, String queryText,
                         EmbeddingModel queryEmbeddingModel, float[] queryVector, SearchType searchType, int topK,

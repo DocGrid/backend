@@ -58,9 +58,9 @@ public class RagFacade {
      *                                지나치게 길어져, 미리보기 수준으로만 잘라 보여준다.
      * MAX_PROMPT_CANDIDATES(3)    — topK는 호출자가 1~20까지 자유롭게 요청할 수 있어
      *                                (SearchRequest), 후보 수를 그대로 프롬프트에 다 넣으면
-     *                                prefill 시간이 예측 불가능해진다(#210). 화면에 보여줄 인용
-     *                                문서 수(topK)와 별개로, LLM이 실제로 읽는 후보 수는 이 값으로
-     *                                고정한다.
+     *                                prefill 시간이 예측 불가능해진다(#210). 검색 결과 수(topK)와
+     *                                별개로 프롬프트와 정상 답변 citation 모두 상위 후보를 이 값까지
+     *                                제한해, LLM에 제공하지 않은 후보가 출처로 추가되지 않게 한다.
      * NO_RELEVANT_DOC_PHRASE       — PromptBuilder가 LLM에게 무관한 문서일 때 이 문구로만 답하도록
      *                                지시한다(#65 INSTRUCTION 참고). 검색은 됐지만(candidates 존재)
      *                                LLM이 무관하다고 판단한 경우, 화면에 근거 문서를 같이 보여주면
@@ -180,7 +180,6 @@ public class RagFacade {
         // 사용자에게 보이는 값과 DB 값이 일치한다(동기 시절엔 반환값에만 트리밍이 적용되고 DB엔
         // 원문이 남았는데, 비동기에서는 이 row가 유일한 진실 소스라 그대로 두면 안 된다).
         String answerText = result.answerText();
-        List<VectorSearchCandidate> candidates = loadCandidates(queryId);
         boolean noRelevant = false;
         int phraseIndex = answerText != null ? answerText.indexOf(NO_RELEVANT_DOC_PHRASE) : -1;
         if (phraseIndex >= 0) {
@@ -205,8 +204,17 @@ public class RagFacade {
         }
 
         if (!noRelevant) {
-            List<SearchResult> searchResults = searchResultRepository.findByQuery_IdOrderByRankNo(queryId);
-            responseCitationCommandService.saveAll(job, candidates, searchResults);
+            // 1. 프롬프트와 동일한 상한과 검색 순서로 citation 대상을 선택한다.
+            List<SearchResult> citationSearchResults =
+                searchResultRepository.findByQuery_IdOrderByRankNo(queryId).stream()
+                    .limit(MAX_PROMPT_CANDIDATES)
+                    .toList();
+            // 2. 같은 목록에서 DTO를 만들어 청크와 검색 결과 참조의 대응을 유지한다.
+            List<VectorSearchCandidate> citationCandidates = citationSearchResults.stream()
+                .map(VectorSearchCandidate::from)
+                .toList();
+            // 3. 완료 처리가 성공한 답변에만 선택한 후보 순서대로 출처를 저장한다.
+            responseCitationCommandService.saveAll(job, citationCandidates, citationSearchResults);
         }
         log.info("[RAG] done queryId={} responseId={} latencyMs={}", queryId, job.getId(), result.latencyMs());
         return true;
@@ -248,9 +256,8 @@ public class RagFacade {
     }
 
     /**
-     * Worker는 검색 시점의 in-memory candidates를 갖고 있지 않으므로(완전히 다른 스레드·시점),
-     * 이미 영속화된 search_results(+chunk)에서 동일한 순서({@code ORDER BY rank_no})로 다시
-     * 조립한다 — PromptBuilder에 넘겼던 것과 citation_order가 어긋나지 않는다.
+     * LLM 실패 또는 타임아웃 fallback에 사용할 후보를 저장된 검색 결과에서 복원한다.
+     * 검색 순서({@code ORDER BY rank_no})를 유지해 최상위 후보의 원문을 인용할 수 있게 한다.
      */
     private List<VectorSearchCandidate> loadCandidates(Long queryId) {
         return searchResultRepository.findByQuery_IdOrderByRankNo(queryId).stream()

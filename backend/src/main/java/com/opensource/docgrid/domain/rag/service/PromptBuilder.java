@@ -14,10 +14,9 @@ import com.opensource.docgrid.domain.search.dto.VectorSearchCandidate;
  * {@link VectorSearchCandidate} 목록을 그대로 받아 조립만 한다 — 몇 개를 넘길지는 판단하지
  * 않는다. 실제로 {@code RagFacade.enqueue()}는 SearchFacade가 만든 원본 후보 전체가 아니라,
  * {@code MAX_PROMPT_CANDIDATES}(3)로 이미 잘라낸 상위 후보만 이 메서드에 넘긴다(#210) — 프롬프트가
- * 길어질수록 응답 시간이 예측 불가능해지는 문제 때문이다. 따라서 이 클래스가 매기는 인용 라벨
- * ([1], [2]...)은 "넘겨받은 목록 안에서의 순서"일 뿐이며, 화면에 노출되는 전체 citations 개수
- * (검색 결과 전체 기준)와 반드시 일치하지는 않는다 — LLM이 실제로 읽은 건 그중 상위 3개뿐일 수
- * 있다.
+ * 길어질수록 응답 시간이 예측 불가능해지는 문제 때문이다. 인용 라벨([1], [2]...)은 넘겨받은
+ * 목록 순서로 매기며, RagFacade는 citation 저장 시에도 같은 후보 상한과 검색 순서를 적용한다.
+ * 무관한 문서라는 안내만 반환한 경우에는 RagFacade가 citation 저장을 생략한다.
  *
  * <p>질문과 문맥이 직접 관련되지 않거나 충분한 근거가 없으면 고정 안내 문구만 반환하도록 LLM에
  * 지시한다. 모든 후보의 인용 라벨을 유지하되 청크별·전체 본문 예산을 적용해 LLM 입력 크기를

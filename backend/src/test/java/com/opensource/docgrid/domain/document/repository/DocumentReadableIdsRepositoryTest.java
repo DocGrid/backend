@@ -296,7 +296,7 @@ class DocumentReadableIdsRepositoryTest {
     }
 
     private DocumentCollection saveCollection(User owner, DocumentCollection parent) {
-        return collectionRepository.save(
+        DocumentCollection saved = collectionRepository.save(
             DocumentCollection.builder()
                 .owner(owner)
                 .parentCollection(parent)
@@ -304,6 +304,10 @@ class DocumentReadableIdsRepositoryTest {
                 .visibility(VisibilityType.PRIVATE)
                 .build()
         );
+        // 운영 코드(CollectionCommandService)와 동일하게 closure table을 갱신한다.
+        collectionRepository.insertClosureForNewCollection(
+            saved.getId(), parent != null ? parent.getId() : null);
+        return saved;
     }
 
     private void addToCollection(DocumentCollection collection, Document document, User addedBy) {

@@ -73,17 +73,9 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
 
     // 검색 pre-filter — 사용자가 읽을 수 있는 문서 ID 전체 (컬렉션 미지정)
     // 5가지 접근 경로: OWNER / PUBLIC / USER캐시 / ROLE live / DEPT live (문서·컬렉션 권한 모두 포함)
-    // 컬렉션 ROLE/DEPT 권한은 collection_ancestors closure를 통해 부모 컬렉션 체인까지 상속된다.
+    // 컬렉션 ROLE/DEPT 권한은 collection_closure(조상-자손 물질화 테이블)를 통해 부모 컬렉션 체인까지 상속된다.
     // statuses는 DocumentStatus.name() 문자열 목록. 검색은 INDEXED만, 문서 목록은 처리 중 상태까지 넘긴다.
     @Query(value = """
-        WITH RECURSIVE collection_ancestors AS (
-            SELECT id AS collection_id, id AS ancestor_id FROM collections
-            UNION ALL
-            SELECT ca.collection_id, c.parent_collection_id AS ancestor_id
-            FROM collection_ancestors ca
-            JOIN collections c ON c.id = ca.ancestor_id
-            WHERE c.parent_collection_id IS NOT NULL
-        )
         SELECT d.id FROM documents d
         WHERE d.owner_user_id = :userId AND d.deleted_at IS NULL AND d.status IN (:statuses)
         UNION
@@ -112,7 +104,7 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
         UNION
         SELECT d.id FROM documents d
           JOIN collection_documents cd ON cd.document_id = d.id
-          JOIN collection_ancestors ca ON ca.collection_id = cd.collection_id
+          JOIN collection_closure ca ON ca.descendant_id = cd.collection_id
           JOIN collection_permissions cp ON cp.collection_id = ca.ancestor_id
           JOIN user_roles ur ON ur.role_id = cp.role_id
         WHERE cp.target_type = 'ROLE' AND ur.user_id = :userId AND cp.can_read = true
@@ -121,7 +113,7 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
         UNION
         SELECT d.id FROM documents d
           JOIN collection_documents cd ON cd.document_id = d.id
-          JOIN collection_ancestors ca ON ca.collection_id = cd.collection_id
+          JOIN collection_closure ca ON ca.descendant_id = cd.collection_id
           JOIN collection_permissions cp ON cp.collection_id = ca.ancestor_id
           JOIN users u ON u.department_id = cp.department_id
         WHERE cp.target_type = 'DEPARTMENT' AND u.id = :userId AND cp.can_read = true
@@ -134,17 +126,9 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     );
 
     // 검색 pre-filter — 특정 컬렉션 내에서 사용자가 읽을 수 있는 문서 ID
-    // 컬렉션 ROLE/DEPT 권한은 collection_ancestors closure를 통해 부모 컬렉션 체인까지 상속된다.
+    // 컬렉션 ROLE/DEPT 권한은 collection_closure(조상-자손 물질화 테이블)를 통해 부모 컬렉션 체인까지 상속된다.
     // 바깥쪽 WHERE는 "이 컬렉션에 직접 속한 문서만" 필터 — 하위 폴더 문서가 상위 폴더 목록에 섞이지 않게 한다.
     @Query(value = """
-        WITH RECURSIVE collection_ancestors AS (
-            SELECT id AS collection_id, id AS ancestor_id FROM collections
-            UNION ALL
-            SELECT ca.collection_id, c.parent_collection_id AS ancestor_id
-            FROM collection_ancestors ca
-            JOIN collections c ON c.id = ca.ancestor_id
-            WHERE c.parent_collection_id IS NOT NULL
-        )
         SELECT sub.id FROM (
             SELECT d.id FROM documents d
             WHERE d.owner_user_id = :userId AND d.deleted_at IS NULL AND d.status IN (:statuses)
@@ -174,7 +158,7 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
             UNION
             SELECT d.id FROM documents d
               JOIN collection_documents cd ON cd.document_id = d.id
-              JOIN collection_ancestors ca ON ca.collection_id = cd.collection_id
+              JOIN collection_closure ca ON ca.descendant_id = cd.collection_id
               JOIN collection_permissions cp ON cp.collection_id = ca.ancestor_id
               JOIN user_roles ur ON ur.role_id = cp.role_id
             WHERE cp.target_type = 'ROLE' AND ur.user_id = :userId AND cp.can_read = true
@@ -183,7 +167,7 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
             UNION
             SELECT d.id FROM documents d
               JOIN collection_documents cd ON cd.document_id = d.id
-              JOIN collection_ancestors ca ON ca.collection_id = cd.collection_id
+              JOIN collection_closure ca ON ca.descendant_id = cd.collection_id
               JOIN collection_permissions cp ON cp.collection_id = ca.ancestor_id
               JOIN users u ON u.department_id = cp.department_id
             WHERE cp.target_type = 'DEPARTMENT' AND u.id = :userId AND cp.can_read = true

@@ -24,9 +24,7 @@ import com.opensource.docgrid.global.exception.DocGridException;
 import com.opensource.docgrid.global.exception.ErrorCode;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
-@Slf4j
 @Transactional(readOnly = true)
 @Service
 @RequiredArgsConstructor
@@ -71,187 +69,113 @@ public class PermissionQueryService {
 
     // 문서 읽기 권한 판단 (6단계)
     public boolean canReadDocument(Long userId, Long documentId) {
-        long start = System.nanoTime();
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
 
         // 1단계: 소유자
-        long t1 = System.nanoTime();
         if (document.getOwner().getId().equals(userId)) {
-            log.info("[PERM] canRead owner=true doc={} user={} elapsed={}ms", documentId, userId, ms(start));
             return true;
         }
 
         // 2단계: PUBLIC
-        long t2 = System.nanoTime();
-        double step1Ms = (t2 - t1) / 1_000_000.0;
         if (document.getVisibility() == VisibilityType.PUBLIC) {
-            log.info("[PERM] canRead public=true doc={} user={} step1={}ms elapsed={}ms",
-                    documentId, userId, step1Ms, ms(start));
             return true;
         }
 
         // 3단계: USER 캐시
-        long t3 = System.nanoTime();
-        double step2Ms = (t3 - t2) / 1_000_000.0;
         if (cacheRepository.existsValidReadCache(userId, documentId)) {
-            log.info("[PERM] canRead cache=true doc={} user={} step2={}ms elapsed={}ms",
-                    documentId, userId, step2Ms, ms(start));
             return true;
         }
 
         // 4단계: ROLE live
-        long t4 = System.nanoTime();
-        double step3Ms = (t4 - t3) / 1_000_000.0;
         if (documentPermissionRepository.existsRoleReadPermission(userId, documentId)
                 || collectionPermissionRepository.existsRoleReadPermissionForDocument(userId, documentId)) {
-            log.info("[PERM] canRead role=true doc={} user={} step3={}ms elapsed={}ms",
-                    documentId, userId, step3Ms, ms(start));
             return true;
         }
 
         // 5단계: DEPARTMENT live
-        long t5 = System.nanoTime();
-        double step4Ms = (t5 - t4) / 1_000_000.0;
         if (documentPermissionRepository.existsDeptReadPermission(userId, documentId)
                 || collectionPermissionRepository.existsDeptReadPermissionForDocument(userId, documentId)) {
-            log.info("[PERM] canRead dept=true doc={} user={} step4={}ms elapsed={}ms",
-                    documentId, userId, step4Ms, ms(start));
             return true;
         }
 
         // 6단계: 부모 컬렉션 체인 상속 (ROLE/DEPARTMENT)
         List<Long> effectiveCollectionIds = collectionRepository.findEffectiveCollectionIdsForDocument(documentId);
-        if (!effectiveCollectionIds.isEmpty()
+        return !effectiveCollectionIds.isEmpty()
                 && (collectionPermissionRepository.existsRoleReadPermissionForCollections(userId, effectiveCollectionIds)
-                        || collectionPermissionRepository.existsDeptReadPermissionForCollections(userId, effectiveCollectionIds))) {
-            log.info("[PERM] canRead inherited=true doc={} user={} elapsed={}ms", documentId, userId, ms(start));
-            return true;
-        }
-
-        double step5Ms = (System.nanoTime() - t5) / 1_000_000.0;
-        log.info("[PERM] canRead denied doc={} user={} step5={}ms elapsed={}ms",
-                documentId, userId, step5Ms, ms(start));
-        return false;
+                        || collectionPermissionRepository.existsDeptReadPermissionForCollections(userId, effectiveCollectionIds));
     }
 
     // 문서 쓰기 권한 판단 (5단계)
     public boolean canWriteDocument(Long userId, Long documentId) {
-        long start = System.nanoTime();
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
 
         // 1단계: 소유자
-        long t1 = System.nanoTime();
         if (document.getOwner().getId().equals(userId)) {
-            log.info("[PERM] canWrite owner=true doc={} user={} elapsed={}ms", documentId, userId, ms(start));
             return true;
         }
 
         // 2단계: USER 캐시
-        long t2 = System.nanoTime();
-        double step1Ms = (t2 - t1) / 1_000_000.0;
         if (cacheRepository.existsValidWriteCache(userId, documentId)) {
-            log.info("[PERM] canWrite cache=true doc={} user={} step1={}ms elapsed={}ms",
-                    documentId, userId, step1Ms, ms(start));
             return true;
         }
 
         // 3단계: ROLE live
-        long t3 = System.nanoTime();
-        double step2Ms = (t3 - t2) / 1_000_000.0;
         if (documentPermissionRepository.existsRoleWritePermission(userId, documentId)
                 || collectionPermissionRepository.existsRoleWritePermissionForDocument(userId, documentId)) {
-            log.info("[PERM] canWrite role=true doc={} user={} step2={}ms elapsed={}ms",
-                    documentId, userId, step2Ms, ms(start));
             return true;
         }
 
         // 4단계: DEPARTMENT live
-        long t4 = System.nanoTime();
-        double step3Ms = (t4 - t3) / 1_000_000.0;
         if (documentPermissionRepository.existsDeptWritePermission(userId, documentId)
                 || collectionPermissionRepository.existsDeptWritePermissionForDocument(userId, documentId)) {
-            log.info("[PERM] canWrite dept=true doc={} user={} step3={}ms elapsed={}ms",
-                    documentId, userId, step3Ms, ms(start));
             return true;
         }
 
         // 5단계: 부모 컬렉션 체인 상속 (ROLE/DEPARTMENT)
         List<Long> effectiveCollectionIds = collectionRepository.findEffectiveCollectionIdsForDocument(documentId);
-        if (!effectiveCollectionIds.isEmpty()
+        return !effectiveCollectionIds.isEmpty()
                 && (collectionPermissionRepository.existsRoleWritePermissionForCollections(userId, effectiveCollectionIds)
-                        || collectionPermissionRepository.existsDeptWritePermissionForCollections(userId, effectiveCollectionIds))) {
-            log.info("[PERM] canWrite inherited=true doc={} user={} elapsed={}ms", documentId, userId, ms(start));
-            return true;
-        }
-
-        double step4Ms = (System.nanoTime() - t4) / 1_000_000.0;
-        log.info("[PERM] canWrite denied doc={} user={} step4={}ms elapsed={}ms",
-                documentId, userId, step4Ms, ms(start));
-        return false;
+                        || collectionPermissionRepository.existsDeptWritePermissionForCollections(userId, effectiveCollectionIds));
     }
 
     // 문서 관리 권한 판단 (5단계)
     public boolean canAdminDocument(Long userId, Long documentId) {
-        long start = System.nanoTime();
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
 
         // 1단계: 소유자
-        long t1 = System.nanoTime();
         if (document.getOwner().getId().equals(userId)) {
-            log.info("[PERM] canAdmin owner=true doc={} user={} elapsed={}ms", documentId, userId, ms(start));
             return true;
         }
 
         // 2단계: USER 캐시
-        long t2 = System.nanoTime();
-        double step1Ms = (t2 - t1) / 1_000_000.0;
         if (cacheRepository.existsValidAdminCache(userId, documentId)) {
-            log.info("[PERM] canAdmin cache=true doc={} user={} step1={}ms elapsed={}ms",
-                    documentId, userId, step1Ms, ms(start));
             return true;
         }
 
         // 3단계: ROLE live
-        long t3 = System.nanoTime();
-        double step2Ms = (t3 - t2) / 1_000_000.0;
         if (documentPermissionRepository.existsRoleAdminPermission(userId, documentId)
                 || collectionPermissionRepository.existsRoleAdminPermissionForDocument(userId, documentId)) {
-            log.info("[PERM] canAdmin role=true doc={} user={} step2={}ms elapsed={}ms",
-                    documentId, userId, step2Ms, ms(start));
             return true;
         }
 
         // 4단계: DEPARTMENT live
-        long t4 = System.nanoTime();
-        double step3Ms = (t4 - t3) / 1_000_000.0;
         if (documentPermissionRepository.existsDeptAdminPermission(userId, documentId)
                 || collectionPermissionRepository.existsDeptAdminPermissionForDocument(userId, documentId)) {
-            log.info("[PERM] canAdmin dept=true doc={} user={} step3={}ms elapsed={}ms",
-                    documentId, userId, step3Ms, ms(start));
             return true;
         }
 
         // 5단계: 부모 컬렉션 체인 상속 (ROLE/DEPARTMENT)
         List<Long> effectiveCollectionIds = collectionRepository.findEffectiveCollectionIdsForDocument(documentId);
-        if (!effectiveCollectionIds.isEmpty()
+        return !effectiveCollectionIds.isEmpty()
                 && (collectionPermissionRepository.existsRoleAdminPermissionForCollections(userId, effectiveCollectionIds)
-                        || collectionPermissionRepository.existsDeptAdminPermissionForCollections(userId, effectiveCollectionIds))) {
-            log.info("[PERM] canAdmin inherited=true doc={} user={} elapsed={}ms", documentId, userId, ms(start));
-            return true;
-        }
-
-        double step4Ms = (System.nanoTime() - t4) / 1_000_000.0;
-        log.info("[PERM] canAdmin denied doc={} user={} step4={}ms elapsed={}ms",
-                documentId, userId, step4Ms, ms(start));
-        return false;
+                        || collectionPermissionRepository.existsDeptAdminPermissionForCollections(userId, effectiveCollectionIds));
     }
 
     // 문서 권한 확인 API용 — read/write/admin 동시 판단 + 접근 경로(sources) 수집
     public DocumentPermissionSummaryResponse checkDocumentPermission(Long userId, Long documentId) {
-        long start = System.nanoTime();
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
 
@@ -261,7 +185,6 @@ public class PermissionQueryService {
         // 1단계: 소유자 — 전체 권한 즉시 반환
         if (document.getOwner().getId().equals(userId)) {
             sources.add(PermissionSourceType.OWNER);
-            log.info("[PERM] checkDoc owner doc={} user={} elapsed={}ms", documentId, userId, ms(start));
             return new DocumentPermissionSummaryResponse(documentId, true, true, true, sources);
         }
 
@@ -330,8 +253,6 @@ public class PermissionQueryService {
             if (inheritedRoleAdmin || inheritedDeptAdmin) canAdmin = true;
         }
 
-        log.info("[PERM] checkDoc doc={} user={} canRead={} canWrite={} canAdmin={} sources={} elapsed={}ms",
-                documentId, userId, canRead, canWrite, canAdmin, sources, ms(start));
         return new DocumentPermissionSummaryResponse(documentId, canRead, canWrite, canAdmin, sources);
     }
 
@@ -406,9 +327,5 @@ public class PermissionQueryService {
         if (collection.getStatus() == CollectionStatus.DELETED) {
             throw new DocGridException(ErrorCode.COLLECTION_NOT_FOUND);
         }
-    }
-
-    private double ms(long fromNano) {
-        return (System.nanoTime() - fromNano) / 1_000_000.0;
     }
 }

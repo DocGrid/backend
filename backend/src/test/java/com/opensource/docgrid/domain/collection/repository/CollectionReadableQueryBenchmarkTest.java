@@ -341,9 +341,13 @@ class CollectionReadableQueryBenchmarkTest {
     }
 
     private void seedRoleGrants(Long ownerId, Long roleMemberId) {
+        // 다른 ROLE 권한(시드 마이그레이션 등)이 아니라 이 벤치마크 role의 권한만 집계해
+        // ROLE 상속 경로가 항상 ROLE_GRANT_COUNT개 유지되도록 한다.
         long granted = ((Number) em.createNativeQuery(
-            "SELECT COUNT(*) FROM collection_permissions WHERE target_type = 'ROLE'").getSingleResult()).longValue();
-        if (granted >= ROLE_GRANT_COUNT) {
+            "SELECT COUNT(*) FROM collection_permissions WHERE target_type = 'ROLE' AND role_id = :roleId")
+            .setParameter("roleId", benchRoleId).getSingleResult()).longValue();
+        long missing = ROLE_GRANT_COUNT - granted;
+        if (missing <= 0) {
             return;
         }
         em.createNativeQuery("""
@@ -353,12 +357,16 @@ class CollectionReadableQueryBenchmarkTest {
             SELECT id, 'ROLE', :roleId, 'READ', true, false, false, :ownerId, NOW(), NOW(), NOW()
             FROM collections
             WHERE name = 'bench-col'
+              AND id NOT IN (
+                  SELECT collection_id FROM collection_permissions
+                  WHERE target_type = 'ROLE' AND role_id = :roleId
+              )
             ORDER BY md5(id::text)
             LIMIT :n
             """)
             .setParameter("roleId", benchRoleId)
             .setParameter("ownerId", ownerId)
-            .setParameter("n", ROLE_GRANT_COUNT)
+            .setParameter("n", missing)
             .executeUpdate();
     }
 }

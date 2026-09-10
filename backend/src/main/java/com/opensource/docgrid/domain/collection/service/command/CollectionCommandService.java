@@ -51,6 +51,7 @@ public class CollectionCommandService {
     public CollectionResponse createCollection(Long userId, CreateCollectionRequest request) {
         User owner = userRepository.getReferenceById(userId);
 
+        // 1. 상위 폴더가 지정되면 존재·삭제 여부와 상위 폴더 쓰기 권한을 검증한다.
         DocumentCollection parentCollection = null; // 상위 폴더 지정은 선택 사항이라 null로 초기화
         if (request.parentCollectionId() != null) {
             parentCollection = collectionRepository.findById(request.parentCollectionId())
@@ -72,9 +73,10 @@ public class CollectionCommandService {
                 .status(CollectionStatus.ACTIVE)
                 .build();
 
+        // 2. 컬렉션 row를 저장해 ID를 확정한다.
         collectionRepository.save(collection);
 
-        // 트리 상속 판단용 closure table 갱신 — 부모의 조상 전체를 depth+1로 상속하고 자기 자신을 넣는다.
+        // 3. 트리 상속 판단용 closure table을 갱신한다 (부모의 조상 전체를 depth+1로 상속 + 자기 자신).
         collectionRepository.insertClosureForNewCollection(
                 collection.getId(),
                 parentCollection != null ? parentCollection.getId() : null);
@@ -84,6 +86,7 @@ public class CollectionCommandService {
 
     // 폴더에 문서 추가
     public CollectionDocumentResponse addDocument(Long collectionId, Long userId, AddDocumentRequest request) {
+        // 1. 컬렉션 존재·삭제 여부와 컬렉션 쓰기 권한을 검증한다.
         DocumentCollection collection = collectionRepository.findById(collectionId)
                 .filter(c -> c.getStatus() != CollectionStatus.DELETED)
                 .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
@@ -92,33 +95,33 @@ public class CollectionCommandService {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 
+        // 2. 추가 대상 문서의 존재와 공유 권한을 검증한다.
+        //    문서를 컬렉션에 넣는 것은 컬렉션 멤버에게 그 문서 읽기 권한을 주는 행위이므로,
+        //    권한 부여(DocumentPermissionCommandService.grantPermission)와 동일하게 문서 ADMIN 권한을 요구한다.
+        //    PUBLIC 문서는 이미 전원 열람 가능해 추가로 노출되는 것이 없으므로 예외.
         Document document = documentRepository.findById(request.documentId())
                 .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
-
-        // 문서를 컬렉션에 넣는 것은 컬렉션 멤버에게 그 문서 읽기 권한을 주는 행위이므로,
-        // 권한 부여(DocumentPermissionCommandService.grantPermission)와 동일하게 문서 ADMIN 권한을 요구한다.
-        // PUBLIC 문서는 이미 전원 열람 가능해 추가로 노출되는 것이 없으므로 예외.
         if (document.getVisibility() != VisibilityType.PUBLIC
                 && !permissionQueryService.canAdminDocument(userId, request.documentId())) {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 
-        // 이미 컬렉션에 문서가 존재하는지 확인
+        // 3. 이미 같은 문서가 컬렉션에 있으면 거부한다.
         if (collectionDocumentRepository.existsByCollectionIdAndDocumentId(collectionId, request.documentId())) {
             throw new DocGridException(ErrorCode.COLLECTION_DOCUMENT_ALREADY_EXISTS);
         }
 
+        // 4. 컬렉션-문서 매핑을 저장한다.
         User addedBy = userRepository.getReferenceById(userId); // 문서를 추가한 사용자 정보 가져오기
-
         CollectionDocument collectionDocument = CollectionDocument.builder()
                 .collection(collection)
                 .document(document)
                 .addedBy(addedBy)
                 .addedAt(LocalDateTime.now())
                 .build();
-
         collectionDocumentRepository.save(collectionDocument);
 
+        // 5. 컬렉션의 USER 권한 보유자가 이 문서에도 접근하도록 접근 캐시를 반영한다.
         grantUserAccessCachesForAddedDocument(collectionId, document);
 
         return collectionConverter.toDocumentResponse(collectionDocument);
@@ -159,6 +162,7 @@ public class CollectionCommandService {
     // owner 체크는 삭제 대상 최상위(root)에서만 하고 하위 각각은 재확인하지 않는다
     // (구글드라이브 공유폴더 삭제와 동일한 멘탈모델 — root에 대한 권한으로 하위 전체가 지워짐).
     public void deleteCollection(Long collectionId, Long userId) {
+        // 1. root 컬렉션 존재·삭제 여부와 소유자를 검증한다.
         DocumentCollection root = collectionRepository.findById(collectionId)
                 .filter(c -> c.getStatus() != CollectionStatus.DELETED)
                 .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
@@ -167,25 +171,26 @@ public class CollectionCommandService {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 
-        List<Long> targetIds = collectionRepository.findDescendantIdsInclusive(collectionId); // 자기 자신 포함
+        // 2. 삭제 대상(자기 자신 + 후손 전체) ID를 모은다.
+        List<Long> targetIds = collectionRepository.findDescendantIdsInclusive(collectionId);
 
-        // 대상 전체(자기 자신+하위)에 속한 권한 삭제 및 캐시 무효화
+        // 3. 대상 컬렉션들의 권한을 삭제하고, USER 대상 권한에서 파생된 접근 캐시를 무효화한다.
         List<CollectionPermission> permissions = collectionPermissionRepository.findAllByCollectionIdIn(targetIds);
         permissions.stream()
                 .filter(p -> p.getTargetType() == PermissionTargetType.USER)
-            // 컬렉션 권한이 USER 대상인 경우에만 캐시 무효화
                 .forEach(p -> cacheService.bulkRevokeBySource(AccessSourceType.DIRECT_COLLECTION_PERMISSION, p.getId()));
-        collectionPermissionRepository.deleteAll(permissions); // 컬렉션 권한 삭제
+        collectionPermissionRepository.deleteAll(permissions);
 
-        // 대상 전체(자기 자신+하위)의 문서 매핑 삭제
+        // 4. 대상 컬렉션들의 문서 매핑을 삭제한다.
         List<CollectionDocument> mappings = collectionDocumentRepository.findAllByCollectionIdIn(targetIds);
         collectionDocumentRepository.deleteAll(mappings);
 
-        // 트리 상속 판단용 closure table 정리 — 서브트리 전체가 함께 삭제되므로 descendant 기준 삭제로 충분하다.
+        // 5. 트리 상속 판단용 closure table 행을 정리한다 (서브트리 전체가 함께 삭제되므로 descendant 기준으로 충분).
         collectionRepository.deleteClosureByDescendantIds(targetIds);
 
+        // 6. 대상 컬렉션들의 상태를 DELETED로 전이한다.
         LocalDateTime now = LocalDateTime.now();
-        collectionRepository.findAllById(targetIds).forEach(c -> c.markDeleted(now)); // 대상 전체 상태를 DELETED로 변경
+        collectionRepository.findAllById(targetIds).forEach(c -> c.markDeleted(now));
     }
 
     // 컬렉션에서 문서 제거 — 소유자만 가능

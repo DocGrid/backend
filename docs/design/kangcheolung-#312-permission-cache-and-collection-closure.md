@@ -43,8 +43,8 @@ closes #312
 
 ### 해결
 
-`addDocument()`에서 매핑 저장 직후, 이 컬렉션의 **만료되지 않은 USER 대상 권한**을 조회해 방금
-추가한 문서의 캐시 행을 `cacheService.grantUserPermission(...)`으로 생성한다
+**(a) 캐시 대칭** — `addDocument()`에서 매핑 저장 직후, 이 컬렉션의 **만료되지 않은 USER 대상 권한**을
+조회해 방금 추가한 문서의 캐시 행을 `cacheService.grantUserPermission(...)`으로 생성한다
 (source_type = `DIRECT_COLLECTION_PERMISSION`, source_id = 권한 id).
 
 ```java
@@ -57,6 +57,24 @@ private void grantUserAccessCachesForAddedDocument(Long collectionId, Document d
                     p.getUser(), document,
                     p.isCanRead(), p.isCanWrite(), p.isCanAdmin(),
                     AccessSourceType.DIRECT_COLLECTION_PERMISSION, p.getId(), p.getExpiresAt()));
+}
+```
+
+**(b) 문서 공유 권한 확인** (CodeRabbit 지적, CWE-862) — 위 (a) 때문에 "문서를 컬렉션에 추가 =
+컬렉션 멤버에게 그 문서 읽기 권한 부여"가 실제로 일어난다. 그런데 기존 `addDocument`는 컬렉션 WRITE
+권한만 봤으므로, 컬렉션 WRITE만 가진 사용자가 자기가 볼 수도 없는 비공개 문서를 연결해 컬렉션 USER
+권한자에게 노출시킬 수 있었다.
+
+문서를 컬렉션에 넣는 것을 **권한 부여 행위**로 보고, `DocumentPermissionCommandService.grantPermission`과
+동일하게 **문서 ADMIN 권한**(`canAdminDocument`)을 요구한다. PUBLIC 문서는 이미 전원 열람 가능해
+추가로 노출되는 것이 없으므로 예외.
+
+```java
+Document document = documentRepository.findById(request.documentId())
+        .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
+if (document.getVisibility() != VisibilityType.PUBLIC
+        && !permissionQueryService.canAdminDocument(userId, request.documentId())) {
+    throw new DocGridException(ErrorCode.PERMISSION_DENIED);
 }
 ```
 
@@ -152,11 +170,29 @@ CREATE INDEX idx_collection_closure_descendant ON collection_closure (descendant
 
 ---
 
+### 측정
+
+`CollectionReadableQueryBenchmarkTest` (`@Tag("benchmark")`, 일반 스위트 제외).
+트리 분기 8 / ROLE 권한 20개 / warmup 5 + 측정 25회 / `EXPLAIN (ANALYZE)` Execution Time p50.
+
+| 컬렉션 수 | 변경 전 (재귀 CTE) | 변경 후 (closure) | 개선 |
+|---:|---:|---:|---:|
+| 2,000 | ~4 ms | ~0.5 ms | ~9x |
+| 5,000 | ~11 ms | ~1 ms | ~14x |
+| 10,000 | ~24 ms | ~1 ms | ~21x |
+
+- 변경 전은 컬렉션 수에 선형 증가, 변경 후는 거의 평평 → 격차가 데이터 규모에 따라 벌어짐
+- 실행계획: `Recursive Union (rows≈컬렉션수×깊이)` → `Index Only Scan using collection_closure_pkey`
+- sub-ms 구간이라 절대값은 실행마다 흔들림. 본질은 "변경 전 선형 / 변경 후 평평"
+- 재현: `./backend/gradlew -p backend benchmarkTest --tests "*CollectionReadableQueryBenchmarkTest" -q && cat backend/build/reports/benchmark/collection-closure.txt`
+
+---
+
 ## 테스트
 
 | 대상 | 테스트 |
 |---|---|
-| 작업 1 | `CollectionCommandServiceTest` — USER 권한 → 캐시 생성 / ROLE·만료 권한 → 캐시 생성 안 함 |
+| 작업 1 | `CollectionCommandServiceTest` — USER 권한 → 캐시 생성 / ROLE·만료 권한 → 캐시 생성 안 함 / 비공개 문서 ADMIN 권한 없으면 거부 / PUBLIC 문서는 ADMIN 없이 허용 |
 | 작업 2 | 기존 `PermissionQueryServiceTest` 수정 없이 통과 (판정 결과 불변) |
 | 작업 3 | `CollectionTreeRepositoryTest` — `insertClosureForNewCollection`이 자기 자신(depth 0)+조상을 depth와 함께 넣음, `deleteClosureByDescendantIds`가 서브트리 행 제거. 기존 상속 테스트(`findReadableCollections`, `findReadableDocumentIds`)는 테스트 헬퍼가 운영 코드와 동일하게 closure를 갱신하도록 수정 후 통과 |
 
@@ -165,6 +201,6 @@ CREATE INDEX idx_collection_closure_descendant ON collection_closure (descendant
 
 ### 후속
 
-- `#240` 설계 문서(`docs/design/kangcheolung-#240-collection-list-pagination.md`)의 성능 개선
-  후속편. 부하 측정(컬렉션 5,000건 시드 → `GET /collections` p95 before/after)은 포트폴리오
-  정리 시 별도로 첨부.
+- 컬렉션-문서 매핑 변경 시 캐시 동기화를 Outbox 이벤트 재투영으로 통일
+- 부모 이동 API 도입 시 closure table 서브트리 재계산 로직 추가
+- `#240` 설계 문서(`docs/design/kangcheolung-#240-collection-list-pagination.md`)의 성능 개선 후속편

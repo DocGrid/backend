@@ -95,6 +95,14 @@ public class CollectionCommandService {
         Document document = documentRepository.findById(request.documentId())
                 .orElseThrow(() -> new DocGridException(ErrorCode.DOCUMENT_NOT_FOUND));
 
+        // 문서를 컬렉션에 넣는 것은 컬렉션 멤버에게 그 문서 읽기 권한을 주는 행위이므로,
+        // 권한 부여(DocumentPermissionCommandService.grantPermission)와 동일하게 문서 ADMIN 권한을 요구한다.
+        // PUBLIC 문서는 이미 전원 열람 가능해 추가로 노출되는 것이 없으므로 예외.
+        if (document.getVisibility() != VisibilityType.PUBLIC
+                && !permissionQueryService.canAdminDocument(userId, request.documentId())) {
+            throw new DocGridException(ErrorCode.PERMISSION_DENIED);
+        }
+
         // 이미 컬렉션에 문서가 존재하는지 확인
         if (collectionDocumentRepository.existsByCollectionIdAndDocumentId(collectionId, request.documentId())) {
             throw new DocGridException(ErrorCode.COLLECTION_DOCUMENT_ALREADY_EXISTS);

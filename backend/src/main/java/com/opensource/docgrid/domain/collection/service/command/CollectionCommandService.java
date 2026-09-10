@@ -73,6 +73,12 @@ public class CollectionCommandService {
                 .build();
 
         collectionRepository.save(collection);
+
+        // 트리 상속 판단용 closure table 갱신 — 부모의 조상 전체를 depth+1로 상속하고 자기 자신을 넣는다.
+        collectionRepository.insertClosureForNewCollection(
+                collection.getId(),
+                parentCollection != null ? parentCollection.getId() : null);
+
         return collectionConverter.toResponse(collection, owner.getName());
     }
 
@@ -104,7 +110,24 @@ public class CollectionCommandService {
                 .build();
 
         collectionDocumentRepository.save(collectionDocument);
+
+        grantUserAccessCachesForAddedDocument(collectionId, document);
+
         return collectionConverter.toDocumentResponse(collectionDocument);
+    }
+
+    // 컬렉션에 이미 부여된 USER 권한 보유자가 새로 추가된 문서에도 접근할 수 있도록 캐시를 채운다.
+    // removeDocument의 캐시 무효화와 대칭 — 컬렉션 USER 권한은 user_document_access_cache로만
+    // 판정되므로(canReadDocument 4~6단계에 컬렉션 USER 경로 없음) 캐시 누락 시 접근이 막힌다.
+    private void grantUserAccessCachesForAddedDocument(Long collectionId, Document document) {
+        LocalDateTime now = LocalDateTime.now();
+        collectionPermissionRepository.findAllByCollectionId(collectionId).stream()
+                .filter(p -> p.getTargetType() == PermissionTargetType.USER)
+                .filter(p -> p.getExpiresAt() == null || p.getExpiresAt().isAfter(now))
+                .forEach(p -> cacheService.grantUserPermission(
+                        p.getUser(), document,
+                        p.isCanRead(), p.isCanWrite(), p.isCanAdmin(),
+                        AccessSourceType.DIRECT_COLLECTION_PERMISSION, p.getId(), p.getExpiresAt()));
     }
 
     // 공개 범위 변경 — 소유자만 가능(ADMIN 위임자는 제외). PRIVATE/PUBLIC 간 토글만 지원한다.
@@ -149,6 +172,9 @@ public class CollectionCommandService {
         // 대상 전체(자기 자신+하위)의 문서 매핑 삭제
         List<CollectionDocument> mappings = collectionDocumentRepository.findAllByCollectionIdIn(targetIds);
         collectionDocumentRepository.deleteAll(mappings);
+
+        // 트리 상속 판단용 closure table 정리 — 서브트리 전체가 함께 삭제되므로 descendant 기준 삭제로 충분하다.
+        collectionRepository.deleteClosureByDescendantIds(targetIds);
 
         LocalDateTime now = LocalDateTime.now();
         collectionRepository.findAllById(targetIds).forEach(c -> c.markDeleted(now)); // 대상 전체 상태를 DELETED로 변경

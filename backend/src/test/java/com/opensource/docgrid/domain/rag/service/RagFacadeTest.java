@@ -12,12 +12,16 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -160,6 +164,62 @@ class RagFacadeTest {
 
     // === processJob() ===
 
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2, 3, 5, 20})
+    @DisplayName("검색 후보 수와 무관하게 프롬프트와 citation은 동일한 상위 3건 이내의 후보를 사용한다")
+    void processJob_usesSameTopCandidatesAsEnqueue(int candidateCount) {
+        // 1. 검색 시점의 후보와 같은 순서로 저장된 검색 결과를 준비한다.
+        SearchQuery queryRef = mock(SearchQuery.class);
+        given(queryRef.getId()).willReturn(QUERY_ID);
+        given(entityManager.getReference(SearchQuery.class, QUERY_ID)).willReturn(queryRef);
+        List<VectorSearchCandidate> candidates = new ArrayList<>();
+        List<SearchResult> searchResults = new ArrayList<>();
+        for (int i = 1; i <= candidateCount; i++) {
+            Long chunkId = i * 10L;
+            Long documentId = i * 100L;
+            BigDecimal score = BigDecimal.ONE.subtract(BigDecimal.valueOf(i, 2));
+            candidates.add(new VectorSearchCandidate(
+                null, chunkId, documentId, "청크" + i, i, "문서" + i, score
+            ));
+            SearchResult searchResult = deepStubSearchResult(
+                documentId, chunkId, "청크" + i, i, "문서" + i, score
+            );
+            given(searchResult.getId()).willReturn(500L + i);
+            searchResults.add(searchResult);
+        }
+        RagResponse job = RagResponse.builder()
+            .query(queryRef).promptText("조립된 프롬프트").status(ResultStatus.PROCESSING).build();
+        given(searchConversationQueryService.findRecentContext(CONVERSATION_ID, QUERY_ID, 3))
+            .willReturn(List.of());
+        given(promptBuilder.build(anyString(), any(), eq(List.of()))).willReturn("조립된 프롬프트");
+        given(ragResponseCommandService.createPending(queryRef, "조립된 프롬프트")).willReturn(job);
+        given(ragResponseRepository.findById(JOB_ID)).willReturn(Optional.of(job));
+        given(ollamaClient.generate("조립된 프롬프트"))
+            .willReturn(new OllamaGenerateResult("qwen2.5:7b", "정상 답변", 100, 20, 900));
+        given(searchResultRepository.findByQuery_IdOrderByRankNo(QUERY_ID)).willReturn(searchResults);
+        given(ragResponseCommandService.completeSuccess(eq(job), any())).willReturn(true);
+
+        // 2. 접수와 비동기 완료를 순차 실행해 두 단계의 후보 선택을 함께 검증한다.
+        ragFacade.enqueue(CONVERSATION_ID, QUERY_ID, "질문", candidates);
+        boolean completed = ragFacade.processJob(JOB_ID);
+
+        // 3. 개수뿐 아니라 프롬프트 후보, 청크 ID, 검색 결과 ID의 순서까지 일치해야 한다.
+        int expectedCount = Math.min(candidateCount, 3);
+        List<VectorSearchCandidate> expectedCandidates = candidates.subList(0, expectedCount);
+        ArgumentCaptor<List<VectorSearchCandidate>> citationCandidates = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<SearchResult>> citationResults = ArgumentCaptor.forClass(List.class);
+        assertThat(completed).isTrue();
+        then(promptBuilder).should(times(1)).build("질문", expectedCandidates, List.of());
+        then(responseCitationCommandService).should(times(1))
+            .saveAll(eq(job), citationCandidates.capture(), citationResults.capture());
+        assertThat(citationCandidates.getValue()).containsExactlyElementsOf(expectedCandidates);
+        assertThat(citationCandidates.getValue()).extracting(VectorSearchCandidate::chunkId)
+            .containsExactlyElementsOf(List.of(10L, 20L, 30L).subList(0, expectedCount));
+        assertThat(citationResults.getValue()).extracting(SearchResult::getId)
+            .containsExactlyElementsOf(List.of(501L, 502L, 503L).subList(0, expectedCount));
+        then(searchResultRepository).should(times(1)).findByQuery_IdOrderByRankNo(QUERY_ID);
+    }
+
     @Test
     @DisplayName("processJob 정상 흐름: Ollama 호출 성공 시 completeSuccess와 citation을 저장한다")
     void processJob_success_savesResponseAndCitations() {
@@ -214,6 +274,7 @@ class RagFacadeTest {
 
         assertThat(completed).isFalse();
         then(responseCitationCommandService).should(never()).saveAll(any(), any(), any());
+        then(searchResultRepository).should(never()).findByQuery_IdOrderByRankNo(any());
     }
 
     @Test
@@ -275,6 +336,7 @@ class RagFacadeTest {
 
         then(ragResponseCommandService).should(times(1)).completeSuccess(eq(job), any());
         then(responseCitationCommandService).should(never()).saveAll(any(), any(), any());
+        then(searchResultRepository).should(never()).findByQuery_IdOrderByRankNo(any());
     }
 
     @Test

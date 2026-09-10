@@ -1,9 +1,12 @@
 package com.opensource.docgrid.domain.collection.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
@@ -74,6 +77,38 @@ class CollectionTreeRepositoryTest {
 
         assertThat(ancestorsOfGrandchild).containsExactlyInAnyOrder(root.getId(), child.getId(), grandchild.getId());
         assertThat(ancestorsOfRoot).containsExactly(root.getId());
+    }
+
+    @Test
+    @DisplayName("insertClosureForNewCollection은 자기 자신(depth 0)과 모든 조상을 depth와 함께 넣는다")
+    void insertClosureForNewCollection_materializesSelfAndAncestors() {
+        User owner = saveOwner();
+        DocumentCollection root = saveCollection(owner, null);
+        DocumentCollection child = saveCollection(owner, root);
+        DocumentCollection grandchild = saveCollection(owner, child);
+        flushAndClear();
+
+        assertThat(closureAncestorsWithDepth(grandchild.getId()))
+            .containsOnly(entry(grandchild.getId(), 0), entry(child.getId(), 1), entry(root.getId(), 2));
+        assertThat(closureAncestorsWithDepth(root.getId()))
+            .containsOnly(entry(root.getId(), 0));
+    }
+
+    @Test
+    @DisplayName("deleteClosureByDescendantIds는 대상 서브트리의 closure 행을 모두 제거한다")
+    void deleteClosureByDescendantIds_removesSubtreeRows() {
+        User owner = saveOwner();
+        DocumentCollection root = saveCollection(owner, null);
+        DocumentCollection child = saveCollection(owner, root);
+        DocumentCollection grandchild = saveCollection(owner, child);
+        flushAndClear();
+
+        collectionRepository.deleteClosureByDescendantIds(List.of(child.getId(), grandchild.getId()));
+        flushAndClear();
+
+        assertThat(closureAncestorsWithDepth(root.getId())).containsOnly(entry(root.getId(), 0));
+        assertThat(closureAncestorsWithDepth(child.getId())).isEmpty();
+        assertThat(closureAncestorsWithDepth(grandchild.getId())).isEmpty();
     }
 
     @Test
@@ -354,7 +389,7 @@ class CollectionTreeRepositoryTest {
     }
 
     private DocumentCollection saveCollection(User owner, DocumentCollection parent) {
-        return collectionRepository.save(
+        DocumentCollection saved = collectionRepository.save(
             DocumentCollection.builder()
                 .owner(owner)
                 .parentCollection(parent)
@@ -362,6 +397,10 @@ class CollectionTreeRepositoryTest {
                 .visibility(VisibilityType.PRIVATE)
                 .build()
         );
+        // 운영 코드(CollectionCommandService)와 동일하게 closure table을 갱신한다.
+        collectionRepository.insertClosureForNewCollection(
+            saved.getId(), parent != null ? parent.getId() : null);
+        return saved;
     }
 
     private Document saveDocument(User owner) {
@@ -391,5 +430,19 @@ class CollectionTreeRepositoryTest {
     private void flushAndClear() {
         entityManager.flush();
         entityManager.clear();
+    }
+
+    // collection_closure에서 특정 descendant의 (ancestor_id -> depth) 매핑을 직접 읽어 검증한다.
+    @SuppressWarnings("unchecked")
+    private Map<Long, Integer> closureAncestorsWithDepth(Long descendantId) {
+        List<Object[]> rows = entityManager.createNativeQuery(
+                "SELECT ancestor_id, depth FROM collection_closure WHERE descendant_id = :id")
+            .setParameter("id", descendantId)
+            .getResultList();
+        Map<Long, Integer> result = new HashMap<>();
+        for (Object[] row : rows) {
+            result.put(((Number) row[0]).longValue(), ((Number) row[1]).intValue());
+        }
+        return result;
     }
 }

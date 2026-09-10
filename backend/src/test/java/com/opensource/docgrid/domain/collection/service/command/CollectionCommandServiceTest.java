@@ -37,6 +37,9 @@ import com.opensource.docgrid.domain.collection.fixture.CollectionFixture;
 import com.opensource.docgrid.domain.collection.repository.CollectionDocumentRepository;
 import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
 import com.opensource.docgrid.domain.document.entity.Document;
+import com.opensource.docgrid.domain.document.enums.DocumentSourceType;
+import com.opensource.docgrid.domain.document.enums.DocumentStatus;
+import com.opensource.docgrid.domain.document.enums.DocumentType;
 import com.opensource.docgrid.domain.document.enums.VisibilityType;
 import com.opensource.docgrid.domain.document.repository.DocumentRepository;
 import com.opensource.docgrid.domain.permission.entity.CollectionPermission;
@@ -191,6 +194,7 @@ class CollectionCommandServiceTest {
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
         given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, collection)).willReturn(true);
         given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(permissionQueryService.canAdminDocument(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID)).willReturn(true);
         given(collectionDocumentRepository.existsByCollectionIdAndDocumentId(
                 CollectionFixture.COLLECTION_ID, CollectionFixture.DOCUMENT_ID)).willReturn(false);
         given(userRepository.getReferenceById(CollectionFixture.USER_ID)).willReturn(owner);
@@ -252,6 +256,7 @@ class CollectionCommandServiceTest {
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
         given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, collection)).willReturn(true);
         given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(permissionQueryService.canAdminDocument(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID)).willReturn(true);
         given(collectionDocumentRepository.existsByCollectionIdAndDocumentId(
                 CollectionFixture.COLLECTION_ID, CollectionFixture.DOCUMENT_ID)).willReturn(true);
 
@@ -273,6 +278,7 @@ class CollectionCommandServiceTest {
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
         given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, collection)).willReturn(true);
         given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(permissionQueryService.canAdminDocument(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID)).willReturn(true);
         given(collectionDocumentRepository.existsByCollectionIdAndDocumentId(
                 CollectionFixture.COLLECTION_ID, CollectionFixture.DOCUMENT_ID)).willReturn(false);
         given(userRepository.getReferenceById(CollectionFixture.USER_ID)).willReturn(owner);
@@ -309,6 +315,7 @@ class CollectionCommandServiceTest {
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
         given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, collection)).willReturn(true);
         given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(permissionQueryService.canAdminDocument(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID)).willReturn(true);
         given(collectionDocumentRepository.existsByCollectionIdAndDocumentId(
                 CollectionFixture.COLLECTION_ID, CollectionFixture.DOCUMENT_ID)).willReturn(false);
         given(userRepository.getReferenceById(CollectionFixture.USER_ID)).willReturn(owner);
@@ -322,6 +329,55 @@ class CollectionCommandServiceTest {
 
         then(cacheService).should(never()).grantUserPermission(
                 any(), any(), anyBoolean(), anyBoolean(), anyBoolean(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("비공개 문서에 대한 ADMIN 권한이 없으면 PERMISSION_DENIED이고 매핑·캐시를 만들지 않는다")
+    void addDocument_throws_when_noAdminOnDocument() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection collection = CollectionFixture.createCollection(owner);
+        Document document = CollectionFixture.createDocument(owner); // PRIVATE
+
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+        given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, collection)).willReturn(true);
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(permissionQueryService.canAdminDocument(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID))
+                .willReturn(false);
+
+        assertThatThrownBy(() -> collectionCommandService.addDocument(
+                CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID, new AddDocumentRequest(CollectionFixture.DOCUMENT_ID)))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PERMISSION_DENIED);
+
+        then(collectionDocumentRepository).should(never()).save(any());
+        then(cacheService).should(never()).grantUserPermission(
+                any(), any(), anyBoolean(), anyBoolean(), anyBoolean(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("PUBLIC 문서는 ADMIN 권한이 없어도 컬렉션에 추가할 수 있다")
+    void addDocument_succeeds_forPublicDocument_withoutAdmin() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection collection = CollectionFixture.createCollection(owner);
+        Document publicDocument = Document.builder()
+                .owner(owner).title("공개 문서")
+                .documentType(DocumentType.PDF).sourceType(DocumentSourceType.UPLOAD)
+                .status(DocumentStatus.INDEXED).visibility(VisibilityType.PUBLIC).build();
+        ReflectionTestUtils.setField(publicDocument, "id", CollectionFixture.DOCUMENT_ID);
+
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+        given(permissionQueryService.canWriteCollection(CollectionFixture.USER_ID, collection)).willReturn(true);
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(publicDocument));
+        given(collectionDocumentRepository.existsByCollectionIdAndDocumentId(
+                CollectionFixture.COLLECTION_ID, CollectionFixture.DOCUMENT_ID)).willReturn(false);
+        given(userRepository.getReferenceById(CollectionFixture.USER_ID)).willReturn(owner);
+        given(collectionConverter.toDocumentResponse(any()))
+                .willReturn(CollectionFixture.createCollectionDocumentResponse());
+
+        collectionCommandService.addDocument(
+                CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID, new AddDocumentRequest(CollectionFixture.DOCUMENT_ID));
+
+        then(collectionDocumentRepository).should().save(any());
     }
 
     // ==================== updateVisibility ====================

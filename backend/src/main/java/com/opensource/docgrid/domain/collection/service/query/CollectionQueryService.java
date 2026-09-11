@@ -99,12 +99,14 @@ public class CollectionQueryService {
     }
 
     /**
-     * 직계 자식 컬렉션 목록 조회 — 부모 읽기 권한 확인 후, 권한 조건이 반영된 자식만 조회한다.
+     * 직계 자식 컬렉션 목록 페이지 조회 — 부모 읽기 권한 확인 후, 권한 조건이 반영된 자식만 조회한다.
      * 자식별 읽기 권한 필터는 findReadableChildren 쿼리 안에서 함께 처리되므로, 자식 개수만큼
      * canReadCollection을 반복 호출하지 않는다(부모 상속 여부는 자식 전체가 공유하는 값이라
-     * 쿼리 안에서 한 번만 계산됨).
+     * 쿼리 안에서 한 번만 계산됨). getCollections와 동일하게 COUNT(*) OVER()로 페이지 내용과
+     * 전체 개수를 한 쿼리에서 함께 얻는다.
      */
-    public List<CollectionResponse> getChildren(Long userId, Long collectionId) {
+    public PageResponse<CollectionResponse> getChildren(Long userId, Long collectionId, int page, int size) {
+        // 1. 부모 컬렉션 존재·삭제 여부와 읽기 권한을 먼저 검증한다.
         DocumentCollection parent = collectionRepository.findById(collectionId)
                 .filter(c -> c.getStatus() != CollectionStatus.DELETED)
                 .orElseThrow(() -> new DocGridException(ErrorCode.COLLECTION_NOT_FOUND));
@@ -112,11 +114,22 @@ public class CollectionQueryService {
             throw new DocGridException(ErrorCode.PERMISSION_DENIED);
         }
 
-        // 부모 읽기 권한이 있는 경우에만, 자식 컬렉션 중 읽기 가능한 것들을 조회한다.
-        return collectionRepository.findReadableChildren(collectionId, userId)
-                .stream()
+        // 2. 자식 목록과 전체 개수를 한 번에 조회 (CollectionRow 프로젝션, COUNT(*) OVER())
+        Pageable pageable = PageRequest.of(page, size, COLLECTION_SORT);
+        List<CollectionRow> rows = collectionRepository.findReadableChildren(
+                collectionId, userId, pageable.getPageSize(), pageable.getOffset());
+
+        // 3. 빈 페이지일 때만 count 쿼리로 폴백 (getCollections와 동일한 이유)
+        long totalElements = rows.isEmpty()
+                ? collectionRepository.countReadableChildren(collectionId, userId)
+                : rows.get(0).getTotalCount();
+
+        // 4. DTO 변환 및 페이지 응답 조립
+        List<CollectionResponse> content = rows.stream()
                 .map(collectionConverter::toResponse)
                 .toList();
+        Page<CollectionResponse> resultPage = new PageImpl<>(content, pageable, totalElements);
+        return PageResponse.from(resultPage, content);
     }
 
     /**

@@ -110,4 +110,4 @@ JWT_SECRET=test-only-secret-key-with-at-least-32-characters \
 ```
 
 - 결과: 1,137 tests, 0 failed, 0 errors, 0 skipped
-- 빌드 결과: `BUILD SUCCESSFUL in 39s`
+- 빌드 결과: `BUILD SUCCESSFUL in 43s`

@@ -105,6 +105,7 @@ class SearchResultRepositoryFetchTest {
     }
 
     private Long saveSearchResults() {
+        // 1. 검색 원장과 문서 그래프가 함께 참조할 사용자를 먼저 저장한다.
         User user = User.builder()
             .email("search-result-fetch-" + UUID.randomUUID() + "@test.com")
             .passwordHash("hash")
@@ -113,6 +114,7 @@ class SearchResultRepositoryFetchTest {
             .build();
         entityManager.persist(user);
 
+        // 2. 검색 질의의 필수 부모인 대화방을 저장한다.
         SearchConversation conversation = SearchConversation.builder()
             .user(user)
             .title("검색 결과 fetch 테스트")
@@ -120,6 +122,7 @@ class SearchResultRepositoryFetchTest {
             .build();
         entityManager.persist(conversation);
 
+        // 3. 다섯 검색 결과가 공유할 검색 질의를 저장한다.
         SearchQuery query = SearchQuery.builder()
             .user(user)
             .conversation(conversation)
@@ -130,6 +133,7 @@ class SearchResultRepositoryFetchTest {
             .build();
         entityManager.persist(query);
 
+        // 4. N+1 최악 경로를 재현하도록 서로 다른 문서·버전·청크를 검색 순서대로 만든다.
         List<SearchResult> results = new ArrayList<>();
         for (int index = 1; index <= RESULT_COUNT; index++) {
             Document document = Document.builder()
@@ -171,6 +175,8 @@ class SearchResultRepositoryFetchTest {
                 .matchedText(chunk.getChunkText())
                 .build());
         }
+
+        // 5. 완성된 문서 연관관계와 rankNo 순서를 가진 검색 결과를 저장한다.
         results.forEach(entityManager::persist);
         return query.getId();
     }

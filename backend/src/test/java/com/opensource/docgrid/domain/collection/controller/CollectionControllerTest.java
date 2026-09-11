@@ -98,20 +98,32 @@ class CollectionControllerTest {
     }
 
     @Test
-    @DisplayName("인증된 사용자가 직계 자식 컬렉션 목록을 조회한다")
-    void getChildren_returnsChildCollections() throws Exception {
+    @DisplayName("인증된 사용자가 직계 자식 컬렉션 목록을 페이지 조회한다")
+    void getChildren_returnsChildCollectionPage() throws Exception {
         CollectionResponse child = new CollectionResponse(
                 2L, "하위 컬렉션", null, 10L, "테스트유저", 1L, VisibilityType.PRIVATE, CollectionStatus.ACTIVE,
                 LocalDateTime.of(2026, 8, 1, 10, 0)
         );
-        given(collectionQueryService.getChildren(10L, 1L)).willReturn(List.of(child));
+        given(collectionQueryService.getChildren(10L, 1L, 0, 20))
+                .willReturn(new PageResponse<>(List.of(child), 0, 20, 1, 1, true, true));
 
         mockMvc.perform(get(CHILDREN_URL, 1L)
                         .with(authentication(authenticationWithUserId(10L))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].collectionId").value(2))
-                .andExpect(jsonPath("$.data[0].ownerName").value("테스트유저"))
-                .andExpect(jsonPath("$.data[0].parentCollectionId").value(1));
+                .andExpect(jsonPath("$.data.content[0].collectionId").value(2))
+                .andExpect(jsonPath("$.data.content[0].ownerName").value("테스트유저"))
+                .andExpect(jsonPath("$.data.content[0].parentCollectionId").value(1))
+                .andExpect(jsonPath("$.data.totalElements").value(1));
+    }
+
+    @Test
+    @DisplayName("자식 목록 조회 시 페이지 입력 범위를 벗어나면 400을 반환한다")
+    void getChildren_returnsBadRequest_whenPageInputIsInvalid() throws Exception {
+        mockMvc.perform(get(CHILDREN_URL, 1L)
+                        .param("size", "101")
+                        .with(authentication(authenticationWithUserId(10L))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON-002"));
     }
 
     @Test

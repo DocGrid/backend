@@ -163,10 +163,10 @@ class CollectionTreeRepositoryTest {
         DocumentCollection grandchild = saveCollection(owner, child);
         flushAndClear();
 
-        List<DocumentCollection> children = collectionRepository.findReadableChildren(root.getId(), owner.getId());
+        List<Long> children = readableChildrenIds(root.getId(), owner.getId());
 
-        assertThat(children).extracting(DocumentCollection::getId).containsExactly(child.getId());
-        assertThat(children).extracting(DocumentCollection::getId).doesNotContain(grandchild.getId());
+        assertThat(children).containsExactly(child.getId());
+        assertThat(children).doesNotContain(grandchild.getId());
     }
 
     @Test
@@ -178,8 +178,8 @@ class CollectionTreeRepositoryTest {
         saveCollection(owner, root); // PRIVATE 자식, stranger는 권한 없음
         flushAndClear();
 
-        List<DocumentCollection> forStranger = collectionRepository.findReadableChildren(root.getId(), stranger.getId());
-        List<DocumentCollection> forOwner = collectionRepository.findReadableChildren(root.getId(), owner.getId());
+        List<Long> forStranger = readableChildrenIds(root.getId(), stranger.getId());
+        List<Long> forOwner = readableChildrenIds(root.getId(), owner.getId());
 
         assertThat(forStranger).isEmpty();
         assertThat(forOwner).hasSize(1);
@@ -222,9 +222,9 @@ class CollectionTreeRepositoryTest {
         flushAndClear();
 
         // parent 자체는 grandparent로부터 상속받아 읽을 수 있고, parent의 자식(child)도 같은 체인으로 상속받는다.
-        List<DocumentCollection> childrenOfParent = collectionRepository.findReadableChildren(parent.getId(), roleMember.getId());
+        List<Long> childrenOfParent = readableChildrenIds(parent.getId(), roleMember.getId());
 
-        assertThat(childrenOfParent).extracting(DocumentCollection::getId).containsExactly(child.getId());
+        assertThat(childrenOfParent).containsExactly(child.getId());
     }
 
     @Test
@@ -288,6 +288,46 @@ class CollectionTreeRepositoryTest {
         List<Long> firstPageIds = firstPage.stream().map(CollectionRow::getCollectionId).toList();
         List<Long> secondPageIds = secondPage.stream().map(CollectionRow::getCollectionId).toList();
         assertThat(firstPageIds).doesNotContainAnyElementsOf(secondPageIds);
+    }
+
+    @Test
+    @DisplayName("findReadableChildren는 limit/offset으로 페이지를 나누고, 모든 행에 동일한 totalCount와 owner_name을 함께 반환한다")
+    void findReadableChildren_paginatesAndReturnsTotalCountAndOwnerName() {
+        User owner = saveOwner();
+        DocumentCollection root = saveCollection(owner, null);
+        for (int i = 0; i < 3; i++) {
+            saveCollection(owner, root);
+        }
+        flushAndClear();
+
+        List<CollectionRow> firstPage = collectionRepository.findReadableChildren(root.getId(), owner.getId(), 2, 0L);
+        List<CollectionRow> secondPage = collectionRepository.findReadableChildren(root.getId(), owner.getId(), 2, 2L);
+
+        assertThat(firstPage).hasSize(2);
+        assertThat(secondPage).hasSize(1);
+        assertThat(firstPage).allSatisfy(row -> assertThat(row.getTotalCount()).isEqualTo(3));
+        assertThat(secondPage.get(0).getTotalCount()).isEqualTo(3);
+        // owner_name이 쿼리 안에서 조인돼 채워지는지 (자식마다 owner 재조회하는 N+1 방지 확인)
+        assertThat(firstPage).allSatisfy(row -> assertThat(row.getOwnerName()).isEqualTo(owner.getName()));
+        List<Long> firstPageIds = firstPage.stream().map(CollectionRow::getCollectionId).toList();
+        List<Long> secondPageIds = secondPage.stream().map(CollectionRow::getCollectionId).toList();
+        assertThat(firstPageIds).doesNotContainAnyElementsOf(secondPageIds);
+    }
+
+    @Test
+    @DisplayName("findReadableChildren는 요청한 offset이 마지막 페이지를 넘어가도, countReadableChildren으로 실제 전체 개수를 알 수 있다")
+    void countReadableChildren_returnsTotalCount_whenPageBeyondLastPage() {
+        User owner = saveOwner();
+        DocumentCollection root = saveCollection(owner, null);
+        saveCollection(owner, root);
+        saveCollection(owner, root);
+        flushAndClear();
+
+        List<CollectionRow> beyondLastPage = collectionRepository.findReadableChildren(root.getId(), owner.getId(), 20, 100L);
+        long total = collectionRepository.countReadableChildren(root.getId(), owner.getId());
+
+        assertThat(beyondLastPage).isEmpty();
+        assertThat(total).isEqualTo(2);
     }
 
     @Test
@@ -372,6 +412,13 @@ class CollectionTreeRepositoryTest {
     // 기존 테스트들이 그대로 동작하도록 넉넉한 limit(100)으로 감싸는 헬퍼.
     private List<Long> readableIds(Long userId, String keyword) {
         return collectionRepository.findReadableCollections(userId, keyword, 100, 0L)
+                .stream()
+                .map(CollectionRow::getCollectionId)
+                .toList();
+    }
+
+    private List<Long> readableChildrenIds(Long parentId, Long userId) {
+        return collectionRepository.findReadableChildren(parentId, userId, 100, 0L)
                 .stream()
                 .map(CollectionRow::getCollectionId)
                 .toList();

@@ -34,12 +34,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
-import com.opensource.docgrid.domain.embedding.dto.EmbedResult;
-import com.opensource.docgrid.domain.embedding.entity.EmbeddingModel;
-import com.opensource.docgrid.domain.embedding.enums.DistanceMetric;
-import com.opensource.docgrid.domain.embedding.enums.EmbeddingProvider;
-import com.opensource.docgrid.domain.embedding.enums.VectorStorageStrategy;
+import com.opensource.docgrid.domain.embedding.client.EmbeddingClient;
+import com.opensource.docgrid.domain.embedding.converter.EmbeddingModelConverter;
 import com.opensource.docgrid.domain.embedding.repository.EmbeddingModelRepository;
+import com.opensource.docgrid.domain.embedding.service.query.EmbeddingModelQueryService;
 import com.opensource.docgrid.domain.embedding.service.query.QueryEmbeddingService;
 import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
 import com.opensource.docgrid.domain.search.dto.SearchOutcome;
@@ -75,7 +73,10 @@ import com.zaxxer.hikari.HikariDataSource;
     SearchFacade.class,
     SearchConversationCommandService.class,
     SearchQueryCommandService.class,
-    SearchResultCommandService.class
+    SearchResultCommandService.class,
+    QueryEmbeddingService.class,
+    EmbeddingModelQueryService.class,
+    EmbeddingModelConverter.class
 })
 @DisplayName("검색 실패 원장 트랜잭션 경계 통합 테스트")
 class SearchTransactionBoundaryIntegrationTest {
@@ -89,7 +90,7 @@ class SearchTransactionBoundaryIntegrationTest {
     @Autowired private EmbeddingModelRepository embeddingModelRepository;
     @Autowired private DataSource dataSource;
 
-    @MockitoBean private QueryEmbeddingService queryEmbeddingService;
+    @MockitoBean private EmbeddingClient embeddingClient;
     @MockitoBean private SearchConversationQueryService searchConversationQueryService;
     @MockitoBean private AccessibleDocumentQueryService accessibleDocumentQueryService;
     @MockitoBean private VectorSearchQueryService vectorSearchQueryService;
@@ -103,7 +104,7 @@ class SearchTransactionBoundaryIntegrationTest {
     @BeforeEach
     void setUp() {
         reset(
-            queryEmbeddingService,
+            embeddingClient,
             searchConversationQueryService,
             accessibleDocumentQueryService,
             vectorSearchQueryService,
@@ -117,16 +118,11 @@ class SearchTransactionBoundaryIntegrationTest {
             .name("검색 실패 테스트 사용자")
             .status(UserStatus.ACTIVE)
             .build()).getId();
-        modelId = embeddingModelRepository.saveAndFlush(EmbeddingModel.builder()
-            .provider(EmbeddingProvider.MOCK)
-            .modelName(marker)
-            .modelVersion("v1")
-            .dimension(VECTOR_DIMENSION)
-            .distanceMetric(DistanceMetric.COSINE)
-            .isActive(false)
-            .isSearchable(false)
-            .vectorStorageStrategy(VectorStorageStrategy.SINGLE_DIMENSION)
-            .build()).getId();
+        modelId = embeddingModelRepository.findAllByIsActiveTrueAndIsSearchableTrue()
+            .stream()
+            .findFirst()
+            .orElseThrow()
+            .getId();
 
         given(searchConversationQueryService.findRecentContext(anyLong(), anyLong(), eq(2)))
             .willReturn(List.of());
@@ -140,7 +136,6 @@ class SearchTransactionBoundaryIntegrationTest {
             + "(SELECT id FROM search_queries WHERE query_text = ?)", marker);
         jdbcTemplate.update("DELETE FROM search_queries WHERE query_text = ?", marker);
         jdbcTemplate.update("DELETE FROM search_conversations WHERE user_id = ?", userId);
-        embeddingModelRepository.deleteById(modelId);
         userRepository.deleteById(userId);
     }
 
@@ -149,7 +144,7 @@ class SearchTransactionBoundaryIntegrationTest {
     void search_persistsFailedLedgerWithoutTransaction_whenEmbeddingFails() {
         AtomicBoolean transactionActive = new AtomicBoolean();
         AtomicInteger activeConnections = new AtomicInteger();
-        given(queryEmbeddingService.embed(anyString())).willAnswer(invocation -> {
+        given(embeddingClient.embed(anyString())).willAnswer(invocation -> {
             captureTransactionMetrics(transactionActive, activeConnections);
             throw new IllegalStateException("forced embedding failure");
         });
@@ -167,10 +162,9 @@ class SearchTransactionBoundaryIntegrationTest {
     void search_persistsFailedLedger_whenSearchFailsAfterProcessingCommit() {
         AtomicBoolean transactionActive = new AtomicBoolean();
         AtomicInteger activeConnections = new AtomicInteger();
-        EmbeddingModel model = embeddingModelRepository.findById(modelId).orElseThrow();
-        given(queryEmbeddingService.embed(anyString())).willAnswer(invocation -> {
+        given(embeddingClient.embed(anyString())).willAnswer(invocation -> {
             captureTransactionMetrics(transactionActive, activeConnections);
-            return new EmbedResult(model, new float[VECTOR_DIMENSION]);
+            return new float[VECTOR_DIMENSION];
         });
         given(accessibleDocumentQueryService.findReadableDocumentIds(userId, null))
             .willThrow(new IllegalStateException("forced search failure"));
@@ -188,11 +182,10 @@ class SearchTransactionBoundaryIntegrationTest {
     void search_commitsEmbeddingAndSuccessAndRejectsLateFailure_whenNoDocuments() {
         AtomicBoolean transactionActive = new AtomicBoolean();
         AtomicInteger activeConnections = new AtomicInteger();
-        EmbeddingModel model = embeddingModelRepository.findById(modelId).orElseThrow();
         float[] vector = new float[VECTOR_DIMENSION];
-        given(queryEmbeddingService.embed(anyString())).willAnswer(invocation -> {
+        given(embeddingClient.embed(anyString())).willAnswer(invocation -> {
             captureTransactionMetrics(transactionActive, activeConnections);
-            return new EmbedResult(model, vector);
+            return vector;
         });
         given(accessibleDocumentQueryService.findReadableDocumentIds(userId, null)).willReturn(List.of());
 
@@ -216,9 +209,7 @@ class SearchTransactionBoundaryIntegrationTest {
     @Test
     @DisplayName("결과 저장이 롤백되면 부분 결과 없이 원장만 FAILED로 확정한다")
     void search_rollsBackPartialSuccessAndPersistsFailure_whenResultInsertFails() {
-        EmbeddingModel model = embeddingModelRepository.findById(modelId).orElseThrow();
-        given(queryEmbeddingService.embed(anyString()))
-            .willReturn(new EmbedResult(model, new float[VECTOR_DIMENSION]));
+        given(embeddingClient.embed(anyString())).willReturn(new float[VECTOR_DIMENSION]);
         given(accessibleDocumentQueryService.findReadableDocumentIds(userId, null)).willReturn(List.of(99L));
         given(vectorSearchQueryService.search(any(), eq(modelId), eq(List.of(99L)), eq(5)))
             .willReturn(List.of(new VectorSearchCandidate(

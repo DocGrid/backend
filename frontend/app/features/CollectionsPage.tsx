@@ -90,7 +90,7 @@ export function CollectionsPage({ notify }: { notify: (message: string) => void 
 export function CollectionDetailPage({ collectionId, notify }: { collectionId: number; notify: (message: string) => void }) {
   const { user } = useAuth();
   const [collection, setCollection] = useState<Collection | null>(null);
-  const [children, setChildren] = useState<Collection[]>([]);
+  const [children, setChildren] = useState<PageResponse<Collection> | null>(null);
   const [availableDocuments, setAvailableDocuments] = useState<DocumentSummary[]>([]);
   const [collectionDocuments, setCollectionDocuments] = useState<PageResponse<CollectionDocument> | null>(null);
   const [addDocumentId, setAddDocumentId] = useState("");
@@ -110,7 +110,7 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
       // 1. Load collection Metadata, direct child collections, addable documents, and current membership from their authoritative APIs.
       const [detail, childList, documentPage, memberPage] = await Promise.all([
         apiRequest<Collection>(`/collections/${collectionId}`),
-        apiRequest<Collection[]>(`/collections/${collectionId}/children`),
+        apiRequest<PageResponse<Collection>>(`/collections/${collectionId}/children?page=0&size=100`),
         apiRequest<PageResponse<DocumentSummary>>("/api/documents?page=0&size=100"),
         apiRequest<PageResponse<CollectionDocument>>(`/collections/${collectionId}/documents?page=${page}&size=20`),
       ]);
@@ -187,7 +187,7 @@ export function CollectionDetailPage({ collectionId, notify }: { collectionId: n
     {loading ? <LoadingState /> : null}
     {!loading && collection ? <>
       <div className="collection-summary"><div><span className="folder-shape" style={{ "--folder-color": "#6558e8" } as React.CSSProperties}>▱</span><div><strong>{collection.name}</strong><span>owner {collection.ownerName ?? `#${collection.ownerUserId}`} · {formatDate(collection.createdAt, false)}</span></div></div><StatusPill value={collection.status} /></div>
-      <div className="panel-card"><div className="panel-heading"><div><h2>하위 컬렉션</h2><p>클릭하면 해당 컬렉션을 엽니다.</p></div></div>{children.length ? <div className="collection-grid">{children.map((child, index) => <a className="collection-card" href={`/collections/${child.collectionId}`} target="_top" key={child.collectionId}><div className="collection-top"><span className="folder-shape" style={{ "--folder-color": collectionColor(index) } as React.CSSProperties}>▱</span><StatusPill value={child.status} /></div><div className="collection-badges"><StatusPill value={child.visibility} /></div><h2>{child.name}</h2><p>{child.description || "설명이 없습니다."}</p></a>)}</div> : <EmptyState symbol="▱" title="하위 컬렉션이 없습니다" description="이 컬렉션 안에 하위 컬렉션을 만들면 여기에 표시됩니다." />}</div>
+      <div className="panel-card"><div className="panel-heading"><div><h2>하위 컬렉션</h2><p>클릭하면 해당 컬렉션을 엽니다.</p></div></div>{children?.content.length ? <div className="collection-grid">{children.content.map((child, index) => <a className="collection-card" href={`/collections/${child.collectionId}`} target="_top" key={child.collectionId}><div className="collection-top"><span className="folder-shape" style={{ "--folder-color": collectionColor(index) } as React.CSSProperties}>▱</span><StatusPill value={child.status} /></div><div className="collection-badges"><StatusPill value={child.visibility} /></div><h2>{child.name}</h2><p>{child.description || "설명이 없습니다."}</p></a>)}</div> : <EmptyState symbol="▱" title="하위 컬렉션이 없습니다" description="이 컬렉션 안에 하위 컬렉션을 만들면 여기에 표시됩니다." />}</div>
       <div className="detail-grid collection-action-grid">
         <div className="panel-card"><div className="panel-heading"><div><h2>문서 추가</h2><p>내가 읽을 수 있는 문서 중 하나를 선택합니다.</p></div></div><label className="form-field">문서<select value={addDocumentId} onChange={(event) => setAddDocumentId(event.target.value)}><option value="">문서를 선택하세요</option>{availableDocuments.map((document) => <option key={document.documentId} value={document.documentId}>#{document.documentId} · {document.title}</option>)}</select></label><button className="primary-button full-button action-submit" disabled={!addDocumentId || busy} onClick={() => void mutate("add", Number(addDocumentId))}>컬렉션에 추가</button></div>
         <div className="panel-card"><div className="panel-heading"><div><h2>문서 제거</h2><p>이 컬렉션에 포함된 문서 중 하나를 선택합니다.</p></div></div><label className="form-field">문서<select value={removeDocumentId} disabled={!hasRemovableDocuments || busy} onChange={(event) => setRemoveDocumentId(event.target.value)}><option value="">{hasRemovableDocuments ? "문서를 선택하세요" : "제거할 문서가 없습니다"}</option>{removableDocuments.map((item) => <option key={item.document.documentId} value={item.document.documentId}>#{item.document.documentId} · {item.document.title}</option>)}</select></label><button className="secondary-button full-button action-submit" disabled={!removeDocumentId || busy || !hasRemovableDocuments} onClick={() => void mutate("remove", Number(removeDocumentId))}>컬렉션에서 제거</button></div>

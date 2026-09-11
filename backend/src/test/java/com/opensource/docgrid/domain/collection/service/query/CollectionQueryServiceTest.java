@@ -199,27 +199,54 @@ class CollectionQueryServiceTest {
     }
 
     @Test
-    @DisplayName("부모 읽기 권한이 있으면 findReadableChildren이 반환한 자식 목록을 응답으로 변환하고, "
-            + "자식마다 canReadCollection을 다시 호출하지 않는다(N+1 제거 검증)")
-    void getChildren_returnsResponses_when_parentIsReadable() {
+    @DisplayName("부모 읽기 권한이 있으면 findReadableChildren이 반환한 자식 목록을 페이지 응답으로 변환하고, "
+            + "canReadCollection은 부모에 대해 한 번만 호출한다(N+1 제거 검증)")
+    void getChildren_returnsPagedResponses_when_parentIsReadable() {
+        // size=1로 첫 페이지만 요청 — totalCount(3)이 이번 페이지 content 크기(1)보다 크다는 걸
+        // PageImpl이 "모순"으로 보정하지 않도록, 실제로 더 남은 페이지가 있는 상황으로 맞춘다.
         DocumentCollection parent = CollectionFixture.createCollection();
-        // 자식을 3개 반환하도록 스텁 — 만약 서비스가 예전처럼 자식마다 canReadCollection을 다시
-        // 호출한다면 아래 verify(times(1))가 실패해서 잡아낸다 (자식 1개짜리로는 이 회귀를 못 잡음).
-        DocumentCollection child1 = CollectionFixture.createChildCollection(parent.getOwner(), parent, 2L);
-        DocumentCollection child2 = CollectionFixture.createChildCollection(parent.getOwner(), parent, 3L);
-        DocumentCollection child3 = CollectionFixture.createChildCollection(parent.getOwner(), parent, 4L);
+        CollectionRow row = mockCollectionRow(3L);
         CollectionResponse expected = CollectionFixture.createCollectionResponse();
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(parent));
         given(permissionQueryService.canReadCollection(CollectionFixture.USER_ID, parent)).willReturn(true);
-        given(collectionRepository.findReadableChildren(CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID))
-                .willReturn(List.of(child1, child2, child3));
-        given(collectionConverter.toResponse(org.mockito.ArgumentMatchers.any(DocumentCollection.class))).willReturn(expected);
+        given(collectionRepository.findReadableChildren(
+                org.mockito.ArgumentMatchers.eq(CollectionFixture.COLLECTION_ID),
+                org.mockito.ArgumentMatchers.eq(CollectionFixture.USER_ID),
+                org.mockito.ArgumentMatchers.eq(1),
+                org.mockito.ArgumentMatchers.eq(0L)))
+                .willReturn(List.of(row));
+        given(collectionConverter.toResponse(row)).willReturn(expected);
 
-        List<CollectionResponse> result = collectionQueryService.getChildren(CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID);
+        PageResponse<CollectionResponse> result = collectionQueryService.getChildren(
+                CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID, 0, 1);
 
-        assertThat(result).hasSize(3);
+        assertThat(result.content()).containsExactly(expected);
+        assertThat(result.totalElements()).isEqualTo(3);
+        // 자식 필터링이 SQL(WHERE절) 안에서 이뤄지므로, 자식 개수와 무관하게 부모에 대해 딱 1번만 호출돼야 한다.
         then(permissionQueryService).should(org.mockito.Mockito.times(1))
                 .canReadCollection(org.mockito.ArgumentMatchers.eq(CollectionFixture.USER_ID), org.mockito.ArgumentMatchers.any(DocumentCollection.class));
+    }
+
+    @Test
+    @DisplayName("요청한 페이지가 마지막 페이지를 넘어가 0건이 반환돼도, 별도 count 쿼리로 실제 전체 개수를 정확히 반영한다")
+    void getChildren_returnsAccurateTotalElements_whenPageBeyondLastPage() {
+        DocumentCollection parent = CollectionFixture.createCollection();
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(parent));
+        given(permissionQueryService.canReadCollection(CollectionFixture.USER_ID, parent)).willReturn(true);
+        given(collectionRepository.findReadableChildren(
+                org.mockito.ArgumentMatchers.eq(CollectionFixture.COLLECTION_ID),
+                org.mockito.ArgumentMatchers.eq(CollectionFixture.USER_ID),
+                org.mockito.ArgumentMatchers.eq(20),
+                org.mockito.ArgumentMatchers.eq(100L)))
+                .willReturn(List.of());
+        given(collectionRepository.countReadableChildren(CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID))
+                .willReturn(3L);
+
+        PageResponse<CollectionResponse> result = collectionQueryService.getChildren(
+                CollectionFixture.USER_ID, CollectionFixture.COLLECTION_ID, 5, 20);
+
+        assertThat(result.content()).isEmpty();
+        assertThat(result.totalElements()).isEqualTo(3);
     }
 
     @Test
@@ -230,11 +257,12 @@ class CollectionQueryServiceTest {
         given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(parent));
         given(permissionQueryService.canReadCollection(otherUserId, parent)).willReturn(false);
 
-        assertThatThrownBy(() -> collectionQueryService.getChildren(otherUserId, CollectionFixture.COLLECTION_ID))
+        assertThatThrownBy(() -> collectionQueryService.getChildren(otherUserId, CollectionFixture.COLLECTION_ID, 0, 20))
                 .isInstanceOf(DocGridException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PERMISSION_DENIED);
         then(collectionRepository).should(never()).findReadableChildren(
-                org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong());
+                org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyLong());
     }
 
     @Test

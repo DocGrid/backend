@@ -147,9 +147,12 @@ public interface CollectionRepository extends JpaRepository<DocumentCollection, 
     long countReadableCollections(@Param("userId") Long userId, @Param("keyword") String keyword);
 
     /**
-     * 직계 자식 중 사용자가 읽을 수 있는 것만 조회 (GET /collections/{id}/children).
+     * 직계 자식 중 사용자가 읽을 수 있는 것만 페이지 단위로 조회 (GET /collections/{id}/children).
      * 부모(및 그 위 조상들)로부터 상속받는 ROLE/DEPARTMENT 권한은 모든 자식이 공유하는 값이라
      * parent_ancestors 서브쿼리로 한 번만 계산한다 — 자식마다 다시 계산하지 않는다.
+     *
+     * <p>findReadableCollections와 동일하게 COUNT(*) OVER()로 페이지 내용과 전체 개수를 한
+     * 쿼리에서 함께 계산하고, owner_name을 조인해 반환한다(자식마다 owner를 따로 조회하는 N+1 방지).
      */
     @Query(value = """
             WITH RECURSIVE parent_ancestors AS (
@@ -159,7 +162,19 @@ public interface CollectionRepository extends JpaRepository<DocumentCollection, 
                 FROM collections c
                 JOIN parent_ancestors a ON c.id = a.parent_collection_id
             )
-            SELECT c.* FROM collections c
+            SELECT
+                c.id AS collection_id,
+                c.name AS name,
+                c.description AS description,
+                c.owner_user_id AS owner_user_id,
+                u.name AS owner_name,
+                c.parent_collection_id AS parent_collection_id,
+                c.visibility AS visibility,
+                c.status AS status,
+                c.created_at AS created_at,
+                COUNT(*) OVER() AS total_count
+            FROM collections c
+            JOIN users u ON u.id = c.owner_user_id
             WHERE c.parent_collection_id = :parentId AND c.status = 'ACTIVE'
               AND (
                 c.owner_user_id = :userId
@@ -177,8 +192,8 @@ public interface CollectionRepository extends JpaRepository<DocumentCollection, 
                 )
                 OR EXISTS (
                     SELECT 1 FROM collection_permissions cp
-                    JOIN users u ON u.department_id = cp.department_id
-                    WHERE cp.collection_id = c.id AND cp.target_type = 'DEPARTMENT' AND u.id = :userId
+                    JOIN users du ON du.department_id = cp.department_id
+                    WHERE cp.collection_id = c.id AND cp.target_type = 'DEPARTMENT' AND du.id = :userId
                       AND cp.can_read = true AND (cp.expires_at IS NULL OR cp.expires_at > NOW())
                 )
                 OR EXISTS (
@@ -191,14 +206,73 @@ public interface CollectionRepository extends JpaRepository<DocumentCollection, 
                 OR EXISTS (
                     SELECT 1 FROM collection_permissions cp
                     JOIN parent_ancestors pa ON pa.id = cp.collection_id
-                    JOIN users u ON u.department_id = cp.department_id
-                    WHERE cp.target_type = 'DEPARTMENT' AND u.id = :userId
+                    JOIN users du ON du.department_id = cp.department_id
+                    WHERE cp.target_type = 'DEPARTMENT' AND du.id = :userId
                       AND cp.can_read = true AND (cp.expires_at IS NULL OR cp.expires_at > NOW())
                 )
               )
             ORDER BY c.created_at DESC, c.id DESC
+            LIMIT :limit OFFSET :offset
             """, nativeQuery = true)
-    List<DocumentCollection> findReadableChildren(@Param("parentId") Long parentId, @Param("userId") Long userId);
+    List<CollectionRow> findReadableChildren(
+            @Param("parentId") Long parentId,
+            @Param("userId") Long userId,
+            @Param("limit") int limit,
+            @Param("offset") long offset);
+
+    /**
+     * findReadableChildren()이 빈 페이지를 반환했을 때만 호출하는 전체 개수 폴백.
+     * findReadableCollections/countReadableCollections와 동일한 이유 — COUNT(*) OVER()가
+     * 반환된 행에만 얹혀 계산되므로, 행이 0개면 전체 개수 자체를 알 수 없다. 위 쿼리와
+     * 동일한 조건을 그대로 유지해야 두 쿼리의 판정 결과가 어긋나지 않는다.
+     */
+    @Query(value = """
+            WITH RECURSIVE parent_ancestors AS (
+                SELECT id, parent_collection_id FROM collections WHERE id = :parentId
+                UNION ALL
+                SELECT c.id, c.parent_collection_id
+                FROM collections c
+                JOIN parent_ancestors a ON c.id = a.parent_collection_id
+            )
+            SELECT COUNT(*) FROM collections c
+            WHERE c.parent_collection_id = :parentId AND c.status = 'ACTIVE'
+              AND (
+                c.owner_user_id = :userId
+                OR c.visibility = 'PUBLIC'
+                OR EXISTS (
+                    SELECT 1 FROM collection_permissions cp
+                    WHERE cp.collection_id = c.id AND cp.target_type = 'USER' AND cp.user_id = :userId
+                      AND cp.can_read = true AND (cp.expires_at IS NULL OR cp.expires_at > NOW())
+                )
+                OR EXISTS (
+                    SELECT 1 FROM collection_permissions cp
+                    JOIN user_roles ur ON ur.role_id = cp.role_id
+                    WHERE cp.collection_id = c.id AND cp.target_type = 'ROLE' AND ur.user_id = :userId
+                      AND cp.can_read = true AND (cp.expires_at IS NULL OR cp.expires_at > NOW())
+                )
+                OR EXISTS (
+                    SELECT 1 FROM collection_permissions cp
+                    JOIN users du ON du.department_id = cp.department_id
+                    WHERE cp.collection_id = c.id AND cp.target_type = 'DEPARTMENT' AND du.id = :userId
+                      AND cp.can_read = true AND (cp.expires_at IS NULL OR cp.expires_at > NOW())
+                )
+                OR EXISTS (
+                    SELECT 1 FROM collection_permissions cp
+                    JOIN parent_ancestors pa ON pa.id = cp.collection_id
+                    JOIN user_roles ur ON ur.role_id = cp.role_id
+                    WHERE cp.target_type = 'ROLE' AND ur.user_id = :userId
+                      AND cp.can_read = true AND (cp.expires_at IS NULL OR cp.expires_at > NOW())
+                )
+                OR EXISTS (
+                    SELECT 1 FROM collection_permissions cp
+                    JOIN parent_ancestors pa ON pa.id = cp.collection_id
+                    JOIN users du ON du.department_id = cp.department_id
+                    WHERE cp.target_type = 'DEPARTMENT' AND du.id = :userId
+                      AND cp.can_read = true AND (cp.expires_at IS NULL OR cp.expires_at > NOW())
+                )
+              )
+            """, nativeQuery = true)
+    long countReadableChildren(@Param("parentId") Long parentId, @Param("userId") Long userId);
 
     /**
      * 자기 자신 + 모든 조상 컬렉션 ID (권한 상속 판단용).

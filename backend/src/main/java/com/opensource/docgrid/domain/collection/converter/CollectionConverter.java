@@ -25,13 +25,9 @@ public class CollectionConverter {
 
     private final DocumentSummaryConverter documentSummaryConverter;
 
-    // getChildren()처럼 여러 건을 한 번에 변환할 때 쓴다 — owner는 LAZY라 이름까지 필요하면
-    // 호출자가 batch 조회한 이름을 toResponse(collection, ownerName)로 넘겨야 한다.
-    public CollectionResponse toResponse(DocumentCollection collection) {
-        return toResponse(collection, null);
-    }
-
-    // getCollection() 단건 상세처럼 owner 하나만 lazy-load해도 되는 경우에 쓴다.
+    // getCollection() 단건 상세, createCollection()처럼 owner 하나만 lazy-load해도 되는 경우에 쓴다.
+    // 여러 건을 한 번에 변환할 때(getCollections(), getChildren())는 owner N+1을 피하기 위해
+    // toResponse(CollectionRow)를 쓴다 — 쿼리 안에서 owner_name을 조인해 이미 채워서 넘긴다.
     public CollectionResponse toResponse(DocumentCollection collection, String ownerName) {
         Long parentId = collection.getParentCollection() != null
                 ? collection.getParentCollection().getId()

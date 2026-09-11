@@ -1,7 +1,5 @@
 package com.opensource.docgrid.domain.collection.controller;
 
-import java.util.List;
-
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -129,14 +127,16 @@ public class CollectionController {
 
     @Operation(
             summary = "직계 자식 컬렉션 목록 조회",
-            description = "이 컬렉션 바로 아래에 있는 하위 컬렉션 목록을 반환합니다. 하위 컬렉션 자체까지만 반환하며, " +
+            description = "이 컬렉션 바로 아래에 있는 하위 컬렉션을 최신 생성순으로 페이지 조회합니다. 하위 컬렉션 자체까지만 반환하며, " +
                     "더 아래 단계를 보려면 반환된 하위 컬렉션 ID로 이 API를 다시 호출해야 합니다."
     )
     @GetMapping("/{collectionId}/children")
-    public ResponseEntity<ApiResponse<List<CollectionResponse>>> getChildren(
+    public ResponseEntity<ApiResponse<PageResponse<CollectionResponse>>> getChildren(
             @PathVariable Long collectionId,
-            @Parameter(hidden = true) @CurrentUser Long userId) {
-        return ResponseUtils.ok(collectionQueryService.getChildren(userId, collectionId));
+            @Parameter(hidden = true) @CurrentUser Long userId,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        return ResponseUtils.ok(collectionQueryService.getChildren(userId, collectionId, page, size));
     }
 
     @Operation(

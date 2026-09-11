@@ -13,7 +13,6 @@ import static org.mockito.Mockito.times;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,25 +24,20 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
-import com.opensource.docgrid.domain.collection.repository.CollectionRepository;
 import com.opensource.docgrid.domain.embedding.dto.EmbedResult;
 import com.opensource.docgrid.domain.embedding.fixture.EmbeddingModelFixture;
 import com.opensource.docgrid.domain.embedding.service.query.QueryEmbeddingService;
 import com.opensource.docgrid.domain.permission.service.query.PermissionQueryService;
+import com.opensource.docgrid.domain.search.dto.SearchAdmission;
 import com.opensource.docgrid.domain.search.dto.SearchOutcome;
 import com.opensource.docgrid.domain.search.dto.VectorSearchCandidate;
 import com.opensource.docgrid.domain.search.dto.request.SearchRequest;
-import com.opensource.docgrid.domain.search.entity.SearchQuery;
 import com.opensource.docgrid.domain.search.entity.SearchResult;
-import com.opensource.docgrid.domain.search.entity.SearchConversation;
-import com.opensource.docgrid.domain.search.fixture.SearchQueryFixture;
-import com.opensource.docgrid.domain.search.service.command.SearchConversationCommandService;
 import com.opensource.docgrid.domain.search.service.command.SearchQueryCommandService;
 import com.opensource.docgrid.domain.search.service.command.SearchResultCommandService;
 import com.opensource.docgrid.domain.search.service.query.AccessibleDocumentQueryService;
 import com.opensource.docgrid.domain.search.service.query.SearchConversationQueryService;
 import com.opensource.docgrid.domain.search.service.query.VectorSearchQueryService;
-import com.opensource.docgrid.domain.user.repository.UserRepository;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -53,25 +47,22 @@ class SearchFacadeTest {
     @InjectMocks private SearchFacade searchFacade;
 
     @Mock private QueryEmbeddingService queryEmbeddingService;
-    @Mock private SearchConversationCommandService searchConversationCommandService;
     @Mock private SearchConversationQueryService searchConversationQueryService;
     @Mock private SearchQueryCommandService searchQueryCommandService;
     @Mock private AccessibleDocumentQueryService accessibleDocumentQueryService;
     @Mock private VectorSearchQueryService vectorSearchQueryService;
     @Mock private PermissionQueryService permissionQueryService;
     @Mock private SearchResultCommandService searchResultCommandService;
-    @Mock private UserRepository userRepository;
-    @Mock private CollectionRepository collectionRepository;
 
     private static final Long USER_ID = 1L;
+    private static final Long QUERY_ID = 10L;
     private static final SearchRequest REQUEST = new SearchRequest("검색어", 5, null);
 
     @BeforeEach
     void setUpConversation() {
-        SearchConversation conversation = mock(SearchConversation.class);
-        given(conversation.getId()).willReturn(50L);
-        given(searchConversationCommandService.resolve(any(), any(), anyString())).willReturn(conversation);
-        given(searchConversationQueryService.findRecentContext(50L, null, 2)).willReturn(List.of());
+        given(searchQueryCommandService.createProcessing(USER_ID, null, null, "검색어", 5))
+            .willReturn(new SearchAdmission(50L, QUERY_ID));
+        given(searchConversationQueryService.findRecentContext(50L, QUERY_ID, 2)).willReturn(List.of());
         given(searchConversationQueryService.contextualizeRetrieval(anyString(), any()))
             .willAnswer(invocation -> invocation.getArgument(0));
     }
@@ -80,19 +71,15 @@ class SearchFacadeTest {
     @DisplayName("정상 흐름: 후보 조회 후 live check를 거쳐 결과를 반환한다")
     void search_normalFlow_returnsResults() {
         EmbedResult embedResult = new EmbedResult(EmbeddingModelFixture.createDefaultModel(), new float[1024]);
-        SearchQuery searchQuery = SearchQueryFixture.createProcessing();
         VectorSearchCandidate candidate = new VectorSearchCandidate(1L, 2L, 3L, "텍스트", 1, "제목", new BigDecimal("0.9"));
 
         given(queryEmbeddingService.embed(anyString())).willReturn(embedResult);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(com.opensource.docgrid.domain.user.entity.User.builder()
-            .email("test@test.com").passwordHash("hash").name("테스트").build()));
-        given(searchQueryCommandService.createProcessing(any(), any(), any(), anyString(), any(), any(), anyInt()))
-            .willReturn(searchQuery);
         given(accessibleDocumentQueryService.findReadableDocumentIds(USER_ID, null)).willReturn(List.of(3L));
         given(vectorSearchQueryService.search(any(), any(), any(), anyInt())).willReturn(List.of(candidate));
         given(permissionQueryService.canReadDocument(USER_ID, 3L)).willReturn(true);
         SearchResult savedResult = mock(SearchResult.class);
-        given(searchResultCommandService.saveAll(any(), any())).willReturn(List.of(savedResult));
+        given(searchResultCommandService.saveAllAndComplete(anyLong(), any(), any(), any(), anyInt()))
+            .willReturn(List.of(savedResult));
 
         SearchOutcome outcome = searchFacade.search(USER_ID, REQUEST);
 
@@ -101,21 +88,16 @@ class SearchFacadeTest {
         assertThat(outcome.response().results().get(0).chunkId()).isEqualTo(2L);
         assertThat(outcome.candidates()).hasSize(1);
         assertThat(outcome.savedResults()).containsExactly(savedResult);
-        then(searchResultCommandService).should(times(1)).saveAll(any(), any());
-        then(searchQueryCommandService).should(times(1)).markSuccess(any(), anyInt());
+        then(searchResultCommandService).should(times(1))
+            .saveAllAndComplete(anyLong(), any(), any(), any(), anyInt());
     }
 
     @Test
     @DisplayName("접근 가능한 문서가 없으면 벡터 검색을 건너뛰고 빈 결과를 반환한다")
     void search_noPermittedIds_skipsVectorSearch() {
         EmbedResult embedResult = new EmbedResult(EmbeddingModelFixture.createDefaultModel(), new float[1024]);
-        SearchQuery searchQuery = SearchQueryFixture.createProcessing();
 
         given(queryEmbeddingService.embed(anyString())).willReturn(embedResult);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(com.opensource.docgrid.domain.user.entity.User.builder()
-            .email("test@test.com").passwordHash("hash").name("테스트").build()));
-        given(searchQueryCommandService.createProcessing(any(), any(), any(), anyString(), any(), any(), anyInt()))
-            .willReturn(searchQuery);
         given(accessibleDocumentQueryService.findReadableDocumentIds(USER_ID, null)).willReturn(List.of());
 
         SearchOutcome outcome = searchFacade.search(USER_ID, REQUEST);
@@ -123,23 +105,20 @@ class SearchFacadeTest {
         assertThat(outcome.response().results()).isEmpty();
         assertThat(outcome.candidates()).isEmpty();
         then(vectorSearchQueryService).should(never()).search(any(), anyLong(), any(), anyInt());
-        then(searchQueryCommandService).should(times(1)).markSuccess(any(), anyInt());
+        then(searchResultCommandService).should(times(1))
+            .saveAllAndComplete(anyLong(), any(), any(), any(), anyInt());
     }
 
     @Test
     @DisplayName("유사도 필터 결과가 비어있으면 검색 결과를 저장하지 않고 빈 후보를 반환한다")
     void search_noQualifiedCandidates_returnsEmptyOutcome() {
         EmbedResult embedResult = new EmbedResult(EmbeddingModelFixture.createDefaultModel(), new float[1024]);
-        SearchQuery searchQuery = SearchQueryFixture.createProcessing();
 
         given(queryEmbeddingService.embed(anyString())).willReturn(embedResult);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(com.opensource.docgrid.domain.user.entity.User.builder()
-            .email("test@test.com").passwordHash("hash").name("테스트").build()));
-        given(searchQueryCommandService.createProcessing(any(), any(), any(), anyString(), any(), any(), anyInt()))
-            .willReturn(searchQuery);
         given(accessibleDocumentQueryService.findReadableDocumentIds(USER_ID, null)).willReturn(List.of(3L));
         given(vectorSearchQueryService.search(any(), any(), any(), anyInt())).willReturn(List.of());
-        given(searchResultCommandService.saveAll(searchQuery, List.of())).willReturn(List.of());
+        given(searchResultCommandService.saveAllAndComplete(anyLong(), any(), any(), any(), anyInt()))
+            .willReturn(List.of());
 
         SearchOutcome outcome = searchFacade.search(USER_ID, REQUEST);
 
@@ -147,32 +126,28 @@ class SearchFacadeTest {
         assertThat(outcome.candidates()).isEmpty();
         assertThat(outcome.savedResults()).isEmpty();
         then(permissionQueryService).should(never()).canReadDocument(anyLong(), anyLong());
-        then(searchResultCommandService).should(times(1)).saveAll(searchQuery, List.of());
-        then(searchQueryCommandService).should(times(1)).markSuccess(any(), anyInt());
+        then(searchResultCommandService).should(times(1))
+            .saveAllAndComplete(anyLong(), any(), any(), any(), anyInt());
     }
 
     @Test
     @DisplayName("live check에서 탈락한 후보는 결과에서 제외된다")
     void search_liveCheckFiltersOut_excludesCandidate() {
         EmbedResult embedResult = new EmbedResult(EmbeddingModelFixture.createDefaultModel(), new float[1024]);
-        SearchQuery searchQuery = SearchQueryFixture.createProcessing();
         VectorSearchCandidate candidate = new VectorSearchCandidate(1L, 2L, 3L, "텍스트", 1, "제목", new BigDecimal("0.9"));
 
         given(queryEmbeddingService.embed(anyString())).willReturn(embedResult);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(com.opensource.docgrid.domain.user.entity.User.builder()
-            .email("test@test.com").passwordHash("hash").name("테스트").build()));
-        given(searchQueryCommandService.createProcessing(any(), any(), any(), anyString(), any(), any(), anyInt()))
-            .willReturn(searchQuery);
         given(accessibleDocumentQueryService.findReadableDocumentIds(USER_ID, null)).willReturn(List.of(3L));
         given(vectorSearchQueryService.search(any(), any(), any(), anyInt())).willReturn(List.of(candidate));
         given(permissionQueryService.canReadDocument(USER_ID, 3L)).willReturn(false);
-        given(searchResultCommandService.saveAll(any(), any())).willReturn(List.of());
+        given(searchResultCommandService.saveAllAndComplete(anyLong(), any(), any(), any(), anyInt()))
+            .willReturn(List.of());
 
         SearchOutcome outcome = searchFacade.search(USER_ID, REQUEST);
 
         assertThat(outcome.response().results()).isEmpty();
         assertThat(outcome.candidates()).isEmpty();
-        then(searchResultCommandService).should(times(1)).saveAll(any(), any());
-        then(searchQueryCommandService).should(times(1)).markSuccess(any(), anyInt());
+        then(searchResultCommandService).should(times(1))
+            .saveAllAndComplete(anyLong(), any(), any(), any(), anyInt());
     }
 }

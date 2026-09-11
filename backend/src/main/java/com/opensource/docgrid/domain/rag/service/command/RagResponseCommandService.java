@@ -89,11 +89,10 @@ public class RagResponseCommandService {
      * <p>{@link RagResponseRepository#forceFailIfProcessing}(조건부 UPDATE)을
      * RagJobTimeoutSweeper와 공유해서 쓴다 — 이유는 {@link #completeSuccess}와 동일하다.
      *
-     * <p>검색 도메인의 SearchQueryCommandService.markFailed()와 달리 REQUIRES_NEW가 없다 —
-     * 이 메서드를 부르는 RagFacade.processJob()의 catch 블록은 예외를 다시 던지지 않고 그대로
-     * return하므로, 이 메서드가 실행되는 트랜잭션 자체가 롤백될 일이 없다. 재전파해서 바깥
-     * 트랜잭션을 일부러 굴리는 검색 쪽 구조와 달리, 애초에 롤백될 트랜잭션이 없어 REQUIRES_NEW로
-     * 실패 기록을 따로 지킬 필요 자체가 없다.
+     * <p>이 메서드를 부르는 RagFacade.processJob()의 catch 블록은 예외를 다시 던지지 않고 그대로
+     * return하므로, 현재 Transaction이 롤백될 일이 없다. 반면 검색 도메인은 외부 호출 예외를
+     * 재전파하므로 SearchQueryCommandService.markFailed()가 독립 Transaction에서 실패 원장을
+     * 확정한다.
      *
      * @return 실제로 이 호출로 FAILED 확정이 일어났으면 true, 이미 다른 경로(스위퍼)가
      *         먼저 끝내 아무 일도 하지 않았으면 false.

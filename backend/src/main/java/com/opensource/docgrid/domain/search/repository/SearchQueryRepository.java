@@ -5,6 +5,9 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import com.opensource.docgrid.domain.search.entity.SearchQuery;
 
@@ -20,4 +23,24 @@ public interface SearchQueryRepository extends JpaRepository<SearchQuery, Long> 
 
     /** 대화 상세 화면은 과도한 응답을 막기 위해 최근 50개 질문만 읽는다. */
     List<SearchQuery> findTop50ByConversation_IdOrderByCreatedAtDesc(Long conversationId);
+
+    /**
+     * PROCESSING 검색만 FAILED로 확정해 이미 끝난 상태를 뒤늦은 실패가 덮어쓰지 않게 한다.
+     *
+     * <p>영향받은 행 수로 호출자가 실패 기록 성공 여부를 확인할 수 있으며, 벌크 UPDATE가
+     * 영속성 Context를 우회하므로 실행 직후 Context를 비워 오래된 상태 재사용을 막는다.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("""
+        UPDATE SearchQuery q
+        SET q.status = com.opensource.docgrid.domain.search.enums.ResultStatus.FAILED,
+            q.errorMessage = :errorMessage,
+            q.updatedAt = CURRENT_TIMESTAMP
+        WHERE q.id = :queryId
+          AND q.status = com.opensource.docgrid.domain.search.enums.ResultStatus.PROCESSING
+        """)
+    int markFailedIfProcessing(
+        @Param("queryId") Long queryId,
+        @Param("errorMessage") String errorMessage
+    );
 }

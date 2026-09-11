@@ -78,11 +78,12 @@ public class SearchQuery extends BaseEntity {
     @Column(name = "query_text", nullable = false, columnDefinition = "TEXT")
     private String queryText;
 
-    // 질의를 벡터화할 때 사용한 임베딩 모델, document embedding 모델과 동일해야 함
+    // 질의를 벡터화한 모델. 접수 직후와 임베딩 실패 시에는 null이며 성공 확정 때 저장한다.
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "query_embedding_model_id")
     private EmbeddingModel queryEmbeddingModel;
 
+    // 접수 직후와 임베딩 실패 시에는 null이며 성공 결과와 같은 Transaction에서 저장한다.
     @Type(VectorType.class)
     @Column(name = "query_vector", columnDefinition = "vector(1024)")
     private float[] queryVector;
@@ -108,20 +109,12 @@ public class SearchQuery extends BaseEntity {
     @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
 
-    /**
-     * 검색 실행을 성공으로 종결하고 전체 지연 시간을 기록한다.
-     */
-    public void updateToSuccess(int latencyMs) {
+    /** 검색에 사용한 모델·Vector와 지연 시간을 채우고 실행을 성공으로 종결한다. */
+    public void updateToSuccess(EmbeddingModel embeddingModel, float[] queryVector, int latencyMs) {
+        this.queryEmbeddingModel = embeddingModel;
+        this.queryVector = queryVector;
         this.status = ResultStatus.SUCCESS;
         this.latencyMs = latencyMs;
-    }
-
-    /**
-     * 검색 실행을 실패로 종결하고 외부 노출 전에 제한된 오류 메시지를 기록한다.
-     */
-    public void updateToFailed(String errorMessage) {
-        this.status = ResultStatus.FAILED;
-        this.errorMessage = errorMessage;
     }
 
     /**

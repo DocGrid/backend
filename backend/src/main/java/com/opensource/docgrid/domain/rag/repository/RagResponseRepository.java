@@ -13,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 
 import com.opensource.docgrid.domain.rag.entity.RagResponse;
 import com.opensource.docgrid.domain.search.dto.ConversationContext;
+import com.opensource.docgrid.domain.search.dto.ConversationRagResponseProjection;
 import com.opensource.docgrid.domain.search.enums.ResultStatus;
 
 /**
@@ -35,6 +36,18 @@ public interface RagResponseRepository extends JpaRepository<RagResponse, Long> 
 
     /** 특정 검색 요청(queryId)에 대한 RAG 답변을 찾는다. GET /search/{queryId} 재조회에 쓰인다. */
     Optional<RagResponse> findByQuery_Id(Long queryId);
+
+    /** 여러 대화 Turn의 RAG 상태와 답변을 queryId 기준으로 한 번에 조회한다. */
+    @Query("""
+        SELECT new com.opensource.docgrid.domain.search.dto.ConversationRagResponseProjection(
+            r.query.id, r.status, r.answerText
+        )
+        FROM RagResponse r
+        WHERE r.query.id IN :queryIds
+        """)
+    List<ConversationRagResponseProjection> findConversationDetailResponses(
+        @Param("queryIds") List<Long> queryIds
+    );
 
     /**
      * 후속 질문 프롬프트에 사용할 확정 답변만 최근순으로 제한 조회한다.

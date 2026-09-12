@@ -310,4 +310,38 @@ public interface CollectionPermissionRepository extends JpaRepository<Collection
               AND (cp.expiresAt IS NULL OR cp.expiresAt > CURRENT_TIMESTAMP)
             """)
     boolean existsDeptAdminPermissionForCollections(@Param("userId") Long userId, @Param("collectionIds") List<Long> collectionIds);
+
+    /**
+     * ⑤ 중복 부여 방지용 — 이 컬렉션에 이 대상(user/role/department) 앞으로 만료되지 않은 권한이
+     * 이미 있는지 확인한다. permissionType(READ/WRITE/ADMIN)은 보지 않는다 — 계층적 구조상(WRITE가
+     * READ를 포함하는 식) 같은 대상이 레벨만 다른 권한 행을 동시에 가질 이유가 없기 때문이다.
+     * 만료된 권한은 중복으로 치지 않아 재부여를 막지 않는다.
+     */
+
+    @Query("""
+            SELECT COUNT(cp) > 0 FROM CollectionPermission cp
+            WHERE cp.collection.id = :collectionId
+              AND cp.targetType = com.opensource.docgrid.domain.permission.enums.PermissionTargetType.USER
+              AND cp.user.id = :userId
+              AND (cp.expiresAt IS NULL OR cp.expiresAt > CURRENT_TIMESTAMP)
+            """)
+    boolean existsActiveUserGrant(@Param("collectionId") Long collectionId, @Param("userId") Long userId);
+
+    @Query("""
+            SELECT COUNT(cp) > 0 FROM CollectionPermission cp
+            WHERE cp.collection.id = :collectionId
+              AND cp.targetType = com.opensource.docgrid.domain.permission.enums.PermissionTargetType.ROLE
+              AND cp.role.id = :roleId
+              AND (cp.expiresAt IS NULL OR cp.expiresAt > CURRENT_TIMESTAMP)
+            """)
+    boolean existsActiveRoleGrant(@Param("collectionId") Long collectionId, @Param("roleId") Long roleId);
+
+    @Query("""
+            SELECT COUNT(cp) > 0 FROM CollectionPermission cp
+            WHERE cp.collection.id = :collectionId
+              AND cp.targetType = com.opensource.docgrid.domain.permission.enums.PermissionTargetType.DEPARTMENT
+              AND cp.department.id = :departmentId
+              AND (cp.expiresAt IS NULL OR cp.expiresAt > CURRENT_TIMESTAMP)
+            """)
+    boolean existsActiveDeptGrant(@Param("collectionId") Long collectionId, @Param("departmentId") Long departmentId);
 }

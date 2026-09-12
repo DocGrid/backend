@@ -113,6 +113,48 @@ class DocumentPermissionCommandServiceTest {
     }
 
     @Test
+    @DisplayName("USER 대상에게 이미 만료되지 않은 권한이 있으면 DOCUMENT_PERMISSION_ALREADY_GRANTED 예외가 발생한다")
+    void grantPermission_throws_when_activeUserGrantAlreadyExists() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        GrantPermissionRequest request = new GrantPermissionRequest(
+                PermissionTargetType.USER, CollectionFixture.USER_ID, null, null, PermissionType.WRITE, null);
+
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(permissionQueryService.canAdminDocument(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+        given(userRepository.findById(CollectionFixture.USER_ID)).willReturn(Optional.of(owner));
+        given(documentPermissionRepository.existsActiveUserGrant(CollectionFixture.DOCUMENT_ID, CollectionFixture.USER_ID))
+                .willReturn(true);
+
+        assertThatThrownBy(() -> service.grantPermission(
+                CollectionFixture.DOCUMENT_ID, CollectionFixture.USER_ID, request))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DOCUMENT_PERMISSION_ALREADY_GRANTED);
+        then(documentPermissionRepository).should(never()).save(any(DocumentPermission.class));
+    }
+
+    @Test
+    @DisplayName("ROLE 대상에게 이미 만료되지 않은 권한이 있으면 DOCUMENT_PERMISSION_ALREADY_GRANTED 예외가 발생한다")
+    void grantPermission_throws_when_activeRoleGrantAlreadyExists() {
+        User owner = CollectionFixture.createOwner();
+        Document document = CollectionFixture.createDocument(owner);
+        GrantPermissionRequest request = new GrantPermissionRequest(
+                PermissionTargetType.ROLE, null, PermissionFixture.ROLE_ID, null, PermissionType.READ, null);
+
+        given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.of(document));
+        given(permissionQueryService.canAdminDocument(CollectionFixture.USER_ID, CollectionFixture.DOCUMENT_ID)).willReturn(true);
+        given(roleRepository.findById(PermissionFixture.ROLE_ID)).willReturn(Optional.of(PermissionFixture.createRole()));
+        given(documentPermissionRepository.existsActiveRoleGrant(CollectionFixture.DOCUMENT_ID, PermissionFixture.ROLE_ID))
+                .willReturn(true);
+
+        assertThatThrownBy(() -> service.grantPermission(
+                CollectionFixture.DOCUMENT_ID, CollectionFixture.USER_ID, request))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DOCUMENT_PERMISSION_ALREADY_GRANTED);
+        then(documentPermissionRepository).should(never()).save(any(DocumentPermission.class));
+    }
+
+    @Test
     @DisplayName("문서가 없으면 DOCUMENT_NOT_FOUND 예외가 발생한다")
     void grantPermission_throws_when_documentNotFound() {
         given(documentRepository.findById(CollectionFixture.DOCUMENT_ID)).willReturn(Optional.empty());

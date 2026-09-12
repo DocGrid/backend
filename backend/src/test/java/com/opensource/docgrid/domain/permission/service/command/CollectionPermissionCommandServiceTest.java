@@ -158,6 +158,49 @@ class CollectionPermissionCommandServiceTest {
     }
 
     @Test
+    @DisplayName("USER 대상에게 이미 만료되지 않은 권한이 있으면 COLLECTION_PERMISSION_ALREADY_GRANTED 예외가 발생한다")
+    void grantPermission_throws_when_activeUserGrantAlreadyExists() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection collection = CollectionFixture.createCollection(owner);
+        GrantPermissionRequest request = new GrantPermissionRequest(
+                PermissionTargetType.USER, CollectionFixture.USER_ID, null, null, PermissionType.WRITE, null);
+
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+        given(permissionQueryService.canAdminCollection(CollectionFixture.USER_ID, collection)).willReturn(true);
+        given(userRepository.findById(CollectionFixture.USER_ID)).willReturn(Optional.of(owner));
+        given(collectionPermissionRepository.existsActiveUserGrant(CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID))
+                .willReturn(true);
+
+        assertThatThrownBy(() -> service.grantPermission(
+                CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID, request))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.COLLECTION_PERMISSION_ALREADY_GRANTED);
+        then(collectionPermissionRepository).should(never()).save(any(CollectionPermission.class));
+    }
+
+    @Test
+    @DisplayName("ROLE 대상에게 이미 만료되지 않은 권한이 있으면 COLLECTION_PERMISSION_ALREADY_GRANTED 예외가 발생한다")
+    void grantPermission_throws_when_activeRoleGrantAlreadyExists() {
+        User owner = CollectionFixture.createOwner();
+        DocumentCollection collection = CollectionFixture.createCollection(owner);
+        Role role = PermissionFixture.createRole();
+        GrantPermissionRequest request = new GrantPermissionRequest(
+                PermissionTargetType.ROLE, null, PermissionFixture.ROLE_ID, null, PermissionType.READ, null);
+
+        given(collectionRepository.findById(CollectionFixture.COLLECTION_ID)).willReturn(Optional.of(collection));
+        given(permissionQueryService.canAdminCollection(CollectionFixture.USER_ID, collection)).willReturn(true);
+        given(roleRepository.findById(PermissionFixture.ROLE_ID)).willReturn(Optional.of(role));
+        given(collectionPermissionRepository.existsActiveRoleGrant(CollectionFixture.COLLECTION_ID, PermissionFixture.ROLE_ID))
+                .willReturn(true);
+
+        assertThatThrownBy(() -> service.grantPermission(
+                CollectionFixture.COLLECTION_ID, CollectionFixture.USER_ID, request))
+                .isInstanceOf(DocGridException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.COLLECTION_PERMISSION_ALREADY_GRANTED);
+        then(collectionPermissionRepository).should(never()).save(any(CollectionPermission.class));
+    }
+
+    @Test
     @DisplayName("targetType=USER인데 userId가 null이면 INVALID_TARGET_TYPE 예외가 발생한다")
     void grantPermission_throws_when_invalidTargetType() {
         User owner = CollectionFixture.createOwner();

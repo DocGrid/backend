@@ -75,6 +75,10 @@ public class DocumentPermissionCommandService {
                     .orElseThrow(() -> new DocGridException(ErrorCode.DEPARTMENT_NOT_FOUND));
         }
 
+        if (hasActiveGrant(documentId, request.targetType(), targetUser, targetRole, targetDepartment)) {
+            throw new DocGridException(ErrorCode.DOCUMENT_PERMISSION_ALREADY_GRANTED);
+        }
+
         boolean[] permissions = resolvePermissions(request.permissionType());
         User grantor = userRepository.getReferenceById(grantorId);
 
@@ -135,6 +139,16 @@ public class DocumentPermissionCommandService {
             permissionId,
             SyncPermissionOperation.REVOKED
         );
+    }
+
+    // 이 대상에게 만료되지 않은 권한이 이미 있는지 확인 (permissionType 무관 — 중복 부여 방지)
+    private boolean hasActiveGrant(Long documentId, PermissionTargetType targetType,
+                                    User targetUser, Role targetRole, Department targetDepartment) {
+        return switch (targetType) {
+            case USER -> documentPermissionRepository.existsActiveUserGrant(documentId, targetUser.getId());
+            case ROLE -> documentPermissionRepository.existsActiveRoleGrant(documentId, targetRole.getId());
+            case DEPARTMENT -> documentPermissionRepository.existsActiveDeptGrant(documentId, targetDepartment.getId());
+        };
     }
 
     // targetType과 ID 필드 조합 유효성 검사

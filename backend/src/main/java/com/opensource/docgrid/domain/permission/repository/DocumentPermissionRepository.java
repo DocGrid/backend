@@ -109,4 +109,40 @@ public interface DocumentPermissionRepository extends JpaRepository<DocumentPerm
               AND (dp.expiresAt IS NULL OR dp.expiresAt > CURRENT_TIMESTAMP)
             """)
     boolean existsDeptAdminPermission(@Param("userId") Long userId, @Param("documentId") Long documentId);
+
+    /**
+     * 그룹 3 — 중복 부여 방지용 (3개)
+     *
+     * <p>이 문서에 이 대상(user/role/department) 앞으로 만료되지 않은 권한이 이미 있는지 확인한다.
+     * permissionType(READ/WRITE/ADMIN)은 보지 않는다 — CollectionPermissionRepository와 동일한 이유
+     * (계층적 구조상 같은 대상이 레벨만 다른 권한 행을 동시에 가질 이유가 없음). 만료된 권한은
+     * 중복으로 치지 않아 재부여를 막지 않는다.
+     */
+
+    @Query("""
+            SELECT COUNT(dp) > 0 FROM DocumentPermission dp
+            WHERE dp.document.id = :documentId
+              AND dp.targetType = com.opensource.docgrid.domain.permission.enums.PermissionTargetType.USER
+              AND dp.user.id = :userId
+              AND (dp.expiresAt IS NULL OR dp.expiresAt > CURRENT_TIMESTAMP)
+            """)
+    boolean existsActiveUserGrant(@Param("documentId") Long documentId, @Param("userId") Long userId);
+
+    @Query("""
+            SELECT COUNT(dp) > 0 FROM DocumentPermission dp
+            WHERE dp.document.id = :documentId
+              AND dp.targetType = com.opensource.docgrid.domain.permission.enums.PermissionTargetType.ROLE
+              AND dp.role.id = :roleId
+              AND (dp.expiresAt IS NULL OR dp.expiresAt > CURRENT_TIMESTAMP)
+            """)
+    boolean existsActiveRoleGrant(@Param("documentId") Long documentId, @Param("roleId") Long roleId);
+
+    @Query("""
+            SELECT COUNT(dp) > 0 FROM DocumentPermission dp
+            WHERE dp.document.id = :documentId
+              AND dp.targetType = com.opensource.docgrid.domain.permission.enums.PermissionTargetType.DEPARTMENT
+              AND dp.department.id = :departmentId
+              AND (dp.expiresAt IS NULL OR dp.expiresAt > CURRENT_TIMESTAMP)
+            """)
+    boolean existsActiveDeptGrant(@Param("documentId") Long documentId, @Param("departmentId") Long departmentId);
 }

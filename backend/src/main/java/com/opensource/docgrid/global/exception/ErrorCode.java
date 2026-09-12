@@ -194,6 +194,8 @@ public enum ErrorCode {
     DOCUMENT_PERMISSION_NOT_FOUND(HttpStatus.NOT_FOUND, "PERMISSION-003", "문서 권한을 찾을 수 없습니다."),
     ROLE_NOT_GRANTABLE(HttpStatus.BAD_REQUEST, "PERMISSION-004",
             "USER role은 모든 사용자가 보유하고 있어 권한 부여 대상으로 지정할 수 없습니다. 전체 공개가 목적이면 visibility를 PUBLIC으로 설정하세요."),
+    COLLECTION_PERMISSION_ALREADY_GRANTED(HttpStatus.CONFLICT, "PERMISSION-005", "이미 이 대상에게 부여된 컬렉션 권한이 있습니다."),
+    DOCUMENT_PERMISSION_ALREADY_GRANTED(HttpStatus.CONFLICT, "PERMISSION-006", "이미 이 대상에게 부여된 문서 권한이 있습니다."),
 
     // WORKER
     // Claim 요청의 Worker 식별자가 등록된 실행 인스턴스와 연결되지 않은 경우 사용한다.

@@ -4,11 +4,13 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import com.opensource.docgrid.domain.search.dto.ConversationQueryProjection;
 import com.opensource.docgrid.domain.search.entity.SearchQuery;
 
 public interface SearchQueryRepository extends JpaRepository<SearchQuery, Long> {
@@ -21,8 +23,19 @@ public interface SearchQueryRepository extends JpaRepository<SearchQuery, Long> 
     // GET /search/{queryId} 재조회 시, 본인이 요청한 검색인지 소유권을 쿼리 조건으로 바로 걸러낸다.
     Optional<SearchQuery> findByIdAndUser_Id(Long id, Long userId);
 
-    /** 대화 상세 화면은 과도한 응답을 막기 위해 최근 50개 질문만 읽는다. */
-    List<SearchQuery> findTop50ByConversation_IdOrderByCreatedAtDesc(Long conversationId);
+    /** 대화 상세 화면에 필요한 질문 필드만 최근순으로 제한 조회한다. */
+    @Query("""
+        SELECT new com.opensource.docgrid.domain.search.dto.ConversationQueryProjection(
+            q.id, q.queryText, q.createdAt
+        )
+        FROM SearchQuery q
+        WHERE q.conversation.id = :conversationId
+        ORDER BY q.createdAt DESC
+        """)
+    List<ConversationQueryProjection> findConversationDetailQueries(
+        @Param("conversationId") Long conversationId,
+        Pageable pageable
+    );
 
     /**
      * PROCESSING 검색만 FAILED로 확정해 이미 끝난 상태를 뒤늦은 실패가 덮어쓰지 않게 한다.
